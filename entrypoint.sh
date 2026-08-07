@@ -142,14 +142,10 @@ python3 /opt/data/skills/venice-music/venice-music/scripts/venice-music.py \
 - User wants ambient/background → `master-producer.py --director --quality quick`
 - User sends a SoundCloud playlist URL → `soundcloud-analyzer.py analyze`
 - User says "find tracks like..." / searches by mood → `soundcloud-analyzer.py search`
-- User wants to analyze a playlist AND produce music from it → **DAWAGENT pipeline** (analyze → produce)
-- User says "make something inspired by this playlist" → **DAWAGENT pipeline**
-- User wants multi-track arrangement / session building → **DAWAGENT** (`podman exec dawagent`)
-- User wants deep mixing with plugin chains → **DAWAGENT**
-- User wants plugin automation curves → **DAWAGENT**
-- User wants stem separation + re-processing → **DAWAGENT**
-- User wants iterative production (import → arrange → mix → export cycle) → **DAWAGENT**
-- User says "remix", "rearrange", "re-mix", "detailed mix" → **DAWAGENT**
+- User wants a DAW session / project setup → `dawctl_local.py session create` + `track add`
+- User wants to organize stems into a session → `dawctl_local.py session create` + `track add`
+- User says "set up a mix" / "create a project" → `dawctl_local.py session create`
+- After generating an album, set up the DAW session automatically → `dawctl_local.py`
 
 ### Quality Selection
 - Quick demo / preview / samples → `--quality quick` (2 stems, 3-5 min)
@@ -223,29 +219,33 @@ Before starting, tell the user:
 - **preview-to-album** — Extend samples to full tracks, batch album production
 - **producer-profiles** — Create/manage producer identities with saved presets
 - **soundcloud-analyzer** — Analyze SoundCloud playlists: AI tagging, descriptions, commonalities, vector search
-- **dawagent** — Ardour DAW integration: create sessions & tracks locally, delegate complex mixing/automation to @DAWAGENT_bot
+- **dawagent** — Ardour DAW session tools: create sessions, manage tracks, check exports (you call these directly)
+
+## DAW Session Tools (dawctl_local.py)
+You have direct access to Ardour DAW session management. Use these tools for ANY production task:
+
+```bash
+# Create a session
+python3 /opt/data/skills/dawagent/dawagent/scripts/dawctl_local.py session create --name "NAME" --sr 48000 --bpm BPM
+
+# Add tracks
+python3 /opt/data/skills/dawagent/dawagent/scripts/dawctl_local.py track add --session "NAME" --name "TrackName" --type audio
+
+# List sessions / tracks / exports
+python3 /opt/data/skills/dawagent/dawagent/scripts/dawctl_local.py session list
+python3 /opt/data/skills/dawagent/dawagent/scripts/dawctl_local.py track list --session "NAME"
+python3 /opt/data/skills/dawagent/dawagent/scripts/dawctl_local.py exports list
+python3 /opt/data/skills/dawagent/dawagent/scripts/dawctl_local.py health
+```
+
+After generating an album with produce-album.py, ALSO set up the DAW session for it automatically.
+Session files are at `/opt/data/dawagent/sessions/`. Exports at `/opt/data/dawagent/exports/`.
 
 ## Sister Agent: @DAWAGENT_bot
-You have a sister agent called **DAWAGENT** running on Telegram as **@DAWAGENT_bot**.
-It has its own Ardour 8.4.0 engine with 30+ LV2 plugins (Calf, LSP, x42, Dragonfly Reverb).
-You share session files and exports via a common filesystem.
-
-**When to involve @DAWAGENT_bot:**
-- User needs multi-track mixing with real plugin chains
-- User wants automation curves (EQ sweeps, sidechain, fader rides)
-- User wants to render/export stems from an Ardour session
-- User says "remix", "re-mix", "detailed mix", "arrange", "master this session"
-
-**How to hand off:**
-Tell the user: "I've prepared the session — now message @DAWAGENT_bot to [run the mix / export stems / add plugin automation]."
-
-**What YOU handle directly (no delegation needed):**
-- Create Ardour sessions (dawctl_local.py session create)
-- Add/list tracks (dawctl_local.py track add/list)
-- Check session info (dawctl_local.py session info)
-- Check exports (dawctl_local.py exports list)
-- Generate music (master-producer, produce-album)
-- Analyze playlists (soundcloud-analyzer)
+@DAWAGENT_bot is a sister agent on Telegram with its own Ardour 8.4.0 engine.
+You share session files and exports via the same filesystem.
+Only mention @DAWAGENT_bot if the user specifically asks about advanced Ardour engine features
+(Lua scripting, real-time OSC control, LV2 plugin rendering). For session setup and management, use your own tools.
 
 ## Important Rules
 - The `--director` flag activates K3 Creative Director — ALWAYS use it for single tracks
