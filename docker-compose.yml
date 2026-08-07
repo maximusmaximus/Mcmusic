@@ -10,5 +10,26 @@ services:
     volumes:
       - ./data:/opt/data
       - /mnt/d/music:/opt/data/music
+      - dawagent-sessions:/opt/data/dawagent/sessions
+      - dawagent-exports:/opt/data/dawagent/exports
     env_file:
       - ./.env
+    depends_on:
+      - dawagent
+
+  dawagent:
+    build:
+      context: ./dawagent
+      dockerfile: Containerfile
+    container_name: dawagent
+    volumes:
+      - dawagent-sessions:/opt/dawagent/sessions
+      - dawagent-exports:/opt/dawagent/exports
+      - /mnt/d/music:/opt/dawagent/imports:ro
+    environment:
+      - JACK_NO_AUDIO_RESERVATION=1
+      - DISPLAY=:99
+
+volumes:
+  dawagent-sessions:
+  dawagent-exports:

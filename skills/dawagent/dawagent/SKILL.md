@@ -1,184 +1,226 @@
 ---
 name: dawagent
-description: DAW Agent orchestration skill — bridges SoundCloud playlist analysis with music production. Analyze a playlist's sonic DNA, then generate original tracks inspired by it. The full analyze → understand → create pipeline.
-tags: [daw, orchestration, soundcloud, analysis, production, workflow, pipeline, inspiration]
+description: DAWAGENT orchestrator — delegates complex music production tasks to a specialized Ardour DAW container. Handles multi-track arrangement, deep mixing, plugin automation, stem separation + re-processing, full session construction, and iterative production workflows.
+tags: [daw, ardour, orchestration, mixing, mastering, stems, automation, production, lua, osc, session]
 ---
 
-# DAWAGENT — SoundCloud Analysis → Music Production Pipeline
+# DAWAGENT — Ardour DAW Production Agent
 
-Orchestrates the full creative pipeline: analyze a SoundCloud playlist's sonic DNA, understand its
-patterns, then generate original music inspired by it using the production pipeline.
+Delegates complex, professional-grade music production tasks to a specialized Podman container
+running Ardour 8 with Lua scripting and OSC control.
 
-## ⚠️ CRITICAL: How To Use This Skill
+## ⚠️ CRITICAL: When To Use DAWAGENT vs Master-Producer
 
-This is an **orchestration skill** — it tells you HOW to chain the soundcloud-analyzer and
-master-producer/produce-album skills together. There is no single script to run.
-You execute each step sequentially using the `terminal` tool.
+| Task | Use This |
+|------|----------|
+| Generate music from a prompt | `master-producer.py` |
+| Quick song/beat generation | `master-producer.py --director` |
+| Album batch generation | `produce-album.py` |
+| **Multi-track arrangement from existing stems** | **DAWAGENT** |
+| **Deep mixing with plugin chains** | **DAWAGENT** |
+| **Plugin automation curves** | **DAWAGENT** |
+| **Stem separation + re-processing** | **DAWAGENT** |
+| **Full DAW session construction** | **DAWAGENT** |
+| **Precise automation (EQ sweeps, compression, sidechain)** | **DAWAGENT** |
+| **Iterative production (import → arrange → mix → export cycle)** | **DAWAGENT** |
+| Analyze SoundCloud playlists | `soundcloud-analyzer.py` |
+| Analyze playlist → generate inspired tracks | DAWAGENT pipeline (analyze → produce) |
 
-**YOU MUST follow the pipeline in order. Do NOT skip steps.**
+## 🚀 Container Management
 
-## 🎯 When To Use DAWAGENT
+### Check if DAWAGENT is running
+```bash
+podman ps --filter name=dawagent --format "{{.Names}} {{.Status}}"
+```
 
-**User says any of:**
-- "analyze this playlist and make something like it"
-- "make music inspired by this SoundCloud playlist"
-- "study this playlist and produce tracks in the same style"
-- "what's the vibe of this playlist? now make me something similar"
-- "reverse engineer this playlist's sound"
-- Sends a SoundCloud URL + asks for original production
+### Start DAWAGENT (if not running)
+```bash
+cd /app && podman-compose up -d dawagent
+```
+Or manually:
+```bash
+podman start dawagent
+```
 
-**Do NOT use for:**
-- Just analyzing a playlist (use soundcloud-analyzer directly)
-- Just producing music without a reference playlist (use master-producer directly)
-- Searching existing analyzed tracks (use soundcloud-analyzer search directly)
+### Health check
+```bash
+podman exec dawagent python3 /opt/dawagent/scripts/dawctl.py health
+```
 
-## 🔁 The DAWAGENT Pipeline
+### Full status (JACK, Ardour, sessions)
+```bash
+podman exec dawagent python3 /opt/dawagent/scripts/dawctl.py status
+```
 
-### Step 1: ANALYZE — Extract the playlist's sonic DNA
+## 🎛️ dawctl.py — Command Reference
+
+All commands run via: `podman exec dawagent python3 /opt/dawagent/scripts/dawctl.py <command>`
+
+All output is JSON to stdout.
+
+### Session Management
 
 ```bash
+# Create a new session
+podman exec dawagent python3 /opt/dawagent/scripts/dawctl.py \
+  session create --name "MySession" --sr 48000 --bpm 120
+
+# List all sessions
+podman exec dawagent python3 /opt/dawagent/scripts/dawctl.py session list
+```
+
+### Track Management
+
+```bash
+# Add an audio track
+podman exec dawagent python3 /opt/dawagent/scripts/dawctl.py \
+  track add --session "MySession" --name "Vocals" --type audio
+
+# Add a MIDI track
+podman exec dawagent python3 /opt/dawagent/scripts/dawctl.py \
+  track add --session "MySession" --name "Synth Lead" --type midi
+
+# List tracks in a session
+podman exec dawagent python3 /opt/dawagent/scripts/dawctl.py \
+  track list --session "MySession"
+```
+
+### Export
+
+```bash
+# Export stems + master
+podman exec dawagent python3 /opt/dawagent/scripts/dawctl.py \
+  export all --session "MySession" --output-dir /opt/dawagent/exports/MySession
+```
+
+### Run Custom Lua Scripts
+
+```bash
+# Run a bundled Lua script
+podman exec dawagent python3 /opt/dawagent/scripts/dawctl.py \
+  lua --session "MySession" --script init_session
+
+# Run with full path
+podman exec dawagent python3 /opt/dawagent/scripts/dawctl.py \
+  lua --session "MySession" --script /opt/dawagent/lua/mix_balance.lua
+```
+
+## 📂 Shared Volumes
+
+| Volume | DAWAGENT Path | Hermes Path | Purpose |
+|--------|--------------|-------------|---------|
+| `dawagent-sessions` | `/opt/dawagent/sessions` | `/opt/data/dawagent/sessions` | Ardour session files |
+| `dawagent-exports` | `/opt/dawagent/exports` | `/opt/data/dawagent/exports` | Exported stems & masters |
+| Music library | `/opt/dawagent/imports` (read-only) | `/opt/data/music` | Source audio for import |
+
+## 🎵 Available Lua Scripts
+
+| Script | Purpose |
+|--------|---------|
+| `init_session.lua` | Create session with standard template |
+| `import_audio.lua` | Import audio files to tracks |
+| `import_midi.lua` | Import MIDI files to tracks |
+| `add_plugin.lua` | Load LV2/CLAP plugin on a track |
+| `write_automation.lua` | Write automation curves |
+| `mix_balance.lua` | Set fader levels, panning, bus routing |
+| `export_session.lua` | Export stems and master bounce |
+| `utils.lua` | Common helper functions |
+
+## 🔌 Installed Plugins (LV2)
+
+| Suite | Plugins |
+|-------|---------|
+| **Calf** | Reverb, EQ, Compressor, Limiter, Phaser, Flanger, Delay, Saturator, Bass Enhancer |
+| **LSP** | Parametric EQ, Compressor, Gate, Limiter, Delay, Reverb, Oscilloscope, Spectrum |
+| **x42** | Meters, EQ, Delay, Stereo tools, Phase, Tuner |
+| **Dragonfly** | Hall Reverb, Room Reverb, Plate Reverb, Early Reflections |
+
+## 🔁 Production Workflows
+
+### Workflow 1: Import Stems → Mix → Export
+
+When the user has existing stems (from master-producer or external):
+
+```bash
+# 1. Create session
+podman exec dawagent python3 /opt/dawagent/scripts/dawctl.py \
+  session create --name "remix_project" --sr 48000 --bpm 128
+
+# 2. Add tracks for each stem
+podman exec dawagent python3 /opt/dawagent/scripts/dawctl.py \
+  track add --session "remix_project" --name "Drums" --type audio
+podman exec dawagent python3 /opt/dawagent/scripts/dawctl.py \
+  track add --session "remix_project" --name "Bass" --type audio
+podman exec dawagent python3 /opt/dawagent/scripts/dawctl.py \
+  track add --session "remix_project" --name "Synth" --type audio
+podman exec dawagent python3 /opt/dawagent/scripts/dawctl.py \
+  track add --session "remix_project" --name "Vocals" --type audio
+
+# 3. Import audio stems via Lua
+podman exec dawagent python3 /opt/dawagent/scripts/dawctl.py \
+  lua --session "remix_project" --script import_audio \
+  --args "/opt/dawagent/imports/drums.wav" "Drums"
+
+# 4. Apply mixing via Lua
+podman exec dawagent python3 /opt/dawagent/scripts/dawctl.py \
+  lua --session "remix_project" --script mix_balance
+
+# 5. Export final master
+podman exec dawagent python3 /opt/dawagent/scripts/dawctl.py \
+  export all --session "remix_project" --output-dir /opt/dawagent/exports/remix_project
+```
+
+### Workflow 2: SoundCloud Analysis → DAWAGENT Production
+
+Full pipeline: analyze reference → generate stems → arrange in DAW → mix → export:
+
+```bash
+# 1. Analyze the reference playlist (soundcloud-analyzer)
 python3 /opt/data/skills/soundcloud-analyzer/soundcloud-analyzer/scripts/soundcloud-analyzer.py \
-  analyze \
-  --url "SOUNDCLOUD_PLAYLIST_URL" \
+  analyze --url "https://soundcloud.com/user/sets/playlist" \
   --telegram-chat CHAT_ID
-```
 
-Parse the JSON output. Extract:
-- `commonalities.genre_distribution` → dominant genres + weights
-- `commonalities.production_patterns` → shared production techniques
-- `commonalities.mood_progression` → emotional arc
-- `commonalities.common_themes` → thematic threads
-- `commonalities.recommended_context` → listening context
-- `commonalities.unifying_elements` → what ties the tracks together
-- Per-track `mood_tags`, `energy_level`, `bpm_estimate`, `key_signature_estimate`, `instrumentation`
-
-**Tell the user:**
-"🔍 Analyzed *[playlist_title]* — [track_count] tracks. Dominant vibe: [top genres], [top moods]. Now generating original tracks inspired by this DNA..."
-
-### Step 2: SYNTHESIZE — Build a production brief from the DNA
-
-Using the analysis data, construct a `--brief` for `produce-album.py` that captures the
-playlist's essence. Your brief MUST include:
-
-1. **Genre blend** — weighted from `genre_distribution` (e.g., "60% lo-fi hip-hop, 25% ambient electronica, 15% downtempo")
-2. **Mood palette** — aggregated from all track `mood_tags` (e.g., "melancholic, introspective, nocturnal, dreamy")
-3. **BPM range** — from the min/max `bpm_estimate` across tracks (e.g., "75-95 BPM")
-4. **Key tendencies** — most common keys (e.g., "lean toward minor keys, especially D minor and A minor")
-5. **Instrumentation DNA** — most frequent instruments across tracks (e.g., "Rhodes piano, vinyl crackle, tape-saturated drums, lush pad synths, subtle sub-bass")
-6. **Production style** — from `production_patterns` (e.g., "lo-fi warmth, heavy reverb, tape saturation, side-chain pumping")
-7. **Energy arc** — from `mood_progression` (e.g., "starts contemplative, builds slowly, peaks with emotional intensity, resolves gently")
-8. **Listening context** — from `recommended_context` (e.g., "late-night study sessions, rainy day contemplation")
-9. **DO NOT COPY** — add: "Create ORIGINAL compositions inspired by this sonic palette. Do not recreate or sample existing tracks."
-
-### Step 3: PRODUCE — Generate the album
-
-```bash
+# 2. Generate stems using master-producer (informed by analysis)
 python3 /opt/data/skills/master-producer/master-producer/scripts/produce-album.py \
-  --brief "YOUR SYNTHESIZED BRIEF FROM STEP 2" \
-  --tracks N \
-  --duration SECONDS \
-  --quality standard \
-  [--vocals-pct 0]
+  --brief "SYNTHESIZED BRIEF FROM ANALYSIS" \
+  --tracks 3 --duration 180 --quality standard
+
+# 3. Import generated stems into DAWAGENT session
+podman exec dawagent python3 /opt/dawagent/scripts/dawctl.py \
+  session create --name "inspired_session" --sr 48000 --bpm 90
+
+# 4. Import, arrange, mix, and export via DAWAGENT
+# (run Lua scripts for import, plugin chains, automation, export)
 ```
 
-**Track count guidance:**
-- User wants "a few tracks" → `--tracks 3`
-- User wants "an EP" → `--tracks 5`
-- User wants "a full set" → `--tracks 8-10`
-- Default if unspecified → `--tracks 5`
+### Workflow 3: Iterative Production
 
-**Duration guidance:**
-- Match the average duration from the analyzed playlist
-- Default → `--duration 180` (3 min)
+Agent-driven iterative refinement:
 
-### Step 4: REPORT — Deliver with context
-
-After production, tell the user:
-
-"🎵 **[Album Title]** — [N] original tracks inspired by *[playlist_title]*
-
-Sonic DNA extracted from [track_count] tracks:
-• Genres: [top genres]
-• Mood: [mood palette summary]
-• BPM range: [range]
-• Signature sounds: [top 3-4 instruments]
-
-[Then send the files as normal per output rules]"
-
-## 🔍 Bonus: Search + Produce
-
-If the user has ALREADY analyzed playlists and wants to produce based on a search:
-
-### Step 1: Search
-```bash
-python3 /opt/data/skills/soundcloud-analyzer/soundcloud-analyzer/scripts/soundcloud-analyzer.py \
-  search \
-  --query "USER'S DESCRIPTION" \
-  --top-k 10
+```
+1. Create session → import source material
+2. Add plugin chains (EQ → Comp → Reverb per track)
+3. Write automation curves
+4. Export first draft → review
+5. Adjust mix → re-export
+6. Final master export
 ```
 
-### Step 2: Use the search results as inspiration
-Extract mood_tags, genres, descriptions from the top results and build a production brief.
-
-### Step 3: Produce
-Same as Step 3 above.
-
-## 📋 Quick Reference: Available Commands
-
-### SoundCloud Analyzer
-| Command | Script | Key Args |
-|---------|--------|----------|
-| Analyze playlist | `soundcloud-analyzer.py analyze` | `--url URL --telegram-chat ID` |
-| Search tracks | `soundcloud-analyzer.py search` | `--query "TEXT" --top-k N` |
-| Describe playlist | `soundcloud-analyzer.py describe` | `--playlist-id N` |
-| List playlists | `soundcloud-analyzer.py list` | (none) |
-
-Script path: `/opt/data/skills/soundcloud-analyzer/soundcloud-analyzer/scripts/soundcloud-analyzer.py`
-
-### Music Production
-| Command | Script | Key Args |
-|---------|--------|----------|
-| Single track | `master-producer.py` | `--prompt "..." --director --chat-id ID` |
-| Album/batch | `produce-album.py` | `--brief "..." --tracks N --duration S` |
-| Quick SFX | `venice-music.py` | `--model MODEL --prompt "..."` |
-
-Script paths:
-- `/opt/data/skills/master-producer/master-producer/scripts/master-producer.py`
-- `/opt/data/skills/master-producer/master-producer/scripts/produce-album.py`
-- `/opt/data/skills/venice-music/venice-music/scripts/venice-music.py`
-
-## ⛔ Known Pitfalls
+## ⛔ Known Constraints
 
 | Constraint | Details |
 |-----------|---------|
-| Private playlists | soundcloud-analyzer can only access **public** SoundCloud playlists |
-| Large playlists | 50+ tracks = 10-20 min analysis time. Warn the user. |
-| Brief length | produce-album.py brief should be 200-500 words. Don't dump raw JSON into it. |
-| Originality | NEVER tell the production pipeline to "recreate" or "copy" specific tracks. Say "inspired by" |
-| Sequential | You MUST wait for analysis to complete before producing. Don't run them in parallel. |
-| Cost | Analysis is cheap (LLM + embeddings). Production is ~$2.30/track. Warn for large batches. |
+| **Headless only** | No GUI — all operations via Lua scripts, OSC, or XML manipulation |
+| **Offline audio** | JACK dummy backend — no real-time monitoring, offline processing only |
+| **Plugin scan** | First run may take time as Ardour scans installed LV2 plugins |
+| **Session XML** | Creating from scratch works for simple sessions; complex routing needs Lua |
+| **Container volumes** | DAWAGENT only sees mounted volumes — use shared paths for file exchange |
+| **No MIDI synthesis** | Ardour needs instrument plugins for MIDI playback — use LV2 synths if needed |
 
-## Example: Full Pipeline
+## 💡 Communication Protocol
 
-**User:** "Analyze this playlist and make me 5 tracks like it: https://soundcloud.com/chillhop-music/sets/chillhop-essentials-fall-2024"
+**Parent → DAWAGENT**: Always via `podman exec dawagent python3 /opt/dawagent/scripts/dawctl.py ...`
+**DAWAGENT → Parent**: JSON output from dawctl.py, exported files in shared volumes
+**File handoff**: Hermes reads exports from `/opt/data/dawagent/exports/`
 
-**You do:**
-
-1. Analyze:
-```bash
-python3 /opt/data/skills/soundcloud-analyzer/soundcloud-analyzer/scripts/soundcloud-analyzer.py \
-  analyze --url "https://soundcloud.com/chillhop-music/sets/chillhop-essentials-fall-2024" \
-  --telegram-chat 8293122782
-```
-
-2. Parse the output, then produce:
-```bash
-python3 /opt/data/skills/master-producer/master-producer/scripts/produce-album.py \
-  --brief "5-track EP inspired by a chillhop/lo-fi playlist. Genre blend: 55% lo-fi hip-hop, 30% jazzhop, 15% downtempo. Mood: warm, nostalgic, cozy, autumnal, contemplative. BPM range: 75-90. Lean toward minor keys (Dm, Am, Em). Instrumentation: dusty vinyl crackle, Rhodes electric piano, muted jazz guitar, tape-saturated boom-bap drums, warm sub-bass, gentle brass samples, rain/nature foley. Production style: lo-fi warmth, heavy tape saturation, side-chain pumping, vintage compressor coloring, subtle bitcrushing. Energy arc: opens gently, middle tracks groove harder, closes with a meditative outro. Listening context: autumn study sessions, rainy afternoon cafe. Create ORIGINAL compositions inspired by this sonic palette." \
-  --tracks 5 \
-  --duration 180 \
-  --quality standard \
-  --vocals-pct 0
-```
-
-3. Deliver the 5 mastered tracks with a summary.
+**NEVER** connect via MCP — tool namespace collisions. Always use `podman exec`.

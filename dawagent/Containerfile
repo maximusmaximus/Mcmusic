@@ -1,0 +1,38 @@
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV JACK_NO_AUDIO_RESERVATION=1
+ENV DISPLAY=:99
+
+RUN apt-get update && apt-get install -y software-properties-common && \
+    add-apt-repository universe && \
+    apt-get update && \
+    apt-get install -y \
+    ardour \
+    jackd2 \
+    xvfb \
+    python3 \
+    python3-pip \
+    python3-liblo \
+    calf-plugins \
+    lsp-plugins-lv2 \
+    x42-plugins \
+    dragonfly-reverb \
+    ffmpeg \
+    sox \
+    libsndfile1 \
+    libsamplerate0 \
+    dbus-x11 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Add CLAP plugins if they become available in universe, otherwise we rely on LV2
+# RUN apt-get install -y lsp-plugins-clap || true
+
+WORKDIR /opt/dawagent
+COPY entrypoint.sh /opt/dawagent/entrypoint.sh
+COPY scripts /opt/dawagent/scripts
+COPY lua /opt/dawagent/lua
+
+RUN chmod +x /opt/dawagent/entrypoint.sh
+
+ENTRYPOINT ["/opt/dawagent/entrypoint.sh"]

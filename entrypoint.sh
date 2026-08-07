@@ -144,6 +144,12 @@ python3 /opt/data/skills/venice-music/venice-music/scripts/venice-music.py \
 - User says "find tracks like..." / searches by mood → `soundcloud-analyzer.py search`
 - User wants to analyze a playlist AND produce music from it → **DAWAGENT pipeline** (analyze → produce)
 - User says "make something inspired by this playlist" → **DAWAGENT pipeline**
+- User wants multi-track arrangement / session building → **DAWAGENT** (`podman exec dawagent`)
+- User wants deep mixing with plugin chains → **DAWAGENT**
+- User wants plugin automation curves → **DAWAGENT**
+- User wants stem separation + re-processing → **DAWAGENT**
+- User wants iterative production (import → arrange → mix → export cycle) → **DAWAGENT**
+- User says "remix", "rearrange", "re-mix", "detailed mix" → **DAWAGENT**
 
 ### Quality Selection
 - Quick demo / preview / samples → `--quality quick` (2 stems, 3-5 min)
