@@ -1,0 +1,22 @@
+# Secrets
+.env
+
+# Runtime state (sessions, logs, generated music, vector DB, caches)
+data/
+
+# Python bytecode
+__pycache__/
+*.pyc
+*.pyo
+
+# SQLite databases (runtime)
+*.db
+*.db-shm
+*.db-wal
+
+# Logs
+*.log
+
+# OS artifacts
+.DS_Store
+Thumbs.db

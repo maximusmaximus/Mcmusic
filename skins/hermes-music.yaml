@@ -1,0 +1,22 @@
+name: hermes-music
+description: Hermes Music — AI Music Producer
+
+banner_logo: |
+  [#9B59B6]██╗  ██╗███████╗██████╗ ███╗   ███╗███████╗███████╗[/]
+  [#9B59B6]██║  ██║██╔════╝██╔══██╗████╗ ████║██╔════╝██╔════╝[/]
+  [#8E44AD]███████║█████╗  ██████╔╝██╔████╔██║█████╗  ███████╗[/]
+  [#8E44AD]██╔══██║██╔══╝  ██╔══██╗██║╚██╔╝██║██╔══╝  ╚════██║[/]
+  [#7D3C98]██║  ██║███████╗██║  ██║██║ ╚═╝ ██║███████╗███████║[/]
+  [#7D3C98]╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝╚═╝     ╚═╝╚══════╝╚══════╝[/]
+  [#AF7AC5]          ♪  M U S I C  ♪[/]
+
+banner_hero: |
+  [#9B59B6]     ♪ ♫ ♪ ♫ ♪ ♫ ♪[/]
+  [#8E44AD]   🎵  AI Music Producer  🎵[/]
+  [#7D3C98]     ♪ ♫ ♪ ♫ ♪ ♫ ♪[/]
+
+branding:
+  agent_name: "Hermes Music"
+  welcome: "AI Music Producer — Songs, Beats, Sound Effects"
+  response_label: " 🎵 Hermes Music "
+  prompt_symbol: "🎵"

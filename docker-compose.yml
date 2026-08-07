@@ -1,0 +1,14 @@
+services:
+  hermes-music:
+    build:
+      context: .
+      dockerfile: Containerfile
+    container_name: hermes-music
+    ports:
+      - "18802:8642"
+      - "18803:8644"
+    volumes:
+      - ./data:/opt/data
+      - /mnt/d/music:/opt/data/music
+    env_file:
+      - ./.env
