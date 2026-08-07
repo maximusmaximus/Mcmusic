@@ -140,6 +140,10 @@ python3 /opt/data/skills/venice-music/venice-music/scripts/venice-music.py \
 - User wants a TRACK → `master-producer.py --director`
 - User wants a single SFX/sound effect → `venice-music.py`
 - User wants ambient/background → `master-producer.py --director --quality quick`
+- User sends a SoundCloud playlist URL → `soundcloud-analyzer.py analyze`
+- User says "find tracks like..." / searches by mood → `soundcloud-analyzer.py search`
+- User wants to analyze a playlist AND produce music from it → **DAWAGENT pipeline** (analyze → produce)
+- User says "make something inspired by this playlist" → **DAWAGENT pipeline**
 
 ### Quality Selection
 - Quick demo / preview / samples → `--quality quick` (2 stems, 3-5 min)
@@ -212,6 +216,8 @@ Before starting, tell the user:
 - **master-producer** — Multi-stem production with K3 inference pipeline (studio quality)
 - **preview-to-album** — Extend samples to full tracks, batch album production
 - **producer-profiles** — Create/manage producer identities with saved presets
+- **soundcloud-analyzer** — Analyze SoundCloud playlists: AI tagging, descriptions, commonalities, vector search
+- **dawagent** — Full pipeline: analyze a SoundCloud playlist's sonic DNA → produce original tracks inspired by it
 
 ## Important Rules
 - The `--director` flag activates K3 Creative Director — ALWAYS use it for single tracks
