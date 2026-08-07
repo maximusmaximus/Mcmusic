@@ -1,226 +1,116 @@
 ---
 name: dawagent
-description: DAWAGENT orchestrator — delegates complex music production tasks to a specialized Ardour DAW container. Handles multi-track arrangement, deep mixing, plugin automation, stem separation + re-processing, full session construction, and iterative production workflows.
-tags: [daw, ardour, orchestration, mixing, mastering, stems, automation, production, lua, osc, session]
+description: DAWAGENT integration — create and manage Ardour DAW sessions directly, or delegate complex production tasks to the autonomous @DAWAGENT_bot agent on Telegram.
+tags: [daw, ardour, orchestration, mixing, mastering, stems, automation, production, session, delegation]
 ---
 
-# DAWAGENT — Ardour DAW Production Agent
+# DAWAGENT — Ardour DAW Production Integration
 
-Delegates complex, professional-grade music production tasks to a specialized Podman container
-running Ardour 8 with Lua scripting and OSC control.
+You have TWO ways to work with DAWAGENT:
 
-## ⚠️ CRITICAL: When To Use DAWAGENT vs Master-Producer
+1. **Direct session management** — Create/edit Ardour sessions locally via shared volumes (fast, no delegation needed)
+2. **Delegate to @DAWAGENT_bot** — For complex multi-step production that needs the Ardour engine (Lua scripts, plugin chains, exports)
 
-| Task | Use This |
-|------|----------|
-| Generate music from a prompt | `master-producer.py` |
-| Quick song/beat generation | `master-producer.py --director` |
-| Album batch generation | `produce-album.py` |
-| **Multi-track arrangement from existing stems** | **DAWAGENT** |
-| **Deep mixing with plugin chains** | **DAWAGENT** |
-| **Plugin automation curves** | **DAWAGENT** |
-| **Stem separation + re-processing** | **DAWAGENT** |
-| **Full DAW session construction** | **DAWAGENT** |
-| **Precise automation (EQ sweeps, compression, sidechain)** | **DAWAGENT** |
-| **Iterative production (import → arrange → mix → export cycle)** | **DAWAGENT** |
-| Analyze SoundCloud playlists | `soundcloud-analyzer.py` |
-| Analyze playlist → generate inspired tracks | DAWAGENT pipeline (analyze → produce) |
+## 🔧 Method 1: Direct Session Management (Use This First)
 
-## 🚀 Container Management
+You can create and manage Ardour sessions directly using the bundled scripts.
+These work on the shared filesystem — no external container access needed.
 
-### Check if DAWAGENT is running
+**ALL commands use the `terminal` tool:**
+
 ```bash
-podman ps --filter name=dawagent --format "{{.Names}} {{.Status}}"
+python3 /opt/data/skills/dawagent/dawagent/scripts/dawctl_local.py COMMAND [OPTIONS]
 ```
 
-### Start DAWAGENT (if not running)
+### Health & Status
 ```bash
-cd /app && podman-compose up -d dawagent
+# Check shared volumes are accessible
+python3 /opt/data/skills/dawagent/dawagent/scripts/dawctl_local.py health
+
+# Full status (sessions, exports)
+python3 /opt/data/skills/dawagent/dawagent/scripts/dawctl_local.py status
 ```
-Or manually:
-```bash
-podman start dawagent
-```
-
-### Health check
-```bash
-podman exec dawagent python3 /opt/dawagent/scripts/dawctl.py health
-```
-
-### Full status (JACK, Ardour, sessions)
-```bash
-podman exec dawagent python3 /opt/dawagent/scripts/dawctl.py status
-```
-
-## 🎛️ dawctl.py — Command Reference
-
-All commands run via: `podman exec dawagent python3 /opt/dawagent/scripts/dawctl.py <command>`
-
-All output is JSON to stdout.
 
 ### Session Management
-
 ```bash
 # Create a new session
-podman exec dawagent python3 /opt/dawagent/scripts/dawctl.py \
+python3 /opt/data/skills/dawagent/dawagent/scripts/dawctl_local.py \
   session create --name "MySession" --sr 48000 --bpm 120
 
 # List all sessions
-podman exec dawagent python3 /opt/dawagent/scripts/dawctl.py session list
+python3 /opt/data/skills/dawagent/dawagent/scripts/dawctl_local.py session list
+
+# Get session details
+python3 /opt/data/skills/dawagent/dawagent/scripts/dawctl_local.py session info --name "MySession"
 ```
 
 ### Track Management
-
 ```bash
-# Add an audio track
-podman exec dawagent python3 /opt/dawagent/scripts/dawctl.py \
-  track add --session "MySession" --name "Vocals" --type audio
+# Add audio track
+python3 /opt/data/skills/dawagent/dawagent/scripts/dawctl_local.py \
+  track add --session "MySession" --name "Drums" --type audio
 
-# Add a MIDI track
-podman exec dawagent python3 /opt/dawagent/scripts/dawctl.py \
+# Add MIDI track
+python3 /opt/data/skills/dawagent/dawagent/scripts/dawctl_local.py \
   track add --session "MySession" --name "Synth Lead" --type midi
 
-# List tracks in a session
-podman exec dawagent python3 /opt/dawagent/scripts/dawctl.py \
+# List tracks
+python3 /opt/data/skills/dawagent/dawagent/scripts/dawctl_local.py \
   track list --session "MySession"
 ```
 
-### Export
-
+### Check Exports
 ```bash
-# Export stems + master
-podman exec dawagent python3 /opt/dawagent/scripts/dawctl.py \
-  export all --session "MySession" --output-dir /opt/dawagent/exports/MySession
+# List exported files from DAWAGENT
+python3 /opt/data/skills/dawagent/dawagent/scripts/dawctl_local.py exports list
 ```
 
-### Run Custom Lua Scripts
+### Exported files are at:
+`/opt/data/dawagent/exports/SESSION_NAME/`
 
-```bash
-# Run a bundled Lua script
-podman exec dawagent python3 /opt/dawagent/scripts/dawctl.py \
-  lua --session "MySession" --script init_session
+## 📞 Method 2: Delegate to @DAWAGENT_bot (Complex Tasks)
 
-# Run with full path
-podman exec dawagent python3 /opt/dawagent/scripts/dawctl.py \
-  lua --session "MySession" --script /opt/dawagent/lua/mix_balance.lua
-```
+For tasks that need the full Ardour engine (Lua scripts, LV2 plugin processing, audio rendering, export):
 
-## 📂 Shared Volumes
+**Tell the user to message @DAWAGENT_bot on Telegram** with their complex production request.
 
-| Volume | DAWAGENT Path | Hermes Path | Purpose |
-|--------|--------------|-------------|---------|
-| `dawagent-sessions` | `/opt/dawagent/sessions` | `/opt/data/dawagent/sessions` | Ardour session files |
-| `dawagent-exports` | `/opt/dawagent/exports` | `/opt/data/dawagent/exports` | Exported stems & masters |
-| Music library | `/opt/dawagent/imports` (read-only) | `/opt/data/music` | Source audio for import |
+@DAWAGENT_bot is an autonomous agent with:
+- Ardour 8.4.0 headless engine (JACK2 + Xvfb)
+- 30+ LV2 plugins (Calf, LSP, x42, Dragonfly Reverb)
+- Lua scripting for session automation
+- Venice AI reasoning (GLM 5.1)
 
-## 🎵 Available Lua Scripts
+### When to Delegate vs Handle Locally
 
-| Script | Purpose |
-|--------|---------|
-| `init_session.lua` | Create session with standard template |
-| `import_audio.lua` | Import audio files to tracks |
-| `import_midi.lua` | Import MIDI files to tracks |
-| `add_plugin.lua` | Load LV2/CLAP plugin on a track |
-| `write_automation.lua` | Write automation curves |
-| `mix_balance.lua` | Set fader levels, panning, bus routing |
-| `export_session.lua` | Export stems and master bounce |
-| `utils.lua` | Common helper functions |
+| Task | Method |
+|------|--------|
+| Create session (BPM, sample rate) | **Local** — `dawctl_local.py session create` |
+| Add/list tracks | **Local** — `dawctl_local.py track add/list` |
+| View session structure | **Local** — `dawctl_local.py session info` |
+| Check exports | **Local** — `dawctl_local.py exports list` |
+| Import audio into tracks | **Delegate** → @DAWAGENT_bot |
+| Add LV2 plugin chains | **Delegate** → @DAWAGENT_bot |
+| Write automation curves | **Delegate** → @DAWAGENT_bot |
+| Run Lua scripts in Ardour | **Delegate** → @DAWAGENT_bot |
+| Render/bounce/export audio | **Delegate** → @DAWAGENT_bot |
+| Complex multi-step mixing | **Delegate** → @DAWAGENT_bot |
 
-## 🔌 Installed Plugins (LV2)
+### How to Delegate
+When the user asks for something that needs the Ardour engine, respond like:
 
-| Suite | Plugins |
-|-------|---------|
-| **Calf** | Reverb, EQ, Compressor, Limiter, Phaser, Flanger, Delay, Saturator, Bass Enhancer |
-| **LSP** | Parametric EQ, Compressor, Gate, Limiter, Delay, Reverb, Oscilloscope, Spectrum |
-| **x42** | Meters, EQ, Delay, Stereo tools, Phase, Tuner |
-| **Dragonfly** | Hall Reverb, Room Reverb, Plate Reverb, Early Reflections |
+"🎛️ This needs the Ardour engine for [plugin processing / audio rendering / etc.]. I've set up the session structure here — now let's hand it to **@DAWAGENT_bot** for the heavy lifting. Send it this message:
 
-## 🔁 Production Workflows
+*'Process session [SessionName] — [describe the task]'*"
 
-### Workflow 1: Import Stems → Mix → Export
+### Shared Filesystem
+Both agents share the same volumes:
+- Sessions: `/opt/data/dawagent/sessions/`
+- Exports: `/opt/data/dawagent/exports/`
 
-When the user has existing stems (from master-producer or external):
+So a session you create here is immediately visible to @DAWAGENT_bot, and any exports it produces are readable from here.
 
-```bash
-# 1. Create session
-podman exec dawagent python3 /opt/dawagent/scripts/dawctl.py \
-  session create --name "remix_project" --sr 48000 --bpm 128
-
-# 2. Add tracks for each stem
-podman exec dawagent python3 /opt/dawagent/scripts/dawctl.py \
-  track add --session "remix_project" --name "Drums" --type audio
-podman exec dawagent python3 /opt/dawagent/scripts/dawctl.py \
-  track add --session "remix_project" --name "Bass" --type audio
-podman exec dawagent python3 /opt/dawagent/scripts/dawctl.py \
-  track add --session "remix_project" --name "Synth" --type audio
-podman exec dawagent python3 /opt/dawagent/scripts/dawctl.py \
-  track add --session "remix_project" --name "Vocals" --type audio
-
-# 3. Import audio stems via Lua
-podman exec dawagent python3 /opt/dawagent/scripts/dawctl.py \
-  lua --session "remix_project" --script import_audio \
-  --args "/opt/dawagent/imports/drums.wav" "Drums"
-
-# 4. Apply mixing via Lua
-podman exec dawagent python3 /opt/dawagent/scripts/dawctl.py \
-  lua --session "remix_project" --script mix_balance
-
-# 5. Export final master
-podman exec dawagent python3 /opt/dawagent/scripts/dawctl.py \
-  export all --session "remix_project" --output-dir /opt/dawagent/exports/remix_project
-```
-
-### Workflow 2: SoundCloud Analysis → DAWAGENT Production
-
-Full pipeline: analyze reference → generate stems → arrange in DAW → mix → export:
-
-```bash
-# 1. Analyze the reference playlist (soundcloud-analyzer)
-python3 /opt/data/skills/soundcloud-analyzer/soundcloud-analyzer/scripts/soundcloud-analyzer.py \
-  analyze --url "https://soundcloud.com/user/sets/playlist" \
-  --telegram-chat CHAT_ID
-
-# 2. Generate stems using master-producer (informed by analysis)
-python3 /opt/data/skills/master-producer/master-producer/scripts/produce-album.py \
-  --brief "SYNTHESIZED BRIEF FROM ANALYSIS" \
-  --tracks 3 --duration 180 --quality standard
-
-# 3. Import generated stems into DAWAGENT session
-podman exec dawagent python3 /opt/dawagent/scripts/dawctl.py \
-  session create --name "inspired_session" --sr 48000 --bpm 90
-
-# 4. Import, arrange, mix, and export via DAWAGENT
-# (run Lua scripts for import, plugin chains, automation, export)
-```
-
-### Workflow 3: Iterative Production
-
-Agent-driven iterative refinement:
-
-```
-1. Create session → import source material
-2. Add plugin chains (EQ → Comp → Reverb per track)
-3. Write automation curves
-4. Export first draft → review
-5. Adjust mix → re-export
-6. Final master export
-```
-
-## ⛔ Known Constraints
-
-| Constraint | Details |
-|-----------|---------|
-| **Headless only** | No GUI — all operations via Lua scripts, OSC, or XML manipulation |
-| **Offline audio** | JACK dummy backend — no real-time monitoring, offline processing only |
-| **Plugin scan** | First run may take time as Ardour scans installed LV2 plugins |
-| **Session XML** | Creating from scratch works for simple sessions; complex routing needs Lua |
-| **Container volumes** | DAWAGENT only sees mounted volumes — use shared paths for file exchange |
-| **No MIDI synthesis** | Ardour needs instrument plugins for MIDI playback — use LV2 synths if needed |
-
-## 💡 Communication Protocol
-
-**Parent → DAWAGENT**: Always via `podman exec dawagent python3 /opt/dawagent/scripts/dawctl.py ...`
-**DAWAGENT → Parent**: JSON output from dawctl.py, exported files in shared volumes
-**File handoff**: Hermes reads exports from `/opt/data/dawagent/exports/`
-
-**NEVER** connect via MCP — tool namespace collisions. Always use `podman exec`.
+## ⛔ Rules
+1. **NEVER try to run `podman exec`** — you're inside a container, that doesn't work
+2. **Parse JSON output** from dawctl_local.py and respond naturally — NEVER paste raw JSON
+3. **Use `terminal` tool** for all commands (NOT `process`)
+4. Sessions created here ARE visible to the Ardour engine automatically via shared volumes

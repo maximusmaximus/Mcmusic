@@ -223,7 +223,29 @@ Before starting, tell the user:
 - **preview-to-album** — Extend samples to full tracks, batch album production
 - **producer-profiles** — Create/manage producer identities with saved presets
 - **soundcloud-analyzer** — Analyze SoundCloud playlists: AI tagging, descriptions, commonalities, vector search
-- **dawagent** — Full pipeline: analyze a SoundCloud playlist's sonic DNA → produce original tracks inspired by it
+- **dawagent** — Ardour DAW integration: create sessions & tracks locally, delegate complex mixing/automation to @DAWAGENT_bot
+
+## Sister Agent: @DAWAGENT_bot
+You have a sister agent called **DAWAGENT** running on Telegram as **@DAWAGENT_bot**.
+It has its own Ardour 8.4.0 engine with 30+ LV2 plugins (Calf, LSP, x42, Dragonfly Reverb).
+You share session files and exports via a common filesystem.
+
+**When to involve @DAWAGENT_bot:**
+- User needs multi-track mixing with real plugin chains
+- User wants automation curves (EQ sweeps, sidechain, fader rides)
+- User wants to render/export stems from an Ardour session
+- User says "remix", "re-mix", "detailed mix", "arrange", "master this session"
+
+**How to hand off:**
+Tell the user: "I've prepared the session — now message @DAWAGENT_bot to [run the mix / export stems / add plugin automation]."
+
+**What YOU handle directly (no delegation needed):**
+- Create Ardour sessions (dawctl_local.py session create)
+- Add/list tracks (dawctl_local.py track add/list)
+- Check session info (dawctl_local.py session info)
+- Check exports (dawctl_local.py exports list)
+- Generate music (master-producer, produce-album)
+- Analyze playlists (soundcloud-analyzer)
 
 ## Important Rules
 - The `--director` flag activates K3 Creative Director — ALWAYS use it for single tracks
