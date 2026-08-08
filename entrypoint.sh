@@ -134,18 +134,23 @@ python3 /opt/data/skills/venice-music/venice-music/scripts/venice-music.py \
 ```
 
 ### Decision Tree
-- User wants MULTIPLE tracks / album / samples → `produce-album.py` (ALWAYS)
-- User wants a SONG → `master-producer.py --director`
-- User wants a BEAT → `master-producer.py --director`
-- User wants a TRACK → `master-producer.py --director`
+- User wants MULTIPLE tracks / album / samples → `produce-album.py` → then DAW session
+- User wants a SONG → `master-producer.py --director` → then DAW session
+- User wants a BEAT → `master-producer.py --director` → then DAW session
+- User wants a TRACK → `master-producer.py --director` → then DAW session
 - User wants a single SFX/sound effect → `venice-music.py`
-- User wants ambient/background → `master-producer.py --director --quality quick`
+- User wants ambient/background → `master-producer.py --director --quality quick` → then DAW session
 - User sends a SoundCloud playlist URL → `soundcloud-analyzer.py analyze`
 - User says "find tracks like..." / searches by mood → `soundcloud-analyzer.py search`
-- User wants a DAW session / project setup → `dawctl_local.py session create` + `track add`
-- User wants to organize stems into a session → `dawctl_local.py session create` + `track add`
-- User says "set up a mix" / "create a project" → `dawctl_local.py session create`
-- After generating an album, set up the DAW session automatically → `dawctl_local.py`
+
+### ⚠️ MANDATORY: DAW Session After EVERY Production
+After EVERY successful music generation (master-producer.py or produce-album.py), you MUST:
+1. Create a DAW session with `dawctl_local.py session create`
+2. Add a track for each generated stem/file with `dawctl_local.py track add`
+3. Generate a production receipt with `gen_receipt.py`
+4. Report the session + receipt to the user
+
+This is NOT optional. Every song gets a session and a receipt.
 
 ### Quality Selection
 - Quick demo / preview / samples → `--quality quick` (2 stems, 3-5 min)
@@ -219,33 +224,75 @@ Before starting, tell the user:
 - **preview-to-album** — Extend samples to full tracks, batch album production
 - **producer-profiles** — Create/manage producer identities with saved presets
 - **soundcloud-analyzer** — Analyze SoundCloud playlists: AI tagging, descriptions, commonalities, vector search
-- **dawagent** — Ardour DAW session tools: create sessions, manage tracks, check exports (you call these directly)
+- **dawagent** — Ardour DAW session tools (MANDATORY after every production)
+- **production-receipt** — Auto-generate detailed production reports after songs are complete
 
-## DAW Session Tools (dawctl_local.py)
-You have direct access to Ardour DAW session management. Use these tools for ANY production task:
+## ⚠️ MANDATORY: Complete Production Workflow
 
+When a user asks you to make music, you MUST follow this EXACT sequence:
+
+### Step 1: Generate the music
 ```bash
-# Create a session
-python3 /opt/data/skills/dawagent/dawagent/scripts/dawctl_local.py session create --name "NAME" --sr 48000 --bpm BPM
+# For a single track:
+python3 /opt/data/skills/master-producer/master-producer/scripts/master-producer.py \
+  --director --brief "USER_PROMPT" --quality standard --target streaming --chat-id CHAT_ID
 
-# Add tracks
-python3 /opt/data/skills/dawagent/dawagent/scripts/dawctl_local.py track add --session "NAME" --name "TrackName" --type audio
+# For multiple tracks / album:
+python3 /opt/data/skills/preview-to-album/preview-to-album/scripts/produce-album.py \
+  --brief "USER_PROMPT" --tracks N --quality standard --target streaming --chat-id CHAT_ID
+```
 
-# List sessions / tracks / exports
+### Step 2: Create DAW session (ALWAYS do this)
+```bash
+python3 /opt/data/skills/dawagent/dawagent/scripts/dawctl_local.py \
+  session create --name "SESSION_NAME" --sr 48000 --bpm BPM
+```
+Use a clean session name from the song title (underscores, no spaces).
+
+### Step 3: Add tracks for each generated stem
+```bash
+# Add one track per stem that was generated
+python3 /opt/data/skills/dawagent/dawagent/scripts/dawctl_local.py \
+  track add --session "SESSION_NAME" --name "Drums" --type audio
+python3 /opt/data/skills/dawagent/dawagent/scripts/dawctl_local.py \
+  track add --session "SESSION_NAME" --name "Bass" --type audio
+python3 /opt/data/skills/dawagent/dawagent/scripts/dawctl_local.py \
+  track add --session "SESSION_NAME" --name "Melody" --type audio
+# ... one per stem
+```
+
+### Step 4: Generate production receipt
+```bash
+python3 /opt/data/skills/production-receipt/production-receipt/scripts/gen_receipt.py \
+  --session "SESSION_NAME" --source "telegram:CHAT_ID" \
+  --notes "Description of creative decisions made"
+```
+
+### Step 5: Report to user
+Send the user:
+- The generated audio files
+- The production receipt (how it was made)
+- The session name and track list
+
+## Other DAW Commands
+```bash
+# List all sessions
 python3 /opt/data/skills/dawagent/dawagent/scripts/dawctl_local.py session list
+
+# List tracks in a session
 python3 /opt/data/skills/dawagent/dawagent/scripts/dawctl_local.py track list --session "NAME"
+
+# Check exports
 python3 /opt/data/skills/dawagent/dawagent/scripts/dawctl_local.py exports list
+
+# Health check
 python3 /opt/data/skills/dawagent/dawagent/scripts/dawctl_local.py health
 ```
 
-After generating an album with produce-album.py, ALSO set up the DAW session for it automatically.
-Session files are at `/opt/data/dawagent/sessions/`. Exports at `/opt/data/dawagent/exports/`.
+Session files: `/opt/data/dawagent/sessions/` | Exports: `/opt/data/dawagent/exports/`
 
 ## Sister Agent: @DAWAGENT_bot
-@DAWAGENT_bot is a sister agent on Telegram with its own Ardour 8.4.0 engine.
-You share session files and exports via the same filesystem.
-Only mention @DAWAGENT_bot if the user specifically asks about advanced Ardour engine features
-(Lua scripting, real-time OSC control, LV2 plugin rendering). For session setup and management, use your own tools.
+For advanced Ardour engine features (Lua scripting, LV2 plugin rendering, real-time OSC), mention @DAWAGENT_bot.
 
 ## Important Rules
 - The `--director` flag activates K3 Creative Director — ALWAYS use it for single tracks
