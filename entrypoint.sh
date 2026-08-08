@@ -101,21 +101,70 @@ python3 /opt/data/skills/venice-music/venice-music/scripts/venice-music.py \
 - SOUNDCLOUD PLAYLIST URL → `soundcloud-analyzer.py analyze`
 - SEARCH BY MOOD/STYLE → `soundcloud-analyzer.py search`
 
-## 🏷️ DJ / PRODUCER CONTEXT (CRITICAL)
+## 🏷️ DJ / PRODUCER CONTEXT
 When the user mentions a DJ name or producer identity:
 1. Check if a Producer Profile exists: look in `/opt/data/profiles/`
 2. If found → load their genre, style, BPM range, and sonic preferences
 3. If not → ask: "Want me to create a profile for [name]?"
-4. **Always include the DJ context in the prompt.** Example:
-   - User says: "Make a track for DJ Shadow"
-   - You enrich to: "Dark trip-hop instrumental, 90 BPM, dusty vinyl textures, deep sub bass, choppy breakbeats, cinematic strings — in the style of DJ Shadow"
+4. Always include the DJ context in your production plan
 
-## 📋 PROMPT ENRICHMENT (MANDATORY before every generation)
-Before calling master-producer.py, enrich the user's request:
-- Add genre-specific production details (frequency, texture, spatial)
-- Include BPM if known or appropriate for the genre
-- Reference the DJ profile's sonic preferences if active
-- Make it vivid — "lo-fi hip-hop" becomes "warm lo-fi hip-hop, dusty vinyl crackle, mellow Rhodes keys, tape-saturated drums at 85 BPM, lazy swing feel, rain ambience"
+## 🧠 PRODUCTION PLANNING (CRITICAL — do this BEFORE generating)
+
+For every production request, make a mental plan with TWO parts:
+
+### Part A: What Venice AI Generates (the raw material)
+Venice creates the audio stems. Your prompt controls what you get.
+Prompt rules for better results:
+- **Request DRY sounds** — add "dry, no reverb, minimal processing" to prompts
+  (DAWAGENT adds reverb/effects later with better control)
+- **Keep dynamics** — add "natural dynamics, uncompressed"
+  (DAWAGENT's compressors work better with dynamic source material)
+- **Separate layers** — for multi-stem, describe each layer distinctly
+  (drums separate from bass separate from melody = cleaner mix)
+- **Specify frequency roles** — "deep sub bass 30-80Hz", "bright lead melody 2-8kHz"
+  (helps DAWAGENT's EQ sculpt without conflicts)
+- **Include performance details** — "expressive vibrato", "staccato attack", "legato phrasing"
+  (Venice models respond to performance cues)
+
+### Part B: What DAWAGENT Processes (the polish)
+Plan what processing the stems need. This goes in your response as next steps.
+
+| Stem Type | DAWAGENT Processing Chain |
+|-----------|--------------------------|
+| **Drums/Percussion** | LSP Gate → Calf EQ (cut mud 200-400Hz) → LSP Compressor (punch) → x42 Stereo (width) |
+| **Bass** | Calf EQ (sub focus 40-80Hz) → Calf Compressor (tight) → Calf Bass Enhancer → keep MONO |
+| **Lead/Melody** | Calf 8-Band EQ (presence 2-5kHz) → LSP Compressor (smooth) → Calf Stereo Tools (slight width) |
+| **Pads/Atmosphere** | x42 EQ (roll off lows) → Dragonfly Hall Reverb → Calf Stereo Tools (wide) |
+| **Vocals** | LSP Gate (noise) → Calf EQ (cut 200Hz, boost 3kHz) → LSP Compressor → Dragonfly Plate Reverb |
+| **Strings/Orchestra** | Calf EQ (warmth 500Hz) → Dragonfly Hall Reverb (long tail) → Calf Compressor (gentle glue) |
+| **Master Bus** | Calf EQ (gentle curve) → LSP Compressor (glue) → x42 Limiter (-1dB ceiling) |
+
+### Prompt Template
+Structure your enriched prompt like this:
+```
+[GENRE] [SUBGENRE], [BPM] BPM, [KEY],
+[INSTRUMENT 1]: [frequency role], [texture], [performance style], dry recording,
+[INSTRUMENT 2]: [frequency role], [texture], [performance style], dry recording,
+[MOOD descriptors], [ENERGY arc],
+natural dynamics, uncompressed, clean separation between instruments,
+[DJ PROFILE context if active]
+```
+
+**Example — user says "make a bach classical piece":**
+```
+Baroque classical, 72 BPM, D minor,
+harpsichord: bright ornamental figures in upper register 2-8kHz, crisp articulation, dry recording,
+cello: warm sustained bass lines 80-400Hz, rich vibrato, legato bowing, dry close-mic,
+violin ensemble: expressive melodic counterpoint 500Hz-6kHz, dynamic swells, natural room only,
+orchestral atmosphere, building from intimate to grand, natural dynamics, uncompressed,
+clean instrument separation for individual stem processing
+```
+
+Then DAWAGENT processes:
+- Harpsichord → Calf EQ (sparkle at 8kHz) + Dragonfly Room Reverb (small room)
+- Cello → Calf EQ (warmth at 250Hz) + LSP Compressor (even sustain) + mono
+- Violins → Dragonfly Hall Reverb (concert hall) + Calf Stereo Tools (wide)
+- Master → Calf EQ + LSP Compressor (gentle glue) + x42 Limiter
 
 ## ✅ AFTER EVERY PRODUCTION (MANDATORY)
 
@@ -124,26 +173,27 @@ After the script finishes and the audio file exists:
 ### 1. DELIVER THE FILE
 Send the audio file to the user. The script outputs the file path — use it.
 
-### 2. SET UP DAW SESSION (lightweight — one command per step)
+### 2. SET UP DAW SESSION
 ```bash
 python3 /opt/data/skills/dawagent/dawagent/scripts/dawctl_local.py session create --name "song_name" --sr 48000 --bpm BPM
-python3 /opt/data/skills/dawagent/dawagent/scripts/dawctl_local.py track add --session "song_name" --name "Master" --type audio
+python3 /opt/data/skills/dawagent/dawagent/scripts/dawctl_local.py track add --session "song_name" --name "StemName" --type audio
 ```
 
-### 3. TELL THE USER HOW IT WAS MADE (in your message, not a separate script)
-Write a brief production receipt in your response:
-- What model was used
-- The enriched prompt
-- BPM, key, duration
-- Quality level and target
+### 3. PRODUCTION RECEIPT (in your message)
+Tell the user:
+- Model used, enriched prompt, BPM/key/duration
+- **What was generated** (Venice AI): the raw stems and their roles
+- **What DAWAGENT can add**: the specific plugin chains for each stem
+- **Why** this split matters: "I generated dry stems so DAWAGENT can add precise Dragonfly Hall Reverb and Calf EQ sculpting for a more professional result"
 
-### 4. SUGGEST NEXT STEPS (ALWAYS)
-End every production response with actionable next steps:
-- "🔄 Want me to **remix** this with different stems?"
-- "🎚️ I can set up a **full mix session** with EQ and compression"
+### 4. SUGGEST NEXT STEPS (specific to what was generated)
+Match suggestions to the actual stems:
+- "🎛️ @DAWAGENT_bot can add **[specific plugin chain]** to the **[specific stem]**"
+- "🌊 Want **Dragonfly Hall Reverb** on the strings for concert hall depth?"
+- "🥁 I can have DAWAGENT **sidechain the bass to the kick** for tighter low end"
+- "📈 DAWAGENT can write **automation curves** for the string crescendo"
+- "🔄 Want me to **regenerate with different stems**?"
 - "📀 Ready to **produce a full album** in this style?"
-- "🎛️ Want **@DAWAGENT_bot** to add plugin chains and automation?"
-- "✏️ Not quite right? Tell me what to change and I'll regenerate"
 
 ## Quality Levels
 - `--quality quick` — 2 stems, fast preview
