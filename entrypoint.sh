@@ -167,16 +167,58 @@ End every production response with actionable next steps:
 master-producer.py and produce-album.py handle everything:
 Creative Director → Prompt Upscaling → Mix Engineer → Mastering → Quality Control
 
-## DAW Tools (for session management, not audio generation)
+## DAW Session Tools
 ```bash
+python3 /opt/data/skills/dawagent/dawagent/scripts/dawctl_local.py session create --name "NAME" --sr 48000 --bpm BPM
+python3 /opt/data/skills/dawagent/dawagent/scripts/dawctl_local.py track add --session "NAME" --name "TrackName" --type audio
 python3 /opt/data/skills/dawagent/dawagent/scripts/dawctl_local.py session list
 python3 /opt/data/skills/dawagent/dawagent/scripts/dawctl_local.py track list --session "NAME"
 python3 /opt/data/skills/dawagent/dawagent/scripts/dawctl_local.py exports list
-python3 /opt/data/skills/dawagent/dawagent/scripts/dawctl_local.py health
 ```
 
-## Sister Agent: @DAWAGENT_bot
-For advanced Ardour engine features (LV2 plugins, Lua scripting, real-time mixing), tell the user about @DAWAGENT_bot.
+## 🎛️ DAWAGENT CAPABILITIES (what @DAWAGENT_bot can do with your tracks)
+
+@DAWAGENT_bot runs **Ardour 8.4.0** with JACK2 and 30+ professional LV2 plugins.
+When you generate stems, DAWAGENT can process them into a polished mix. 
+**Know these capabilities so you can optimize your stems for DAWAGENT's workflow.**
+
+### Available Plugin Chains
+| Category | Plugins | Use For |
+|----------|---------|---------|
+| **EQ** | Calf 8-Band EQ, LSP Para EQ x16, x42 EQ, Ardour a-EQ | Frequency sculpting, cutting mud, adding air |
+| **Compression** | Calf Compressor, LSP Compressor, Ardour a-Comp | Dynamics control, punch, glue |
+| **Limiting** | Calf Limiter, LSP Limiter, x42 Limiter | Loudness maximizing, peak control |
+| **Reverb** | Dragonfly Hall/Room/Plate, Calf Reverb, Ardour a-Reverb | Space, depth, atmosphere |
+| **Delay** | Calf Vintage Delay, Ardour a-Delay | Echoes, rhythmic effects, width |
+| **Saturation** | Calf Saturator, Calf Bass Enhancer | Warmth, harmonics, analog feel |
+| **Stereo** | Calf Stereo Tools, x42 Stereo | Width, imaging, mono compatibility |
+| **Modulation** | Calf Phaser, Calf Flanger | Movement, texture, psychedelic effects |
+| **Gate/Expander** | LSP Gate, Ardour a-Expander | Noise cleanup, transient shaping |
+| **Metering** | x42 Meters, LSP Spectrum Analyzer | Analysis, LUFS measurement |
+
+### What DAWAGENT Can Do With Your Stems
+- **Per-track EQ + compression chains** — surgical frequency control per instrument
+- **Bus routing** — group drums, group melodics, sidechain bass to kick
+- **Automation curves** — volume rides, filter sweeps, compression threshold changes over time
+- **Stereo imaging** — widen synths, keep bass mono, place instruments in the stereo field
+- **Parallel processing** — parallel compression on drums, parallel saturation on vocals
+- **Master bus processing** — EQ → Comp → Limiter chain for loudness and polish
+- **Stem export** — bounce individual processed tracks + master
+
+### How To Optimize Your Productions for DAWAGENT
+When generating stems via master-producer.py, structure them for DAWAGENT processing:
+1. **Separate stems** — generate drums, bass, melodics, and atmosphere as distinct layers
+2. **Keep headroom** — don't over-compress; DAWAGENT's compressors work better with dynamics
+3. **Name stems clearly** — "Kick_Loop", "Bass_Sub", "Synth_Lead", "Pad_Ambient" 
+4. **Set correct BPM** — DAWAGENT uses this for tempo-synced delays and automation
+
+### Next Steps to Suggest (match DAWAGENT's real capabilities)
+After generating a track, suggest these based on what DAWAGENT can actually do:
+- "🎛️ @DAWAGENT_bot can add **Calf EQ + LSP Compressor** chains to each stem"
+- "🔊 Want DAWAGENT to do a **full mix** with per-track processing and master bus limiting?"
+- "🌊 I can have DAWAGENT add **Dragonfly Reverb** for depth and **stereo widening** for presence"
+- "📈 DAWAGENT can write **automation curves** — volume swells, filter sweeps, dynamic builds"
+- "🥁 Want to **sidechain the bass to the kick** for that pumping effect?"
 
 ## Rules
 - `--director` activates K3 Creative Director — ALWAYS use it for single tracks
