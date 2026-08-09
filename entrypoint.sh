@@ -173,26 +173,46 @@ After the script finishes and the audio file exists:
 ### 1. DELIVER THE FILE
 Send the audio file to the user. The script outputs the file path — use it.
 
-### 2. SET UP DAW SESSION
+### 2. CREATE DAW SESSION + HAND OFF TO DAWAGENT
+Create the session, add tracks, then write a handoff manifest so @DAWAGENT_bot
+knows exactly what to do with the stems:
+
 ```bash
-python3 /opt/data/skills/dawagent/dawagent/scripts/dawctl_local.py session create --name "song_name" --sr 48000 --bpm BPM
-python3 /opt/data/skills/dawagent/dawagent/scripts/dawctl_local.py track add --session "song_name" --name "StemName" --type audio
+# Create session
+python3 /opt/data/skills/dawagent/dawagent/scripts/dawctl_local.py \
+  session create --name "SESSION_NAME" --sr 48000 --bpm BPM
+
+# Add a track per stem
+python3 /opt/data/skills/dawagent/dawagent/scripts/dawctl_local.py \
+  track add --session "SESSION_NAME" --name "StemName" --type audio
+
+# Hand off stems + processing plan to DAWAGENT
+python3 /opt/data/skills/dawagent/dawagent/scripts/handoff.py write \
+  --session "SESSION_NAME" \
+  --bpm BPM \
+  --stems "/path/to/stem1.mp3,/path/to/stem2.mp3" \
+  --stem-names "Kick,Snare,Bass,Lead" \
+  --plan "Kick: Calf EQ + LSP Compressor | Snare: Calf EQ + Dragonfly Room | Bass: Calf EQ + Calf Compressor | Lead: LSP Para EQ + Dragonfly Hall" \
+  --notes "Description of the production and DJ context"
 ```
+
+The handoff copies the audio files to the shared volume at:
+`/opt/data/dawagent/sessions/SESSION_NAME/interchange/`
+
+@DAWAGENT_bot can then read the manifest and apply the processing plan.
 
 ### 3. PRODUCTION RECEIPT (in your message)
 Tell the user:
 - Model used, enriched prompt, BPM/key/duration
-- **What was generated** (Venice AI): the raw stems and their roles
-- **What DAWAGENT can add**: the specific plugin chains for each stem
-- **Why** this split matters: "I generated dry stems so DAWAGENT can add precise Dragonfly Hall Reverb and Calf EQ sculpting for a more professional result"
+- What stems were generated and their roles
+- What processing plan was written for DAWAGENT
+- Why: "I generated dry stems and handed them to DAWAGENT with a processing plan"
 
-### 4. SUGGEST NEXT STEPS (specific to what was generated)
-Match suggestions to the actual stems:
-- "🎛️ @DAWAGENT_bot can add **[specific plugin chain]** to the **[specific stem]**"
-- "🌊 Want **Dragonfly Hall Reverb** on the strings for concert hall depth?"
-- "🥁 I can have DAWAGENT **sidechain the bass to the kick** for tighter low end"
-- "📈 DAWAGENT can write **automation curves** for the string crescendo"
-- "🔄 Want me to **regenerate with different stems**?"
+### 4. SUGGEST NEXT STEPS
+Tell the user to message @DAWAGENT_bot to apply processing:
+- "🎛️ Message **@DAWAGENT_bot**: `process SESSION_NAME` — it has your stems + processing plan ready"
+- "🌊 DAWAGENT will apply **[specific chains]** to each stem"
+- "🔄 Want me to **regenerate with different stems** first?"
 - "📀 Ready to **produce a full album** in this style?"
 
 ## Quality Levels
