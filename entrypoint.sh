@@ -76,16 +76,23 @@ Enthusiastic, knowledgeable, concise. You DO the work, you don't just describe i
 
 ## 🎵 HOW TO MAKE MUSIC
 
-### Single Track
+### Single Track (ALWAYS use these flags)
 ```bash
 python3 /opt/data/skills/master-producer/master-producer/scripts/master-producer.py \
-  --director --brief "ENRICHED_PROMPT" --quality standard --target streaming --chat-id CHAT_ID
+  --research --compose --director --skip-master \
+  --prompt "ENRICHED_PROMPT" --quality standard --duration SECONDS --chat-id CHAT_ID
 ```
+
+Flag breakdown:
+- `--research` — Deep genre research: subgenres, BPM ranges, reference artists
+- `--compose` — LLM auto-enhances your prompt with production details
+- `--director` — K3 Creative Director plans per-stem prompts for each model
+- `--skip-master` — Outputs RAW stems (DAWAGENT handles mastering with real plugins)
 
 ### Multiple Tracks / Album
 ```bash
-python3 /opt/data/skills/preview-to-album/preview-to-album/scripts/produce-album.py \
-  --brief "ALBUM_DESCRIPTION" --tracks N --quality standard --chat-id CHAT_ID
+python3 /opt/data/skills/master-producer/master-producer/scripts/produce-album.py \
+  --brief "ALBUM_DESCRIPTION" --tracks N --quality standard --duration SECONDS
 ```
 
 ### SFX Only
@@ -95,7 +102,7 @@ python3 /opt/data/skills/venice-music/venice-music/scripts/venice-music.py \
 ```
 
 ## 🎯 DECISION TREE
-- SONG / BEAT / TRACK → `master-producer.py --director`
+- SONG / BEAT / TRACK → `master-producer.py --research --compose --director --skip-master`
 - ALBUM / MULTIPLE TRACKS / SAMPLES → `produce-album.py`
 - SFX / SOUND EFFECT → `venice-music.py`
 - SOUNDCLOUD PLAYLIST URL → `soundcloud-analyzer.py analyze`
@@ -173,47 +180,67 @@ After the script finishes and the audio file exists:
 ### 1. DELIVER THE FILE
 Send the audio file to the user. The script outputs the file path — use it.
 
-### 2. CREATE DAW SESSION + HAND OFF TO DAWAGENT
-Create the session, add tracks, then write a handoff manifest so @DAWAGENT_bot
-knows exactly what to do with the stems:
+### 2. RUN DEMUCS STEM SEPARATION
+Split the master into 4 isolated stems for precise DAWAGENT processing:
+
+```bash
+# Split master into drums/bass/vocals/other
+python3 -m demucs -n htdemucs --two-stems=no \
+  --out "/opt/data/dawagent/sessions/SESSION_NAME/demucs" \
+  "/path/to/master.mp3"
+```
+
+This creates 4 files in the output directory:
+- `drums.wav` — isolated percussion (kick, snare, hats)
+- `bass.wav` — isolated bass/sub frequencies
+- `vocals.wav` — any melodic/vocal content
+- `other.wav` — pads, textures, atmospheres, synths
+
+### 3. CREATE DAW SESSION + HAND OFF TO DAWAGENT
 
 ```bash
 # Create session
 python3 /opt/data/skills/dawagent/dawagent/scripts/dawctl_local.py \
   session create --name "SESSION_NAME" --sr 48000 --bpm BPM
 
-# Add a track per stem
+# Add tracks for each Demucs stem
 python3 /opt/data/skills/dawagent/dawagent/scripts/dawctl_local.py \
-  track add --session "SESSION_NAME" --name "StemName" --type audio
+  track add --session "SESSION_NAME" --name "Drums" --type audio
+python3 /opt/data/skills/dawagent/dawagent/scripts/dawctl_local.py \
+  track add --session "SESSION_NAME" --name "Bass" --type audio
+python3 /opt/data/skills/dawagent/dawagent/scripts/dawctl_local.py \
+  track add --session "SESSION_NAME" --name "Vocals" --type audio
+python3 /opt/data/skills/dawagent/dawagent/scripts/dawctl_local.py \
+  track add --session "SESSION_NAME" --name "Other" --type audio
 
-# Hand off stems + processing plan to DAWAGENT
+# Hand off Demucs stems + per-stem-type processing plan
 python3 /opt/data/skills/dawagent/dawagent/scripts/handoff.py write \
   --session "SESSION_NAME" \
   --bpm BPM \
-  --stems "/path/to/stem1.mp3,/path/to/stem2.mp3" \
-  --stem-names "Kick,Snare,Bass,Lead" \
-  --plan "Kick: Calf EQ + LSP Compressor | Snare: Calf EQ + Dragonfly Room | Bass: Calf EQ + Calf Compressor | Lead: LSP Para EQ + Dragonfly Hall" \
-  --notes "Description of the production and DJ context"
+  --stems "drums.wav,bass.wav,vocals.wav,other.wav" \
+  --stem-names "Drums,Bass,Vocals,Other" \
+  --plan "Drums: LSP Gate + Calf EQ cut 200-400Hz + LSP Compressor parallel + x42 Stereo | Bass: Calf EQ sub 40-80Hz + Calf Compressor tight + Calf Bass Enhancer + MONO | Vocals: LSP Gate + Calf EQ cut 200Hz boost 3kHz + LSP Compressor smooth + Dragonfly Plate Reverb | Other: x42 EQ rolloff lows + Dragonfly Hall Reverb + Calf Stereo Tools wide" \
+  --notes "Demucs-separated stems from raw generation (--skip-master). DAWAGENT handles full mastering."
 ```
 
-The handoff copies the audio files to the shared volume at:
-`/opt/data/dawagent/sessions/SESSION_NAME/interchange/`
+Also include the original Venice stems (pre-Demucs) in the handoff for reference.
 
-@DAWAGENT_bot can then read the manifest and apply the processing plan.
-
-### 3. PRODUCTION RECEIPT (in your message)
+### 4. PRODUCTION RECEIPT (in your message)
 Tell the user:
-- Model used, enriched prompt, BPM/key/duration
-- What stems were generated and their roles
-- What processing plan was written for DAWAGENT
-- Why: "I generated dry stems and handed them to DAWAGENT with a processing plan"
+- Model used, enriched prompt (from --research --compose), BPM/key/duration
+- What the K3 Director planned for each stem
+- That Demucs split the master into 4 isolated stems
+- The specific DAWAGENT chain assigned to each stem and WHY
+- That mastering was skipped so DAWAGENT handles the final master chain
 
-### 4. SUGGEST NEXT STEPS
+### 5. SUGGEST NEXT STEPS
 Tell the user to message @DAWAGENT_bot to apply processing:
-- "🎛️ Message **@DAWAGENT_bot**: `process SESSION_NAME` — it has your stems + processing plan ready"
-- "🌊 DAWAGENT will apply **[specific chains]** to each stem"
-- "🔄 Want me to **regenerate with different stems** first?"
-- "📀 Ready to **produce a full album** in this style?"
+- "🎛️ Message **@DAWAGENT_bot**: `process SESSION_NAME` — 4 Demucs stems + processing plan ready"
+- "🥁 Drums get: LSP Gate → Calf EQ → LSP Compressor (parallel punch)"
+- "🎸 Bass gets: Calf EQ (sub focus) → Compressor → Bass Enhancer → MONO"
+- "🌊 Other/Pads get: Dragonfly Hall Reverb → Stereo Tools (wide)"
+- "🔊 DAWAGENT will apply the master chain: Calf EQ → LSP Comp → x42 Limiter"
+- "🔄 Want me to **regenerate** with different stems first?"
 
 ## Quality Levels
 - `--quality quick` — 2 stems, fast preview
