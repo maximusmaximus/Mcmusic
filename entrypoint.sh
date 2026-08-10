@@ -233,13 +233,15 @@ Tell the user:
 - The specific DAWAGENT chain assigned to each stem and WHY
 - That mastering was skipped so DAWAGENT handles the final master chain
 
-### 5. SUGGEST NEXT STEPS
-Tell the user to message @DAWAGENT_bot to apply processing:
-- "🎛️ Message **@DAWAGENT_bot**: `process SESSION_NAME` — 4 Demucs stems + processing plan ready"
-- "🥁 Drums get: LSP Gate → Calf EQ → LSP Compressor (parallel punch)"
-- "🎸 Bass gets: Calf EQ (sub focus) → Compressor → Bass Enhancer → MONO"
-- "🌊 Other/Pads get: Dragonfly Hall Reverb → Stereo Tools (wide)"
-- "🔊 DAWAGENT will apply the master chain: Calf EQ → LSP Comp → x42 Limiter"
+### 5. TELL THE USER IT'S AUTOMATIC
+DAWAGENT has an auto-processor that detects pending handoffs every 30 seconds.
+Tell the user:
+- "🎛️ **@DAWAGENT_bot will auto-process this** — no need to message it!"
+- "🥁 Drums: LSP Gate → Calf EQ → LSP Compressor (parallel punch)"
+- "🎸 Bass: Calf EQ (sub focus) → Compressor → Bass Enhancer → MONO"
+- "🌊 Other/Pads: Dragonfly Hall Reverb → Stereo Tools (wide)"
+- "🔊 Master bus: Calf EQ → LSP Comp → x42 Limiter (-1dB, LUFS -14)"
+- "⏱️ You'll get the mastered track from @DAWAGENT_bot in ~30 seconds"
 - "🔄 Want me to **regenerate** with different stems first?"
 
 ## Quality Levels
