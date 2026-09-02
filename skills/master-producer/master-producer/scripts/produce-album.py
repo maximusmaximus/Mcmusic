@@ -29,11 +29,116 @@ import urllib.request
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PRODUCER = os.path.join(SCRIPT_DIR, "master-producer.py")
+HANDOFF_SCRIPT = os.path.join(
+    os.environ.get("HERMES_HOME", "/opt/data"),
+    "skills", "dawagent", "dawagent", "scripts", "handoff.py"
+)
 PROFILES_DIR = os.environ.get("HERMES_HOME", "/opt/data") + "/music/profiles"
 
 
 def log(msg):
     print(f"[produce-album] {msg}", flush=True)
+
+
+def auto_handoff_to_dawagent(rj, prod_dir, album_slug, track_title):
+    """Create an enriched DAWAGENT handoff for a completed album track.
+
+    Extracts stems from the master-producer result, generates a session name,
+    and calls handoff.py with --production-dir to auto-enrich the manifest
+    with key, genre, mastering profile, stem sources, and mix file.
+    """
+    if not os.path.isfile(HANDOFF_SCRIPT):
+        log(f"    ⚠️ Handoff script not found: {HANDOFF_SCRIPT}")
+        return
+
+    # Extract stem file paths from the result
+    stems_data = rj.get("stems", [])
+    if not stems_data:
+        log("    ⚠️ No stems in result, skipping handoff")
+        return
+
+    stem_paths = []
+    stem_names = []
+    for s in stems_data:
+        fpath = s.get("file", "")
+        role = s.get("role", "")
+        resolved = None
+
+        # Try the path from the result JSON first
+        if fpath and os.path.isfile(fpath):
+            resolved = fpath
+        elif fpath:
+            # _fx.wav may not exist — try without _fx suffix, or raw FLAC
+            import glob
+            base_dir = os.path.dirname(fpath)
+            # Search in the production dir's stem subdirectories
+            for search_dir in [base_dir, os.path.join(prod_dir, "stems"),
+                               os.path.join(prod_dir, "stems", "singles"),
+                               os.path.join(prod_dir, "stems", "sfx")]:
+                if not os.path.isdir(search_dir):
+                    continue
+                for pattern in [f"{role}_*_fx.wav", f"{role}_*.wav",
+                                f"{role}_*.flac", f"{role}_*_fx.flac"]:
+                    # Try current dir, then any date subdirs
+                    subdirs = [""]
+                    if os.path.isdir(search_dir):
+                        subdirs += [d for d in os.listdir(search_dir)
+                                    if os.path.isdir(os.path.join(search_dir, d))]
+                    for subdir in subdirs:
+                        matches = glob.glob(os.path.join(search_dir, subdir, pattern))
+                        if matches:
+                            resolved = matches[0]
+                            break
+                    if resolved:
+                        break
+                if resolved:
+                    break
+
+        if resolved:
+            stem_paths.append(resolved)
+            stem_names.append(role or os.path.basename(resolved))
+
+    if not stem_paths:
+        log("    ⚠️ No stem files found on disk, skipping handoff")
+        return
+
+    # Generate session name: album-slug-track-slug
+    import re
+    track_slug = re.sub(r'[^a-z0-9]+', '-', track_title.lower()).strip('-')
+    session_name = f"{album_slug}-{track_slug}" if album_slug else track_slug
+
+    bpm = str(rj.get("cost_report", {}).get("bpm", "120"))
+    # Try to get BPM from stems analysis
+    for s in stems_data:
+        if s.get("role") == "main" and s.get("analysis", {}).get("bpm"):
+            bpm = str(int(s["analysis"]["bpm"]))
+            break
+
+    cmd = [
+        sys.executable, HANDOFF_SCRIPT, "write",
+        "--session", session_name,
+        "--bpm", bpm,
+        "--stems", ",".join(stem_paths),
+        "--stem-names", ",".join(stem_names),
+        "--source", "hermes-music-album",
+        "--production-dir", prod_dir,
+        "--notes", f"Album: {album_slug}. Track: {track_title}.",
+    ]
+
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+        if result.returncode == 0:
+            # Parse the enriched fields count from output
+            try:
+                out = json.loads(result.stdout.strip())
+                enriched = out.get("enriched_fields", [])
+                log(f"    🎛️ DAWAGENT handoff: {session_name} ({len(enriched)} enriched fields)")
+            except Exception:
+                log(f"    🎛️ DAWAGENT handoff: {session_name}")
+        else:
+            log(f"    ⚠️ Handoff failed: {result.stderr[-200:]}")
+    except Exception as e:
+        log(f"    ⚠️ Handoff error: {e}")
 
 
 # ─── Telegram ───────────────────────────────────────────────────────────
@@ -349,6 +454,12 @@ def main():
                 if mp3 and os.path.isfile(mp3):
                     track_files.append((info["title"], mp3, flac))
                 log(f"    ✅ {info['title']} | {info.get('bpm','')} BPM | ${cost:.2f}")
+
+                # Auto-handoff to DAWAGENT for context-aware processing
+                if prod_dir:
+                    import re as _re_ho
+                    album_slug = _re_ho.sub(r'[^a-z0-9]+', '-', args.brief.lower()).strip('-')
+                    auto_handoff_to_dawagent(rj, prod_dir, album_slug, info["title"])
             except Exception as e:
                 log(f"    ✅ done (parse: {e})")
                 completed.append({"title": f"Track {track_num}", "direction": variation["direction"]})
@@ -441,6 +552,7 @@ def main():
         "target": args.target,
         "vocals_pct": args.vocals_pct,
         "total_cost_usd": round(total_cost, 2),
+        "soundcloud_format": "FLAC (from DAWAGENT exports at /opt/data/music/exports/)",
         "tracklist": [
             {"number": j + 1, "title": t.get("title", "?"), "bpm": t.get("bpm"),
              "key": t.get("key"), "genre": t.get("genre"),
@@ -481,7 +593,8 @@ def main():
     tg_edit(progress_id,
             f"📀 *{args.brief}*\n\n"
             f"{tracklist}\n"
-            f"💰 ${total_cost:.2f} | ✅ {sent} {mode} delivered")
+            f"💰 ${total_cost:.2f} | ✅ {sent} {mode} delivered\n\n"
+            f"🎛️ DAWAGENT processing in background → FLAC masters at music/exports/")
 
     log(f"✅ {sent}/{len(track_files)} delivered to Telegram")
 

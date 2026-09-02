@@ -14,6 +14,7 @@ services:
       - dawagent-exports:/opt/data/dawagent/exports
     env_file:
       - ./.env
+    entrypoint: ["/opt/data/scripts/entrypoint-wrapper.sh"]
     depends_on:
       - dawagent
 
