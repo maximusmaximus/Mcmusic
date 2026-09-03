@@ -377,23 +377,6 @@ def check_notifications():
                 if copied_count:
                     log(f"  ✓ Copied {copied_count} files to {music_exports}")
 
-                # ── Tag all audio files with metadata + cover art ──
-                tag_script = os.path.join(
-                    os.environ.get("HERMES_HOME", "/opt/data"),
-                    "skills/delivery-receipt/delivery-receipt/scripts/tag_metadata.py")
-                if os.path.exists(tag_script):
-                    try:
-                        tag_result = subprocess.run(
-                            ["python3", tag_script, "--session", session],
-                            capture_output=True, text=True, timeout=300)
-                        if tag_result.returncode == 0:
-                            tagged = sum(1 for l in tag_result.stdout.splitlines() if "✓" in l)
-                            log(f"  ✓ Tagged {tagged} files with metadata")
-                        else:
-                            log(f"  ⚠ Tagging failed: {tag_result.stderr[-100:]}")
-                    except Exception as tag_err:
-                        log(f"  ⚠ Tagging error: {tag_err}")
-
                 # Send master FLACs via Telegram (prefer lossless; fall back to MP3)
                 flacs = sorted(music_exports.glob("*_MASTER.flac"))
                 if flacs:
@@ -437,7 +420,8 @@ def check_notifications():
                     genre = notif.get("genre", "")
                     artist_name = None
                     if manifest_path.exists():
-                        manifest = json.load(open(manifest_path))
+                        with open(manifest_path) as f:
+                            manifest = json.load(f)
                         album_name = manifest.get("album", "")
                         profile = manifest.get("profile", "")
                         if not genre:

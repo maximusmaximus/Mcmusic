@@ -21,6 +21,7 @@ import argparse
 import datetime
 import json
 import os
+import re
 import subprocess
 import sys
 import threading
@@ -299,6 +300,7 @@ def main():
     parser.add_argument("--target", default="streaming")
     parser.add_argument("--vocals-pct", type=int, default=0, help="Pct of tracks with vocals (0-100)")
     args = parser.parse_args()
+    album_slug = re.sub(r'[^a-z0-9]+', '-', args.brief.lower()).strip('-') or "album"
 
     _auto_detect_chat_id()
     profile, slug = load_active_profile()
@@ -349,7 +351,7 @@ def main():
         ctx = {"track_number": track_num, "total_tracks": args.tracks,
                "brief": args.brief, "previous_tracks": completed,
                "variation_rules": variation["rules"]}
-        ctx_file = f"/tmp/album_ctx_{track_num}.json"
+        ctx_file = f"/tmp/album_ctx_{album_slug}_{track_num}.json"
         with open(ctx_file, "w") as f:
             json.dump(ctx, f)
 

@@ -7,10 +7,16 @@ return {
   end,
   
   json_success = function(data)
-    print('{"success": true, "message": "Operation completed"}')
+    if data then
+      print('{"success": true, "message": "Operation completed", "data": ' .. data .. '}')
+    else
+      print('{"success": true, "message": "Operation completed"}')
+    end
   end,
   
   json_error = function(msg)
-    print('{"success": false, "error": "' .. msg .. '"}')
+    -- Escape quotes and backslashes to prevent JSON injection
+    local safe = msg:gsub('\\', '\\\\'):gsub('"', '\\"'):gsub('\n', '\\n')
+    print('{"success": false, "error": "' .. safe .. '"}')
   end
 }

@@ -225,8 +225,11 @@ def cmd_write(args):
         manifest["mix_file"] = str(mix_dest)
 
     manifest_path = SESSIONS_DIR / args.session / MANIFEST_NAME
-    with open(manifest_path, "w") as f:
+    # Atomic write: write to temp file first, then rename to prevent corruption
+    tmp_path = manifest_path.with_suffix(".tmp")
+    with open(tmp_path, "w") as f:
         json.dump(manifest, f, indent=2)
+    tmp_path.replace(manifest_path)
 
     enriched_fields = [k for k in ("key", "genre", "mastering_profile",
                                     "stem_volumes", "stem_sources",

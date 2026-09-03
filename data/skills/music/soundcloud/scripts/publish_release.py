@@ -96,12 +96,14 @@ def load_release(release_name):
     manifest = {}
     manifest_path = release_dir / "release.json"
     if manifest_path.exists():
-        manifest = json.load(open(manifest_path))
+        with open(manifest_path) as f:
+            manifest = json.load(f)
 
     tracks_meta = []
     meta_path = release_dir / "tracks_meta.json"
     if meta_path.exists():
-        tracks_meta = json.load(open(meta_path))
+        with open(meta_path) as f:
+            tracks_meta = json.load(f)
 
     # Find FLAC masters
     flacs = sorted(release_dir.glob("*_MASTER.flac"))
@@ -384,9 +386,34 @@ def publish(release_name, manifest, tracks_meta, flacs, force=False):
         log(f"⚠ {failed_count}/{len(flacs)} tracks failed to upload")
         send_telegram(f"⚠ *{album}*: {failed_count} of {len(flacs)} tracks failed to upload")
 
-    # 2. Wait for encoding
-    log("Waiting 30s for SoundCloud encoding...")
-    time.sleep(30)
+    # 2. Wait for encoding (poll status instead of fixed sleep)
+    log("Waiting for SoundCloud encoding...")
+    max_wait = 120  # max 2 minutes
+    poll_interval = 10
+    waited = 0
+    while waited < max_wait:
+        time.sleep(poll_interval)
+        waited += poll_interval
+        # Check if all tracks are ready
+        all_ready = True
+        for tid in track_ids:
+            r = subprocess.run(
+                [sys.executable, str(SC_SCRIPT), "status", "--track-id", str(tid)],
+                capture_output=True, text=True, timeout=15
+            )
+            try:
+                status = json.loads(r.stdout)
+                if status.get("state") != "finished":
+                    all_ready = False
+                    break
+            except (json.JSONDecodeError, KeyError):
+                all_ready = False
+                break
+        if all_ready:
+            log(f"  ✓ All tracks encoded ({waited}s)")
+            break
+    else:
+        log(f"  ⚠ Encoding wait timed out after {max_wait}s — proceeding anyway")
 
     # 3. Create playlist
     album_artwork = find_artwork(release_name)
