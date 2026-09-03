@@ -5,6 +5,7 @@ import sys
 import os
 import subprocess
 import tempfile
+from pathlib import Path
 from osc_bridge import ArdourOSCClient
 from session_manager import SessionManager
 
@@ -121,6 +122,48 @@ def main():
         res = run_ardour_headless(session_path, script_path, *args.args)
         output(res)
         
+    elif args.command == "export":
+        if args.export_cmd == "all":
+            session_dir = Path(sm._sessions_dir) / args.session
+            interchange = session_dir / "interchange"
+            if not interchange.exists():
+                output({"success": False, "error": f"No interchange directory for session '{args.session}'"})
+
+            stems = sorted(list(interchange.glob("*.wav")) + list(interchange.glob("*.mp3"))
+                          + list(interchange.glob("*.flac")) + list(interchange.glob("*.ogg")))
+            if not stems:
+                output({"success": False, "error": "No stems found in interchange"})
+
+            out_dir = Path(args.output_dir)
+            out_dir.mkdir(parents=True, exist_ok=True)
+            flac_out = out_dir / f"{args.session}_MASTER.flac"
+
+            # Build ffmpeg mix command
+            cmd = ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error"]
+            for s in stems:
+                cmd.extend(["-i", str(s)])
+
+            n = len(stems)
+            filters = []
+            for i in range(n):
+                filters.append(f"[{i}:a]volume=1.0[s{i}]")
+            mix_inputs = "".join(f"[s{i}]" for i in range(n))
+            filters.append(f"{mix_inputs}amix=inputs={n}:duration=longest:dropout_transition=3,"
+                          f"loudnorm=I=-14:TP=-1:LRA=11[out]")
+            cmd.extend(["-filter_complex", ";".join(filters), "-map", "[out]",
+                       "-ar", "48000", "-sample_fmt", "s32", str(flac_out)])
+
+            try:
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+                if result.returncode != 0:
+                    output({"success": False, "error": result.stderr[-200:]})
+                output({"success": True, "output": str(flac_out),
+                        "size_mb": round(flac_out.stat().st_size / (1024*1024), 1)})
+            except Exception as e:
+                output({"success": False, "error": str(e)})
+        else:
+            output({"success": False, "error": "Unknown export subcommand"})
+
     else:
         parser.print_help()
         output({"success": False, "error": "Invalid command"})

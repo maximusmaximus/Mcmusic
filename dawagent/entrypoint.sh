@@ -46,5 +46,20 @@ echo "Export Dir: /opt/dawagent/exports"
 echo "Watch Dir: /opt/dawagent/watch"
 echo "======================================"
 
+# Start auto-processor daemon
+AUTO_PROCESSOR="/opt/dawagent/scripts/auto_processor.py"
+if [ -f "$AUTO_PROCESSOR" ]; then
+    python3 "$AUTO_PROCESSOR" >> /opt/dawagent/auto_processor.log 2>&1 &
+    AUTO_PID=$!
+    echo "Auto-processor started (PID: $AUTO_PID)"
+else
+    echo "WARNING: auto_processor.py not found"
+    AUTO_PID=""
+fi
+
 # Keep the container alive
-tail -f /dev/null
+if [ -n "$AUTO_PID" ]; then
+    wait $AUTO_PID
+else
+    tail -f /dev/null
+fi
