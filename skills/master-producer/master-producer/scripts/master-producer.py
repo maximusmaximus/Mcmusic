@@ -187,7 +187,7 @@ QUALITY_TIERS = {
 STEM_CONFIG = {
     "main": {
         "model_vocal": "ace-step-15",           # Cheapest vocal ($0.03), structured [Verse]/[Chorus]
-        "model_vocal_freeform": "minimax-music-v2",  # Freeform vocal ($0.04)
+        "model_vocal_freeform": "minimax-music-v26",  # Freeform vocal ($0.04)
         "model_vocal_premium": "elevenlabs-music",   # Premium vocal ($0.69)
         "model_instrumental": "elevenlabs-music",
         "model_instrumental_budget": "ace-step-15",
@@ -407,7 +407,7 @@ def compose_prompt(user_prompt, profile=None):
     )
 
     payload = json.dumps({
-        "model": "zai-org-glm-5-1",
+        "model": "deepseek-v4-flash",
         "messages": [
             {"role": "system", "content": system},
             {"role": "user", "content": user_prompt[:800]},  # Cap input length
@@ -513,7 +513,7 @@ Output ONLY the production brief as flowing text. No markdown headers, no number
         system += profile_ctx
 
     payload = json.dumps({
-        "model": "zai-org-glm-5-1",
+        "model": "deepseek-v4-flash",
         "messages": [
             {"role": "system", "content": system},
             {"role": "user", "content": user_prompt},
@@ -581,9 +581,14 @@ def creative_director(user_prompt, quality_tier, duration, lyrics=None, profile=
             "strengths": "Structured vocals with [Verse]/[Chorus] tags, cheapest vocal",
             "supports": "lyrics (required), duration (only 60/90/120/150/180/210s)",
         },
-        "minimax-music-v2": {
+        "minimax-music-v26": {
             "type": "vocal", "cost": 0.04, "max_prompt": 300,
-            "strengths": "Freeform vocals, catchy melodies, breathy/atmospheric vocals",
+            "strengths": "Latest MiniMax — tighter rhythm, clearer vocals, atmospheric, breathy textures",
+            "supports": "lyrics (required), prompt max 300 chars. NO duration control.",
+        },
+        "minimax-music-v25": {
+            "type": "vocal", "cost": 0.04, "max_prompt": 300,
+            "strengths": "Mid-tier MiniMax — reliable freeform vocals, catchy melodies",
             "supports": "lyrics (required), prompt max 300 chars. NO duration control.",
         },
         "stable-audio-25": {
@@ -752,7 +757,7 @@ OUTPUT VALID JSON (no markdown, no code fences):
     if lyrics:
         user_msg += f"\n\nLYRICS:\n{lyrics[:500]}"
 
-    director_model = os.environ.get("DIRECTOR_MODEL", "kimi-k3")
+    director_model = os.environ.get("DIRECTOR_MODEL", "deepseek-v4-pro")
 
     # Retry loop — K3 sometimes returns empty on rapid successive calls
     max_retries = 2
@@ -865,7 +870,7 @@ OUTPUT VALID JSON (no markdown, no code fences):
                 wait = 5 * (attempt + 1)  # 5s, 10s exponential backoff
                 log(f"  ⚠️ K3 attempt {attempt + 1} failed ({e}) — retrying in {wait}s...")
                 # Try alternate model on last retry
-                if attempt == max_retries - 1 and director_model == "kimi-k3":
+                if attempt == max_retries - 1 and director_model == "deepseek-v4-pro":
                     director_model = "qwen-3-7-plus"
                     log(f"  🔄 Switching to fallback model: {director_model}")
                 time.sleep(wait)
@@ -879,7 +884,7 @@ OUTPUT VALID JSON (no markdown, no code fences):
             if attempt < max_retries:
                 wait = 10 * (attempt + 1)  # 10s, 20s — longer for network issues
                 log(f"  ⚠️ K3 network error attempt {attempt + 1} ({e}) — retrying in {wait}s...")
-                if attempt == max_retries - 1 and director_model == "kimi-k3":
+                if attempt == max_retries - 1 and director_model == "deepseek-v4-pro":
                     director_model = "qwen-3-7-plus"
                     log(f"  🔄 Switching to fallback model: {director_model}")
                 time.sleep(wait)
@@ -895,7 +900,7 @@ OUTPUT VALID JSON (no markdown, no code fences):
 # These use cheap K3/qwen calls to make adaptive decisions at each
 # pipeline stage instead of using hardcoded values.
 
-def _quick_inference(system_prompt, user_prompt, model="qwen-3-7-plus", max_tokens=800):
+def _quick_inference(system_prompt, user_prompt, model="deepseek-v4-flash", max_tokens=800):
     """Make a quick inference call for pipeline decisions. Returns parsed JSON or None."""
     api_key = os.environ.get("VENICE_API_KEY", "")
     if not api_key:

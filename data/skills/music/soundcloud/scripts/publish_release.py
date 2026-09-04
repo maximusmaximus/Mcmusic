@@ -29,12 +29,46 @@ RELEASES_DIR = Path(os.environ.get("RELEASES_DIR", "/opt/data/music/releases"))
 ARTWORK_DIR = Path(os.environ.get("ARTWORK_DIR", "/opt/data/music/artwork/covers"))
 SC_SCRIPT = Path(os.environ.get("SC_SCRIPT",
     "/opt/data/skills/music/soundcloud/scripts/soundcloud_api.py"))
-TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
-CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "8293122782")
+def get_env_var(name, default=None):
+    val = os.environ.get(name)
+    if not val:
+        try:
+            env = open("/proc/1/environ").read().split(chr(0))
+            for e in env:
+                if e.startswith(f"{name}="):
+                    val = e.split("=", 1)[1]
+                    break
+        except: pass
+    if not val:
+        try:
+            import yaml
+            cfg = yaml.safe_load(open("/opt/data/config.yaml"))
+            val = cfg.get(name, cfg.get(name.lower()))
+        except: pass
+    return val or default
+
+TELEGRAM_BOT_TOKEN = get_env_var("TELEGRAM_BOT_TOKEN", "")
+CHAT_ID = get_env_var("TELEGRAM_CHAT_ID", "8293122782")
 
 # Default metadata
 DEFAULT_LABEL = "VØIDRIDE"
 DEFAULT_GENRE = "Electronic"
+STYLIZE_SCRIPT = Path("/opt/data/scripts/stylize_title.py")
+
+
+def stylize_title(title):
+    """Convert plain title to VØIDRIDE Unicode aesthetic."""
+    if STYLIZE_SCRIPT.exists():
+        try:
+            res = subprocess.run(
+                [sys.executable, str(STYLIZE_SCRIPT), title],
+                capture_output=True, text=True, timeout=10
+            )
+            if res.returncode == 0 and '-> ' in res.stdout:
+                return res.stdout.strip().split('-> ')[-1]
+        except Exception:
+            pass
+    return title
 
 
 def log(msg):
@@ -265,13 +299,13 @@ def list_releases():
 
 def review_gate(release_name, manifest, tracks_meta, flacs, dry_run=False):
     """Send release summary with action buttons."""
-    album = manifest.get("album", release_name.upper().replace("-", " "))
+    album = manifest.get("album", release_name.upper()).replace("-", " ")
     track_count = len(flacs)
 
     track_lines = []
     for i, flac in enumerate(flacs):
         import re
-        title = re.sub(r'^\d+[\s_]*', '', flac.stem.replace("_MASTER", "").replace("_", " "))
+        title = re.sub(r'^\d+[\s_\-]*', '', flac.stem.replace("_MASTER", "").replace("_", " "))
         meta = tracks_meta[i] if i < len(tracks_meta) else {}
         bpm = meta.get("bpm", "?")
         key = meta.get("key", "?")
@@ -315,7 +349,7 @@ def preview_gate(release_name, flacs):
     log(f"Sending {len(flacs)} tracks for preview...")
     for flac in flacs:
         import re
-        title = re.sub(r'^\d+[\s_]*', '', flac.stem.replace("_MASTER", "").replace("_", " "))
+        title = re.sub(r'^\d+[\s_\-]*', '', flac.stem.replace("_MASTER", "").replace("_", " "))
         ok = send_audio_file(str(flac), title)
         log(f"  {'✓' if ok else '✗'} {title}")
         time.sleep(2)
@@ -334,13 +368,14 @@ def preview_gate(release_name, flacs):
 
 def publish(release_name, manifest, tracks_meta, flacs, force=False):
     """Execute the full publish: tag files, upload tracks, create playlist, add artwork."""
-    album = manifest.get("album", release_name.upper().replace("-", " "))
+    album_plain = manifest.get("album", release_name.upper()).replace("-", " ")
+    album = stylize_title(album_plain)
 
     # ── Duplicate guard ──
     if not force and manifest.get("status") == "published" and manifest.get("soundcloud", {}).get("track_ids"):
         sc = manifest["soundcloud"]
-        log(f"⚠ {album} is already published (playlist {sc.get('playlist_id')}) — use --force to re-publish")
-        send_telegram(f"⚠ *{album}* is already published on SoundCloud\\.")
+        log(f"⚠ {album_plain} is already published (playlist {sc.get('playlist_id')}) — use --force to re-publish")
+        send_telegram(f"⚠ *{album_plain}* is already published on SoundCloud\\.")
         return False
 
     log(f"Publishing {album} ({len(flacs)} tracks)...")
@@ -365,11 +400,12 @@ def publish(release_name, manifest, tracks_meta, flacs, force=False):
     track_ids = []
     for i, flac in enumerate(flacs):
         import re
-        title = re.sub(r'^\d+[\s_]*', '', flac.stem.replace("_MASTER", "").replace("_", " "))
+        title_plain = re.sub(r'^\d+[\s_\-]*', '', flac.stem.replace("_MASTER", "").replace("_", " "))
+        title = stylize_title(title_plain)
         meta = tracks_meta[i] if i < len(tracks_meta) else {}
         tags = build_tags(meta, manifest)
         genre = meta.get("genre", DEFAULT_GENRE).split("/")[0].strip()
-        artwork = find_artwork(release_name, title)
+        artwork = find_artwork(release_name, title_plain)
 
         track_id = sc_upload(flac, title, tags, genre, artwork)
         if track_id:

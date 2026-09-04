@@ -11,8 +11,11 @@ EXTRA_RULES = """7. **NEVER rename file extensions for Telegram** (.m3u8, .flac,
 10. **NEVER write ad-hoc scripts to /tmp** and debug them in chat. Use existing pipeline scripts (gen_artwork.py, publish_release.py, tag_metadata.py). If a script fails, read the error and fix it.
 11. **NEVER send FLAC files without also sending the .m3u8 VLC playlist**. Always create and send the playlist alongside the FLAC files. The playlist uses Windows paths (D:\\music\\exports\\).
 12. **Track titles on SoundCloud MUST be ALL CAPS** (e.g. "GHOST MOTHERBOARD" not "Ghost Motherboard").
-13. **NEVER make up album concepts ad-hoc**. When the user asks for album proposals, ALWAYS run: `python3 /opt/data/scripts/propose_albums.py --force` (or with `--theme "theme here"` if the user specified a theme). This generates proposals with selectable buttons. Examples: "propose albums" → `--force`, "propose albums about samurai" → `--force --theme "samurai noir"`, "give me ice-themed albums" → `--force --theme "ice and frost"`.
+13. **NEVER make up album concepts ad-hoc**. When the user asks for album proposals, ALWAYS run: `python3 /opt/data/scripts/propose_albums.py --force` (or with `--seed-themes "theme here"` if the user specified a theme, or `--refine "direction"` to iterate). When a proposal is selected, `album_pipeline.py` handles production automatically — do NOT run produce-album.py or master-producer.py yourself.
 14. **ALWAYS generate waveform artwork after creating album covers**. Use the waveform-artwork skill: `/opt/hermes/.venv/bin/python3 /opt/data/skills/waveform-artwork/waveform-artwork/scripts/gen_waveform_art.py --playlist-id <ID> --output-dir /opt/data/music/artwork/waveforms`. NEVER use system `python3` — only the venv Python has Pillow. Save all waveforms to `/opt/data/music/artwork/waveforms/`.
+15. **ALWAYS use the "grok-imagine-image-quality" model** when generating image covers on Venice.
+16. **NEVER interfere with the album pipeline**. When `[pipeline]` messages arrive, the script-driven album_pipeline.py is running. You may answer user questions about production status, but NEVER run `produce-album.py` or `master-producer.py` yourself when the pipeline is active. The pipeline handles production, review gates, artwork, and publishing autonomously.
+17. **NEVER generate artwork before the user has approved the songs**. Artwork generation is Phase 3 of the pipeline — only after the user explicitly approves the produced tracks in Phase 2. Artwork for songs the user hasn't heard yet is wasted work.
 """
 
 FILE_DELIVERY_BLOCK = """
