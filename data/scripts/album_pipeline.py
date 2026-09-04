@@ -250,6 +250,132 @@ def run_test_mode(proposal_index):
     print("[PHASE 6] PUBLISH")
     print("Publishing mastered release to SoundCloud...")
 
+def phase_1_redo_single(proposal, profile, tracklist, track_num, feedback=None):
+    """Re-produce a single track and swap it into the existing tracklist."""
+    album_name = proposal.get('album', 'Unknown Album')
+    subgenre = proposal.get('subgenre', 'dark nightride trap')
+    
+    # Find the original track info
+    original = None
+    track_idx = None
+    for idx, t in enumerate(tracklist):
+        if t.get('track') == track_num:
+            original = t
+            track_idx = idx
+            break
+    
+    if original is None:
+        send_message(f"❌ Track {track_num} not found in tracklist")
+        return tracklist
+    
+    title = original.get('title', f'Track {track_num}')
+    bpm = original.get('bpm', '130')
+    key = original.get('key', 'Cm')
+    
+    # Build single-track brief
+    brief = f"{album_name} - {subgenre}. "
+    brief += f"Track {track_num}: {title}. "
+    brief += f"{proposal.get('brief', '')} "
+    brief += f"{bpm} BPM, {key}. "
+    
+    # Add sonic identity block
+    if profile:
+        sonic = profile.get('sonic_dna', {})
+        brief += "\n--- VØIDRIDE IDENTITY ---\n"
+        brief += f"Primary genres: {', '.join(sonic.get('primary_genres', []))}\n"
+        models = sonic.get('preferred_models', {})
+        brief += f"Preferred models: {models.get('main', 'elevenlabs-music')} (main), "
+        brief += f"{models.get('texture', 'stable-audio-25')} (texture), "
+        brief += f"{models.get('accent', 'elevenlabs-sound-effects-v2')} (accent)\n"
+        brief += f"Preferred keys: {', '.join(sonic.get('preferred_keys', []))}\n"
+        anti = sonic.get('anti_patterns', [])
+        if anti:
+            brief += f"Anti-patterns: {', '.join(anti)}\n"
+        brief += f"The VØIDRIDE sound: {profile.get('prompt_prefix', '')}\n"
+    
+    if feedback:
+        brief += f"\n[REDO FEEDBACK]: {feedback}\n"
+    
+    send_message(f"🔄 Redoing track {track_num}: {title}...")
+    send_agent_notification(f"Redoing track {track_num}: {title}")
+    
+    # Run master-producer for single track
+    cmd = [
+        "/opt/hermes/.venv/bin/python3",
+        MASTER_PRODUCER_SCRIPT,
+        "--prompt", brief,
+        "--duration", "260",
+        "--quality", "standard",
+        "--target", "streaming",
+        "--director",
+        "--profile", "vidride",
+    ]
+    
+    logger.info(f"Redo track {track_num}: {' '.join(cmd[:6])}...")
+    process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    
+    for line in iter(process.stdout.readline, ''):
+        line = line.strip()
+        if line:
+            logger.info(f"Redo output: {line}")
+    
+    process.wait()
+    if process.returncode != 0:
+        send_message(f"❌ Track {track_num} redo failed")
+        return tracklist
+    
+    # Find the new production dir
+    import glob
+    album_slug = album_name.lower().replace(' ', '-').replace('_', '-')
+    prod_dirs = sorted(glob.glob(f"/opt/data/music/productions/*{album_slug}*"))
+    if prod_dirs:
+        new_dir = prod_dirs[-1]  # latest one
+        mp3s = glob.glob(os.path.join(new_dir, "*.mp3"))
+        flacs = glob.glob(os.path.join(new_dir, "*.flac"))
+        
+        # Get title from new production plan
+        plan_file = os.path.join(new_dir, "production_plan.json")
+        new_title = title
+        new_bpm = bpm
+        new_key = key
+        if os.path.exists(plan_file):
+            try:
+                with open(plan_file) as f:
+                    plan = json.load(f)
+                new_title = plan.get("title", title)
+                new_bpm = plan.get("bpm", bpm)
+                new_key = plan.get("key", key)
+            except:
+                pass
+        
+        # Update tracklist entry
+        new_track = {
+            "track": track_num,
+            "title": new_title,
+            "bpm": new_bpm,
+            "key": new_key,
+            "production_dir": new_dir,
+        }
+        if mp3s:
+            new_track["mp3_path"] = mp3s[0]
+        if flacs:
+            new_track["flac_path"] = flacs[0]
+        
+        tracklist[track_idx] = new_track
+        
+        # Send the new track audio
+        if mp3s and os.path.exists(mp3s[0]):
+            send_audio(mp3s[0], caption=f"🔄 Track {track_num}: {new_title} (REDO) — {new_bpm} BPM, {new_key}")
+        
+        send_message(f"✅ Track {track_num} redone: {new_title} — {new_bpm} BPM, {new_key}")
+        send_agent_notification(f"Track {track_num} redone: {new_title} — {new_bpm} BPM, {new_key}")
+    else:
+        send_message(f"⚠️ Track {track_num} redo completed but couldn't find output")
+    
+    return tracklist
+
+MASTER_PRODUCER_SCRIPT = "/opt/data/skills/master-producer/master-producer/scripts/master-producer.py"
+
 def phase_1_produce(proposal, profile, redo_track=None, redo_feedback=None):
     album_name = proposal.get('album', 'Unknown Album')
     
@@ -830,10 +956,13 @@ def main():
                     current_phase = 1
                     continue
                 elif decision == "redo_track":
-                    redo_track = payload[0]
-                    redo_feedback = payload[1]
-                    send_message(f"Redoing track {redo_track} with feedback: {redo_feedback}")
-                    current_phase = 1
+                    track_num = payload[0]
+                    feedback = payload[1]
+                    send_message(f"🔄 Redoing only track {track_num}...")
+                    tracklist = phase_1_redo_single(proposal, profile, tracklist, track_num, feedback)
+                    state["tracklist"] = tracklist
+                    save_state(state)
+                    # Stay in phase 2 for review — don't re-produce everything
                     continue
                 elif decision == "approved":
                     send_message("✅ All songs approved! Moving to DAW Handoff & Mastering.")
