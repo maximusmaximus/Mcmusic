@@ -686,17 +686,16 @@ def phase_3_daw_handoff(proposal, tracklist):
 
 def phase_4_artwork(proposal, tracklist):
     send_agent_notification("User approved songs, generating artwork")
-    send_message("🎨 Generating artwork...")
+    send_message("🎨 Generating album cover + all track covers...")
     
     album_name = proposal.get('album', 'Unknown Album')
     visual = proposal.get('visual', '')
     track_names = ",".join([t.get('title', '') for t in tracklist])
     
     while True:
-        # Generate cover
+        # ── 1. Generate album cover ──
         cover_path = generate_artwork_venice(visual, album_name)
         if not cover_path:
-            # Fallback to gen_artwork script if API direct call fails
             cmd = [
                 "/opt/hermes/.venv/bin/python3", GEN_ARTWORK_SCRIPT,
                 "--prompt", f"{visual} NO TEXT, NO LETTERS, NO TYPOGRAPHY",
@@ -705,37 +704,39 @@ def phase_4_artwork(proposal, tracklist):
                 "--tracks", track_names
             ]
             subprocess.run(cmd)
-            # Assuming it saves to ARTWORK_DIR, locate the latest
             cover_path = os.path.join(ARTWORK_DIR, f"{album_name.replace(' ', '_')}_cover.png")
             
-        # Optional overlays/waveforms
+        # Optional title overlay on album cover
         if os.path.exists(OVERLAY_TITLE_SCRIPT) and cover_path and os.path.exists(cover_path):
             styled_album = stylize_title(album_name)
             subprocess.run(["/opt/hermes/.venv/bin/python3", OVERLAY_TITLE_SCRIPT,
                 "--image", cover_path, "--title", styled_album, "--auto-color", "--output", cover_path])
-            
         
         if cover_path and os.path.exists(cover_path):
-            buttons = [
-                [{"text": "✅ Approve Artwork", "callback_data": "ap:art:approve"}],
-                [{"text": "✏️ Edit Cover", "callback_data": "ap:art:edit"}],
-                [{"text": "🔄 Regenerate", "callback_data": "ap:art:regen"}]
-            ]
-            send_photo(cover_path, caption="Here is the generated artwork.", reply_markup={"inline_keyboard": buttons})
+            send_photo(cover_path, caption=f"🎨 Album Cover: {album_name}")
         else:
-            send_message("❌ Failed to generate artwork.")
+            send_message("❌ Failed to generate album cover.")
             return
-            
+        
+        # ── 2. Generate all track covers ──
+        track_cover_paths = generate_track_covers(proposal, tracklist)
+        
+        # ── 3. Send approve/regen buttons after ALL covers are shown ──
+        buttons = [
+            [{"text": "✅ Approve All Artwork", "callback_data": "ap:art:approve"}],
+            [{"text": "🔄 Regenerate All", "callback_data": "ap:art:regen"}],
+            [{"text": "✏️ Edit Direction", "callback_data": "ap:art:edit"}]
+        ]
+        send_message("👆 <b>Review all covers above, then choose:</b>", reply_markup={"inline_keyboard": buttons})
+        
         flag, content = poll_flags()
         if flag == "art_approved":
-            # Generate individual track covers
-            generate_track_covers(proposal, tracklist)
             return
         elif flag == "art_edit":
-            send_message("✏️ Edit requested (placeholder for edit_artwork.py integration). Regenerating with new prompt...")
-            visual += f" {content}" # Append edit instructions for now
+            send_message(f"✏️ Regenerating with new direction: {content}")
+            visual += f" {content}"
         elif flag == "art_regen":
-            send_message("🔄 Regenerating artwork...")
+            send_message("🔄 Regenerating all artwork from scratch...")
 
 def generate_track_covers(proposal, tracklist):
     """Generate individual covers for each track with title overlay."""
@@ -746,6 +747,7 @@ def generate_track_covers(proposal, tracklist):
     os.makedirs(track_art_dir, exist_ok=True)
     
     send_message("🎨 Generating track covers...")
+    track_cover_paths = []
     
     for i, t in enumerate(tracklist):
         title = t.get('title', f'Track {i+1}')
@@ -778,28 +780,12 @@ def generate_track_covers(proposal, tracklist):
                     "--bottom", "--auto-color", "--output", cover_path], capture_output=True)
             
             send_photo(cover_path, caption=f"🎨 Track {i+1}: {title} ({stylize_title(title)})")
+            track_cover_paths.append(cover_path)
         else:
             send_message(f"⚠️ Failed to generate cover for {title}")
     
-    # Send review buttons for track covers
-    while True:
-        buttons = [
-            [{"text": "✅ Approve All Artwork", "callback_data": "ap:art:approve"}],
-            [{"text": "🔄 Regenerate All Covers", "callback_data": "ap:art:regen"}],
-            [{"text": "🚀 Publish to SoundCloud", "callback_data": "ap:final:publish"}]
-        ]
-        send_message("🎨 All track covers generated! Review above, then:", reply_markup={"inline_keyboard": buttons})
-        
-        flag, content = poll_flags()
-        if flag == "art_approved":
-            return
-        elif flag == "art_regen":
-            send_message("🔄 Regenerating all covers...")
-            # Clear and re-run
-            continue
-        elif flag == "final_publish":
-            # Skip straight to publish
-            return "publish"
+    send_message(f"✅ All {len(tracklist)} track covers generated!")
+    return track_cover_paths
 
 def phase_5_final_review(tracklist, proposal):
     send_message("📦 Packaging final release files...")
