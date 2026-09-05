@@ -324,14 +324,21 @@ def phase_1_redo_single(proposal, profile, tracklist, track_num, feedback=None):
         send_message(f"❌ Track {track_num} redo failed")
         return tracklist
     
-    # Find the new production dir
+    # Find the new production dir — search all recent dirs, not just album slug
     import glob
     album_slug = album_name.lower().replace(' ', '-').replace('_', '-')
+    
+    # Try album-slug match first, then fall back to most recent of all
     prod_dirs = sorted(glob.glob(f"/opt/data/music/productions/*{album_slug}*"))
+    if not prod_dirs:
+        all_dirs = sorted(glob.glob("/opt/data/music/productions/2026*"))
+        prod_dirs = all_dirs[-3:] if all_dirs else []  # check last 3
+    
     if prod_dirs:
         new_dir = prod_dirs[-1]  # latest one
         mp3s = glob.glob(os.path.join(new_dir, "*.mp3"))
-        flacs = glob.glob(os.path.join(new_dir, "*.flac"))
+        flacs = glob.glob(os.path.join(new_dir, "master_*.flac")) or glob.glob(os.path.join(new_dir, "*.flac"))
+        wavs = glob.glob(os.path.join(new_dir, "mix_*.wav"))
         
         # Get title from new production plan
         plan_file = os.path.join(new_dir, "production_plan.json")
@@ -363,9 +370,33 @@ def phase_1_redo_single(proposal, profile, tracklist, track_num, feedback=None):
         
         tracklist[track_idx] = new_track
         
-        # Send the new track audio
+        # Send the new track audio — try MP3 → FLAC → WAV, converting as needed
+        audio_to_send = None
         if mp3s and os.path.exists(mp3s[0]):
-            send_audio(mp3s[0], caption=f"🔄 Track {track_num}: {new_title} (REDO) — {new_bpm} BPM, {new_key}")
+            audio_to_send = mp3s[0]
+        elif flacs and os.path.exists(flacs[0]):
+            mp3_path = flacs[0].replace('.flac', '.mp3')
+            logger.info(f"Converting FLAC to MP3 for redo send: {flacs[0]}")
+            subprocess.run(["ffmpeg", "-y", "-i", flacs[0], "-b:a", "320k", "-map_metadata", "0", mp3_path],
+                           capture_output=True)
+            if os.path.exists(mp3_path):
+                audio_to_send = mp3_path
+                new_track["mp3_path"] = mp3_path
+        elif wavs and os.path.exists(wavs[0]):
+            mp3_path = wavs[0].replace('.wav', '.mp3')
+            logger.info(f"Converting WAV to MP3 for redo send: {wavs[0]}")
+            subprocess.run(["ffmpeg", "-y", "-i", wavs[0], "-b:a", "320k", mp3_path],
+                           capture_output=True)
+            if os.path.exists(mp3_path):
+                audio_to_send = mp3_path
+                new_track["mp3_path"] = mp3_path
+        
+        if audio_to_send:
+            send_audio(audio_to_send, caption=f"🔄 Track {track_num}: {new_title} (REDO) — {new_bpm} BPM, {new_key}")
+            logger.info(f"Sent redo audio: {audio_to_send}")
+        else:
+            send_message(f"⚠️ Track {track_num} redone but no audio file found to send")
+            logger.error(f"No MP3, FLAC, or WAV found in {new_dir}")
         
         send_message(f"✅ Track {track_num} redone: {new_title} — {new_bpm} BPM, {new_key}")
         send_agent_notification(f"Track {track_num} redone: {new_title} — {new_bpm} BPM, {new_key}")
