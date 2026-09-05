@@ -568,8 +568,8 @@ def phase_2_song_review(tracklist):
             return "reject", content
 
 def generate_artwork_venice(prompt, album_name):
-    os.makedirs(ARTWORK_DIR, exist_ok=True)
     out_path = os.path.join(ARTWORK_DIR, f"{album_name.replace(' ', '_')}_cover.png")
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
     
     if not VENICE_API_KEY:
         logger.error("VENICE_API_KEY missing, skipping raw API call.")
