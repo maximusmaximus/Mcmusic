@@ -784,15 +784,14 @@ def upscale_artwork_venice(image_path, target_size=3000):
         # Center-crop to target_size×target_size
         upscaled_img = Image.open(tmp_path)
         w, h = upscaled_img.size
-        logger.info(f"Upscaled to {w}×{h}, cropping to {target_size}×{target_size}")
+        logger.info(f"Upscaled to {w}×{h}, resizing to {target_size}×{target_size}")
         
         if w >= target_size and h >= target_size:
-            left = (w - target_size) // 2
-            top = (h - target_size) // 2
-            cropped = upscaled_img.crop((left, top, left + target_size, top + target_size))
+            # Resize down to target — preserves full composition
+            final = upscaled_img.resize((target_size, target_size), Image.LANCZOS)
         else:
             # If upscale didn't reach target, resize up with Lanczos
-            cropped = upscaled_img.resize((target_size, target_size), Image.LANCZOS)
+            final = upscaled_img.resize((target_size, target_size), Image.LANCZOS)
         
         # Backup original as _1k.png
         backup_path = image_path.replace('.png', '_1k.png')
@@ -800,7 +799,7 @@ def upscale_artwork_venice(image_path, target_size=3000):
             shutil.copy2(image_path, backup_path)
         
         # Save final 3k as the main file
-        cropped.save(image_path, 'PNG')
+        final.save(image_path, 'PNG')
         
         # Clean up temp
         if os.path.exists(tmp_path):
