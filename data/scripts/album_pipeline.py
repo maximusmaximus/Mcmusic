@@ -713,36 +713,59 @@ def phase_4_artwork(proposal, tracklist):
                 "--image", cover_path, "--title", styled_album, "--auto-color", "--output", cover_path])
         
         if cover_path and os.path.exists(cover_path):
-            send_photo(cover_path, caption=f"🎨 Album Cover: {album_name}")
+            album_art_buttons = [[{"text": "🔄 Regen Album Cover", "callback_data": "ap:art:regen_album"}]]
+            send_photo(cover_path, caption=f"🎨 Album Cover: {album_name}", reply_markup={"inline_keyboard": album_art_buttons})
         else:
             send_message("❌ Failed to generate album cover.")
             return
         
-        # ── 2. Generate all track covers ──
-        track_cover_paths = generate_track_covers(proposal, tracklist)
+        # ── 2. Generate all track covers (each with its own regen button) ──
+        track_cover_paths = _generate_all_track_covers(proposal, tracklist, visual)
         
-        # ── 3. Send approve/regen buttons after ALL covers are shown ──
+        # ── 3. Final buttons after ALL covers shown ──
         buttons = [
             [{"text": "✅ Approve All Artwork", "callback_data": "ap:art:approve"}],
-            [{"text": "🔄 Regenerate All", "callback_data": "ap:art:regen"}],
+            [{"text": "🔄 Regenerate Everything", "callback_data": "ap:art:regen"}],
             [{"text": "✏️ Edit Direction", "callback_data": "ap:art:edit"}]
         ]
-        send_message("👆 <b>Review all covers above, then choose:</b>", reply_markup={"inline_keyboard": buttons})
+        send_message("👆 <b>Review all covers above. Tap 🔄 on any individual cover to redo it, or:</b>", reply_markup={"inline_keyboard": buttons})
         
-        flag, content = poll_flags()
-        if flag == "art_approved":
-            return
-        elif flag == "art_edit":
-            send_message(f"✏️ Regenerating with new direction: {content}")
-            visual += f" {content}"
-        elif flag == "art_regen":
-            send_message("🔄 Regenerating all artwork from scratch...")
+        # ── 4. Poll — handle per-track redos or full approve/regen ──
+        while True:
+            flag, content = poll_flags()
+            if flag == "art_approved":
+                return
+            elif flag == "art_edit":
+                send_message(f"✏️ Regenerating with new direction: {content}")
+                visual += f" {content}"
+                break  # break inner loop → outer while regenerates everything
+            elif flag == "art_regen":
+                send_message("🔄 Regenerating all artwork from scratch...")
+                break  # break inner loop → outer while regenerates everything
+            elif flag == "art_regen_album":
+                send_message("🔄 Regenerating album cover...")
+                new_cover = generate_artwork_venice(visual, album_name)
+                if new_cover and os.path.exists(new_cover):
+                    if os.path.exists(OVERLAY_TITLE_SCRIPT):
+                        styled_album = stylize_title(album_name)
+                        subprocess.run(["/opt/hermes/.venv/bin/python3", OVERLAY_TITLE_SCRIPT,
+                            "--image", new_cover, "--title", styled_album, "--auto-color", "--output", new_cover])
+                    regen_btns = [[{"text": "🔄 Regen Album Cover", "callback_data": "ap:art:regen_album"}]]
+                    send_photo(new_cover, caption=f"🎨 Album Cover (new): {album_name}", reply_markup={"inline_keyboard": regen_btns})
+                else:
+                    send_message("❌ Album cover regen failed")
+                continue  # keep polling
+            elif flag and flag.startswith("art_redo_"):
+                try:
+                    track_num = int(flag.split("_")[-1])
+                except ValueError:
+                    continue
+                _redo_single_track_cover(proposal, tracklist, track_num, visual)
+                continue  # keep polling
 
-def generate_track_covers(proposal, tracklist):
-    """Generate individual covers for each track with title overlay."""
-    import re
+def _generate_all_track_covers(proposal, tracklist, visual):
+    """Generate all track covers, each sent with its own regen button."""
     album_name = proposal.get('album', 'Unknown Album')
-    visual = proposal.get('visual', '')
     track_art_dir = os.path.join(ARTWORK_DIR, album_name.replace(' ', '-'))
     os.makedirs(track_art_dir, exist_ok=True)
     
@@ -751,7 +774,6 @@ def generate_track_covers(proposal, tracklist):
     
     for i, t in enumerate(tracklist):
         title = t.get('title', f'Track {i+1}')
-        # Build a scene prompt derived from the album visual + track direction
         direction = t.get('direction', t.get('genre', ''))
         scene = f"{visual}, scene for track titled {title} — {direction}. Dark cinematic atmosphere, cyber-noir aesthetic, hyperdetailed, moody lighting. NO TEXT, NO LETTERS, NO TYPOGRAPHY"
         
@@ -759,33 +781,70 @@ def generate_track_covers(proposal, tracklist):
         
         cover_path = generate_artwork_venice(scene, f"{album_name}/{title}")
         if cover_path and os.path.exists(cover_path):
-            # Rename to track art dir
             final_path = os.path.join(track_art_dir, f"{title}_cover.png")
             if cover_path != final_path:
                 import shutil
                 shutil.move(cover_path, final_path)
                 cover_path = final_path
             
-            # Generate clean waveform banner BEFORE applying text overlay
+            # Waveform banner
             if os.path.exists(GEN_WAVEFORM_SCRIPT):
                 subprocess.run(["/opt/hermes/.venv/bin/python3", GEN_WAVEFORM_SCRIPT,
                     "--image", cover_path, "--title", title,
                     "--output-dir", os.path.join(ARTWORK_DIR, "..", "waveforms", album_name.replace(' ', '-'))], capture_output=True)
             
-            # Apply Unicode-styled title overlay with --bottom for track covers
+            # Title overlay
             if os.path.exists(OVERLAY_TITLE_SCRIPT):
                 styled_title = stylize_title(title)
                 subprocess.run(["/opt/hermes/.venv/bin/python3", OVERLAY_TITLE_SCRIPT,
                     "--image", cover_path, "--title", styled_title,
                     "--bottom", "--auto-color", "--output", cover_path], capture_output=True)
             
-            send_photo(cover_path, caption=f"🎨 Track {i+1}: {title} ({stylize_title(title)})")
+            # Send with per-track regen button
+            track_btn = [[{"text": f"🔄 Regen Track {i+1}", "callback_data": f"ap:art:redo:{i+1}"}]]
+            send_photo(cover_path, caption=f"🎨 Track {i+1}: {title}", reply_markup={"inline_keyboard": track_btn})
             track_cover_paths.append(cover_path)
         else:
             send_message(f"⚠️ Failed to generate cover for {title}")
     
     send_message(f"✅ All {len(tracklist)} track covers generated!")
     return track_cover_paths
+
+def _redo_single_track_cover(proposal, tracklist, track_num, visual):
+    """Regenerate a single track cover and send the new one."""
+    album_name = proposal.get('album', 'Unknown Album')
+    track_art_dir = os.path.join(ARTWORK_DIR, album_name.replace(' ', '-'))
+    
+    idx = track_num - 1
+    if idx < 0 or idx >= len(tracklist):
+        send_message(f"❌ Track {track_num} not found")
+        return
+    
+    t = tracklist[idx]
+    title = t.get('title', f'Track {track_num}')
+    direction = t.get('direction', t.get('genre', ''))
+    scene = f"{visual}, scene for track titled {title} — {direction}. Dark cinematic atmosphere, cyber-noir aesthetic, hyperdetailed, moody lighting. NO TEXT, NO LETTERS, NO TYPOGRAPHY"
+    
+    send_message(f"🔄 Regenerating cover for Track {track_num}: {title}...")
+    
+    cover_path = generate_artwork_venice(scene, f"{album_name}/{title}")
+    if cover_path and os.path.exists(cover_path):
+        final_path = os.path.join(track_art_dir, f"{title}_cover.png")
+        if cover_path != final_path:
+            import shutil
+            shutil.move(cover_path, final_path)
+            cover_path = final_path
+        
+        if os.path.exists(OVERLAY_TITLE_SCRIPT):
+            styled_title = stylize_title(title)
+            subprocess.run(["/opt/hermes/.venv/bin/python3", OVERLAY_TITLE_SCRIPT,
+                "--image", cover_path, "--title", styled_title,
+                "--bottom", "--auto-color", "--output", cover_path], capture_output=True)
+        
+        track_btn = [[{"text": f"🔄 Regen Track {track_num}", "callback_data": f"ap:art:redo:{track_num}"}]]
+        send_photo(cover_path, caption=f"🎨 Track {track_num}: {title} (NEW)", reply_markup={"inline_keyboard": track_btn})
+    else:
+        send_message(f"❌ Failed to regenerate cover for {title}")
 
 def phase_5_final_review(tracklist, proposal):
     send_message("📦 Packaging final release files...")
