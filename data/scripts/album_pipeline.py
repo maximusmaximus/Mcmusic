@@ -370,10 +370,40 @@ def phase_1_redo_single(proposal, profile, tracklist, track_num, feedback=None):
         
         tracklist[track_idx] = new_track
         
-        # Send the new track audio — try MP3 → FLAC → WAV, converting as needed
+        # ── Check for DAWAGENT mastered version (preferred over raw) ──
+        daw_slug = new_title.lower().replace(' ', '-').replace('_', '-')
+        daw_export_dir = f"/opt/data/dawagent/exports/{daw_slug}"
+        daw_session_dir = f"/opt/data/dawagent/sessions/{daw_slug}"
+        daw_mp3 = os.path.join(daw_export_dir, f"{daw_slug}_MASTER.mp3")
+        daw_flac = os.path.join(daw_export_dir, f"{daw_slug}_MASTER.flac")
+        
+        # If DAWAGENT session exists but no master yet, wait for it
+        if os.path.isdir(daw_session_dir) and not os.path.exists(daw_mp3):
+            send_message(f"⏳ Waiting for DAWAGENT mastering of {new_title}...")
+            import time
+            for _wait in range(18):  # up to 90 seconds
+                time.sleep(5)
+                if os.path.exists(daw_mp3):
+                    break
+        
+        # Send the best available audio: DAWAGENT master → production MP3 → FLAC → WAV
         audio_to_send = None
-        if mp3s and os.path.exists(mp3s[0]):
+        audio_label = ""
+        
+        if os.path.exists(daw_mp3):
+            audio_to_send = daw_mp3
+            audio_label = "DAWAGENT Mastered"
+            new_track["master_mp3"] = daw_mp3
+            logger.info(f"Using DAWAGENT master: {daw_mp3}")
+        elif os.path.exists(daw_flac):
+            mp3_path = daw_flac.replace('.flac', '.mp3')
+            subprocess.run(["ffmpeg", "-y", "-i", daw_flac, "-b:a", "320k", mp3_path], capture_output=True)
+            if os.path.exists(mp3_path):
+                audio_to_send = mp3_path
+                audio_label = "DAWAGENT Mastered"
+        elif mp3s and os.path.exists(mp3s[0]):
             audio_to_send = mp3s[0]
+            audio_label = "Pre-Master"
         elif flacs and os.path.exists(flacs[0]):
             mp3_path = flacs[0].replace('.flac', '.mp3')
             logger.info(f"Converting FLAC to MP3 for redo send: {flacs[0]}")
@@ -381,6 +411,7 @@ def phase_1_redo_single(proposal, profile, tracklist, track_num, feedback=None):
                            capture_output=True)
             if os.path.exists(mp3_path):
                 audio_to_send = mp3_path
+                audio_label = "Pre-Master"
                 new_track["mp3_path"] = mp3_path
         elif wavs and os.path.exists(wavs[0]):
             mp3_path = wavs[0].replace('.wav', '.mp3')
@@ -389,14 +420,15 @@ def phase_1_redo_single(proposal, profile, tracklist, track_num, feedback=None):
                            capture_output=True)
             if os.path.exists(mp3_path):
                 audio_to_send = mp3_path
+                audio_label = "Raw Mix"
                 new_track["mp3_path"] = mp3_path
         
         if audio_to_send:
-            send_audio(audio_to_send, caption=f"🔄 Track {track_num}: {new_title} (REDO) — {new_bpm} BPM, {new_key}")
-            logger.info(f"Sent redo audio: {audio_to_send}")
+            send_audio(audio_to_send, caption=f"🔄 Track {track_num}: {new_title} ({audio_label}) — {new_bpm} BPM, {new_key}")
+            logger.info(f"Sent redo audio ({audio_label}): {audio_to_send}")
         else:
             send_message(f"⚠️ Track {track_num} redone but no audio file found to send")
-            logger.error(f"No MP3, FLAC, or WAV found in {new_dir}")
+            logger.error(f"No MP3, FLAC, or WAV found in {new_dir} or DAWAGENT exports")
         
         send_message(f"✅ Track {track_num} redone: {new_title} — {new_bpm} BPM, {new_key}")
         send_agent_notification(f"Track {track_num} redone: {new_title} — {new_bpm} BPM, {new_key}")
