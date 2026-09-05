@@ -400,6 +400,48 @@ def phase_1_redo_single(proposal, profile, tracklist, track_num, feedback=None):
         
         send_message(f"✅ Track {track_num} redone: {new_title} — {new_bpm} BPM, {new_key}")
         send_agent_notification(f"Track {track_num} redone: {new_title} — {new_bpm} BPM, {new_key}")
+        
+        # ── Also regenerate the track cover ──
+        visual = proposal.get('visual', '')
+        direction = new_track.get('direction', new_track.get('genre', subgenre))
+        send_message(f"🎨 Regenerating cover for redone track {track_num}: {new_title}...")
+        
+        scene = _build_varied_scene(visual, new_title, direction, track_idx, len(tracklist))
+        cover_path = generate_artwork_venice(scene, f"{album_name}/{new_title}")
+        
+        if cover_path and os.path.exists(cover_path):
+            track_art_dir = os.path.join(ARTWORK_DIR, album_name.replace(' ', '-'))
+            os.makedirs(track_art_dir, exist_ok=True)
+            final_path = os.path.join(track_art_dir, f"{new_title}_cover.png")
+            if cover_path != final_path:
+                import shutil
+                shutil.move(cover_path, final_path)
+                cover_path = final_path
+            
+            # Title overlay
+            if os.path.exists(OVERLAY_TITLE_SCRIPT):
+                styled_title = stylize_title(new_title)
+                subprocess.run(["/opt/hermes/.venv/bin/python3", OVERLAY_TITLE_SCRIPT,
+                    "--image", cover_path, "--title", styled_title,
+                    "--bottom", "--auto-color", "--output", cover_path], capture_output=True)
+            
+            track_btn = [[{"text": f"🔄 Regen Track {track_num}", "callback_data": f"ap:art:redo:{track_num}"}]]
+            send_photo(cover_path, caption=f"🎨 Track {track_num}: {new_title} (new cover)", reply_markup={"inline_keyboard": track_btn})
+            logger.info(f"Sent new cover for redone track {track_num}: {cover_path}")
+            
+            # Update SoundCloud artwork if track ID is known
+            sc_track_id = new_track.get('soundcloud_track_id') or original.get('soundcloud_track_id')
+            if sc_track_id:
+                try:
+                    SC_SCRIPT = "/opt/data/skills/music/soundcloud/scripts/soundcloud_api.py"
+                    subprocess.run(["/opt/hermes/.venv/bin/python3", SC_SCRIPT, "update",
+                        "--track-id", str(sc_track_id), "--artwork", cover_path],
+                        capture_output=True, timeout=60)
+                    logger.info(f"Updated SoundCloud artwork for track {sc_track_id}")
+                except Exception as e:
+                    logger.error(f"Failed to update SC artwork: {e}")
+        else:
+            send_message(f"⚠️ Could not regenerate cover for {new_title}")
     else:
         send_message(f"⚠️ Track {track_num} redo completed but couldn't find output")
     
