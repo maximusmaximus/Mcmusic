@@ -763,19 +763,97 @@ def phase_4_artwork(proposal, tracklist):
                 _redo_single_track_cover(proposal, tracklist, track_num, visual)
                 continue  # keep polling
 
+def _build_varied_scene(visual, title, direction, track_idx, total_tracks):
+    """Build a varied but cohesive scene prompt for each track cover.
+    
+    Creates visual continuity through shared style/palette while varying:
+    - Environment/setting
+    - Weather/atmospheric effects
+    - Camera angle/composition
+    - Time of day / lighting
+    - Color accent
+    """
+    # ── Environment progression (tells a visual story across tracks) ──
+    environments = [
+        "desolate volcanic wasteland with cracked obsidian ground and distant eruptions",
+        "flooded industrial ruins with water reflecting burning sky, submerged machinery",
+        "lightning-struck highway overpass above a sea of molten lava and ash clouds",
+        "hurricane-ravaged cityscape with buildings torn apart, debris spiraling upward",
+        "aftermath crater landscape under clearing skies, embers floating like fireflies",
+    ]
+    
+    # ── Weather / atmospheric FX (each track gets a unique weather system) ──
+    weather = [
+        "raining molten fire droplets from a volcanic sky, pyroclastic flow in background",
+        "torrential acid rain with neon reflections in puddles, thick fog rolling in",
+        "massive lightning storm with forked bolts illuminating everything in purple-white",
+        "category 5 hurricane winds with horizontal rain and swirling fire tornados",
+        "ash snow falling gently through shafts of golden light breaking through dark clouds",
+    ]
+    
+    # ── Camera angle / composition ──
+    cameras = [
+        "extreme wide shot, figure silhouetted against massive explosion",
+        "low angle shot looking up through rain, reflections on wet ground",
+        "aerial drone view looking down at destruction pattern, geometric chaos",
+        "dutch angle close-up with debris flying past camera, motion blur",
+        "symmetrical centered composition, long perspective vanishing into distance",
+    ]
+    
+    # ── Time of day / lighting ──
+    lighting = [
+        "blood-red twilight, sky cracked with orange fissures",
+        "deep midnight blue with bioluminescent accents and distant fires",
+        "overcast bruised-purple sky with sickly green underlighting",
+        "stark chiaroscuro with single harsh spotlight from above",
+        "golden hour through smoke haze, long dramatic shadows",
+    ]
+    
+    # ── Color accent (consistent series palette but each track has a hero color) ──
+    color_accents = [
+        "dominant crimson red and charcoal black",
+        "deep ocean teal and rusted copper",
+        "electric violet and ash grey",
+        "molten amber-orange and obsidian",
+        "ghostly silver-white and burnt umber",
+    ]
+    
+    # Cycle through variations (wraps for albums > 5 tracks)
+    env = environments[track_idx % len(environments)]
+    wthr = weather[track_idx % len(weather)]
+    cam = cameras[track_idx % len(cameras)]
+    light = lighting[track_idx % len(lighting)]
+    color = color_accents[track_idx % len(color_accents)]
+    
+    # Build the full scene prompt
+    scene = (
+        f"{visual}. "
+        f"UNIQUE SCENE FOR THIS TRACK: {env}. "
+        f"WEATHER: {wthr}. "
+        f"CAMERA: {cam}. "
+        f"LIGHTING: {light}. "
+        f"COLOR PALETTE: {color}. "
+        f"Track mood: {title} — {direction}. "
+        f"IMPORTANT: This is track {track_idx + 1} of {total_tracks} in a cohesive album art series. "
+        f"Same dark cinematic style and hyperdetailed quality throughout, but each cover must have "
+        f"a DISTINCTLY DIFFERENT environment and atmosphere. "
+        f"NO TEXT, NO LETTERS, NO TYPOGRAPHY, NO WORDS"
+    )
+    return scene
+
 def _generate_all_track_covers(proposal, tracklist, visual):
     """Generate all track covers, each sent with its own regen button."""
     album_name = proposal.get('album', 'Unknown Album')
     track_art_dir = os.path.join(ARTWORK_DIR, album_name.replace(' ', '-'))
     os.makedirs(track_art_dir, exist_ok=True)
     
-    send_message("🎨 Generating track covers...")
+    send_message("🎨 Generating track covers with scene variation...")
     track_cover_paths = []
     
     for i, t in enumerate(tracklist):
         title = t.get('title', f'Track {i+1}')
         direction = t.get('direction', t.get('genre', ''))
-        scene = f"{visual}, scene for track titled {title} — {direction}. Dark cinematic atmosphere, cyber-noir aesthetic, hyperdetailed, moody lighting. NO TEXT, NO LETTERS, NO TYPOGRAPHY"
+        scene = _build_varied_scene(visual, title, direction, i, len(tracklist))
         
         send_agent_notification(f"Generating cover {i+1}/{len(tracklist)}: {title}")
         
@@ -823,7 +901,7 @@ def _redo_single_track_cover(proposal, tracklist, track_num, visual):
     t = tracklist[idx]
     title = t.get('title', f'Track {track_num}')
     direction = t.get('direction', t.get('genre', ''))
-    scene = f"{visual}, scene for track titled {title} — {direction}. Dark cinematic atmosphere, cyber-noir aesthetic, hyperdetailed, moody lighting. NO TEXT, NO LETTERS, NO TYPOGRAPHY"
+    scene = _build_varied_scene(visual, title, direction, idx, len(tracklist))
     
     send_message(f"🔄 Regenerating cover for Track {track_num}: {title}...")
     
