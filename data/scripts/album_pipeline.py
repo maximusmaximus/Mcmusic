@@ -457,8 +457,12 @@ def phase_1_redo_single(proposal, profile, tracklist, track_num, feedback=None):
                     "--image", cover_path, "--title", styled_title,
                     "--bottom", "--auto-color", "--output", cover_path], capture_output=True)
             
+            # Upscale to 3000×3000 for SoundCloud
+            send_message(f"⬆️ Upscaling {new_title} cover to 3000×3000...")
+            upscale_artwork_venice(cover_path)
+            
             track_btn = [[{"text": f"🔄 Regen Track {track_num}", "callback_data": f"ap:art:redo:{track_num}"}]]
-            send_photo(cover_path, caption=f"🎨 Track {track_num}: {new_title} (new cover)", reply_markup={"inline_keyboard": track_btn})
+            send_photo(cover_path, caption=f"🎨 Track {track_num}: {new_title} (new cover — 3000×3000)", reply_markup={"inline_keyboard": track_btn})
             logger.info(f"Sent new cover for redone track {track_num}: {cover_path}")
             
             # Update SoundCloud artwork if track ID is known
@@ -704,6 +708,112 @@ def generate_artwork_venice(prompt, album_name):
     return None
 
 
+def upscale_artwork_venice(image_path, target_size=3000):
+    """Upscale a cover image via Venice API to target_size×target_size.
+    
+    1. POST /image/upscale with scale=4 (1024→4096)
+    2. Center-crop to target_size×target_size
+    3. Save as final, backup original as _1k.png
+    Returns path to upscaled image, or original path on failure.
+    """
+    if not VENICE_API_KEY:
+        logger.error("VENICE_API_KEY missing, skipping upscale")
+        return image_path
+    
+    if not os.path.exists(image_path):
+        logger.error(f"Upscale: image not found: {image_path}")
+        return image_path
+    
+    from PIL import Image
+    
+    # Check if already upscaled
+    img = Image.open(image_path)
+    if img.size[0] >= target_size and img.size[1] >= target_size:
+        logger.info(f"Already {img.size[0]}×{img.size[1]}, skip upscale: {image_path}")
+        return image_path
+    
+    logger.info(f"Upscaling {os.path.basename(image_path)} from {img.size[0]}×{img.size[1]} to {target_size}×{target_size}...")
+    
+    # Read image bytes
+    with open(image_path, 'rb') as f:
+        img_data = f.read()
+    
+    # Build multipart request
+    boundary = '----VeniceUpscaleBoundary'
+    
+    # Image field
+    body = f'--{boundary}\r\n'.encode()
+    body += f'Content-Disposition: form-data; name="image"; filename="{os.path.basename(image_path)}"\r\n'.encode()
+    body += b'Content-Type: image/png\r\n\r\n'
+    body += img_data
+    body += b'\r\n'
+    
+    # Scale field
+    body += f'--{boundary}\r\n'.encode()
+    body += b'Content-Disposition: form-data; name="scale"\r\n\r\n'
+    body += b'4'
+    body += b'\r\n'
+    
+    # Creativity field
+    body += f'--{boundary}\r\n'.encode()
+    body += b'Content-Disposition: form-data; name="creativity"\r\n\r\n'
+    body += b'0.01'
+    body += b'\r\n'
+    
+    body += f'--{boundary}--\r\n'.encode()
+    
+    url = "https://api.venice.ai/api/v1/image/upscale"
+    req = urllib.request.Request(url, data=body, method='POST', headers={
+        'Authorization': f'Bearer {VENICE_API_KEY}',
+        'Content-Type': f'multipart/form-data; boundary={boundary}',
+    })
+    
+    try:
+        with urllib.request.urlopen(req, timeout=120) as response:
+            upscaled_data = response.read()
+        
+        if len(upscaled_data) < 1000:
+            logger.error(f"Upscale returned too little data ({len(upscaled_data)} bytes)")
+            return image_path
+        
+        # Save upscaled full-res temporarily
+        tmp_path = image_path.replace('.png', '_4k.png')
+        with open(tmp_path, 'wb') as f:
+            f.write(upscaled_data)
+        
+        # Center-crop to target_size×target_size
+        upscaled_img = Image.open(tmp_path)
+        w, h = upscaled_img.size
+        logger.info(f"Upscaled to {w}×{h}, cropping to {target_size}×{target_size}")
+        
+        if w >= target_size and h >= target_size:
+            left = (w - target_size) // 2
+            top = (h - target_size) // 2
+            cropped = upscaled_img.crop((left, top, left + target_size, top + target_size))
+        else:
+            # If upscale didn't reach target, resize up with Lanczos
+            cropped = upscaled_img.resize((target_size, target_size), Image.LANCZOS)
+        
+        # Backup original as _1k.png
+        backup_path = image_path.replace('.png', '_1k.png')
+        if not os.path.exists(backup_path):
+            shutil.copy2(image_path, backup_path)
+        
+        # Save final 3k as the main file
+        cropped.save(image_path, 'PNG')
+        
+        # Clean up temp
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+        
+        final_img = Image.open(image_path)
+        logger.info(f"✅ Upscaled: {os.path.basename(image_path)} → {final_img.size[0]}×{final_img.size[1]}")
+        return image_path
+        
+    except Exception as e:
+        logger.error(f"Venice upscale failed for {image_path}: {e}")
+        return image_path
+
 def phase_3_daw_handoff(proposal, tracklist):
     album_name = proposal.get('album', 'release').replace(' ', '_').replace('-', '_')
     send_message(f"🎛️ Creating DAWAGENT session for <b>{proposal.get('album')}</b>...")
@@ -839,6 +949,25 @@ def phase_4_artwork(proposal, tracklist):
         while True:
             flag, content = poll_flags()
             if flag == "art_approved":
+                # ── Upscale all approved covers to 3000×3000 ──
+                send_message("⬆️ Upscaling all covers to 3000×3000 for SoundCloud...")
+                
+                # Upscale album cover
+                album_cover_path = os.path.join(ARTWORK_DIR, f"{album_name.replace(' ', '_')}_cover.png")
+                if os.path.exists(album_cover_path):
+                    send_message(f"⬆️ Upscaling album cover...")
+                    upscale_artwork_venice(album_cover_path)
+                
+                # Upscale each track cover
+                track_art_dir = os.path.join(ARTWORK_DIR, album_name.replace(' ', '-'))
+                for t in tracklist:
+                    title = t.get('title', '')
+                    cover_file = os.path.join(track_art_dir, f"{title}_cover.png")
+                    if os.path.exists(cover_file):
+                        send_message(f"⬆️ Upscaling {title} cover...")
+                        upscale_artwork_venice(cover_file)
+                
+                send_message("✅ All covers upscaled to 3000×3000!")
                 return
             elif flag == "art_edit":
                 send_message(f"✏️ Regenerating with new direction: {content}")
