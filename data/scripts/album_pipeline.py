@@ -38,9 +38,8 @@ def get_album_masters_dir(album_name):
     return os.path.join(get_album_dir(album_name), "masters")
 
 def slugify_title(title):
-    """Convert track title to kebab-case slug for filenames."""
-    import re
-    return re.sub(r'[^a-z0-9]+', '-', title.lower()).strip('-')
+    """Clean track title for filenames: 'Permafrost Cadaver' → 'PERMAFROST CADAVER'"""
+    return title.upper().strip()
 
 def acquire_lock():
     if os.path.exists(LOCK_FILE):
@@ -1227,7 +1226,7 @@ def phase_5_final_review(tracklist, proposal):
         "soundcloud": {},
         "artwork": {
             "album_cover": "artwork/album_cover.png",
-            "track_covers": [f"artwork/{(idx+1):02d}_{slugify_title(t.get('title',''))}_cover.png" for idx, t in enumerate(tracklist)],
+            "track_covers": [f"artwork/{slugify_title(t.get('title',''))}_cover.png" for idx, t in enumerate(tracklist)],
         },
     }
     with open(os.path.join(album_dir, "release.json"), "w") as f:
@@ -1247,7 +1246,7 @@ def phase_5_final_review(tracklist, proposal):
                 logger.warning(f"No master for {title}, using raw: {master_path}")
         if master_path and os.path.exists(master_path):
             ext = os.path.splitext(master_path)[1]
-            canonical_name = f"{(idx+1):02d}_{title.replace(' ', '_').upper()}_MASTER{ext}"
+            canonical_name = f"{title.upper()}_MASTER{ext}"
             # Copy to canonical masters/
             shutil.copy2(master_path, os.path.join(masters_dir, canonical_name))
             # Also copy to legacy releases/
