@@ -19,9 +19,28 @@ logger = logging.getLogger('album_pipeline')
 FLAGS_DIR = "/tmp/pipeline_flags/"
 PROPOSALS_FILE = "/opt/data/music/proposals/current_proposals.json"
 PROFILE_FILE = "/opt/data/music/profiles/vidride/profile.json"
-ARTWORK_DIR = "/opt/data/music/artwork/covers/"
+ARTWORK_DIR = "/opt/data/music/artwork/covers/"  # legacy, kept for compat
+ALBUMS_BASE = "/opt/data/music/albums"  # canonical album home
 LOCK_FILE = "/tmp/album_pipeline.lock"
 STATE_FILE = "/opt/data/music/pipeline_state.json"
+
+def get_album_dir(album_name):
+    """Get canonical album directory: /opt/data/music/albums/{slug}/"""
+    slug = album_name.lower().replace(' ', '-').replace('_', '-')
+    return os.path.join(ALBUMS_BASE, slug)
+
+def get_album_artwork_dir(album_name):
+    """Get canonical artwork dir for an album."""
+    return os.path.join(get_album_dir(album_name), "artwork")
+
+def get_album_masters_dir(album_name):
+    """Get canonical masters dir for an album."""
+    return os.path.join(get_album_dir(album_name), "masters")
+
+def slugify_title(title):
+    """Convert track title to kebab-case slug for filenames."""
+    import re
+    return re.sub(r'[^a-z0-9]+', '-', title.lower()).strip('-')
 
 def acquire_lock():
     if os.path.exists(LOCK_FILE):
@@ -442,7 +461,7 @@ def phase_1_redo_single(proposal, profile, tracklist, track_num, feedback=None):
         cover_path = generate_artwork_venice(scene, f"{album_name}/{new_title}")
         
         if cover_path and os.path.exists(cover_path):
-            track_art_dir = os.path.join(ARTWORK_DIR, album_name.replace(' ', '-'))
+            track_art_dir = get_album_artwork_dir(album_name)
             os.makedirs(track_art_dir, exist_ok=True)
             final_path = os.path.join(track_art_dir, f"{new_title}_cover.png")
             if cover_path != final_path:
@@ -677,7 +696,17 @@ def phase_2_song_review(tracklist):
             return "reject", content
 
 def generate_artwork_venice(prompt, album_name):
-    out_path = os.path.join(ARTWORK_DIR, f"{album_name.replace(' ', '_')}_cover.png")
+    # Use canonical path: albums/{slug}/artwork/{name}_cover.png
+    # album_name may be "ALBUM_NAME" or "ALBUM_NAME/TRACK_TITLE"
+    parts = album_name.split('/')
+    if len(parts) == 2:
+        # Track cover: albums/{album-slug}/artwork/NN_track-slug_cover.png
+        art_dir = get_album_artwork_dir(parts[0])
+        out_path = os.path.join(art_dir, f"{parts[1].replace(' ', '_')}_cover.png")
+    else:
+        # Album cover: albums/{album-slug}/artwork/album_cover.png
+        art_dir = get_album_artwork_dir(album_name)
+        out_path = os.path.join(art_dir, "album_cover.png")
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     
     if not VENICE_API_KEY:
@@ -918,7 +947,7 @@ def phase_4_artwork(proposal, tracklist):
                 "--tracks", track_names
             ]
             subprocess.run(cmd)
-            cover_path = os.path.join(ARTWORK_DIR, f"{album_name.replace(' ', '_')}_cover.png")
+            cover_path = os.path.join(get_album_artwork_dir(album_name), "album_cover.png")
             
         # Optional title overlay on album cover
         if os.path.exists(OVERLAY_TITLE_SCRIPT) and cover_path and os.path.exists(cover_path):
@@ -952,13 +981,14 @@ def phase_4_artwork(proposal, tracklist):
                 send_message("⬆️ Upscaling all covers to 3000×3000 for SoundCloud...")
                 
                 # Upscale album cover
-                album_cover_path = os.path.join(ARTWORK_DIR, f"{album_name.replace(' ', '_')}_cover.png")
+                art_dir = get_album_artwork_dir(album_name)
+                album_cover_path = os.path.join(art_dir, "album_cover.png")
                 if os.path.exists(album_cover_path):
                     send_message(f"⬆️ Upscaling album cover...")
                     upscale_artwork_venice(album_cover_path)
                 
                 # Upscale each track cover
-                track_art_dir = os.path.join(ARTWORK_DIR, album_name.replace(' ', '-'))
+                track_art_dir = art_dir
                 for t in tracklist:
                     title = t.get('title', '')
                     cover_file = os.path.join(track_art_dir, f"{title}_cover.png")
@@ -1077,7 +1107,7 @@ def _build_varied_scene(visual, title, direction, track_idx, total_tracks):
 def _generate_all_track_covers(proposal, tracklist, visual):
     """Generate all track covers, each sent with its own regen button."""
     album_name = proposal.get('album', 'Unknown Album')
-    track_art_dir = os.path.join(ARTWORK_DIR, album_name.replace(' ', '-'))
+    track_art_dir = get_album_artwork_dir(album_name)
     os.makedirs(track_art_dir, exist_ok=True)
     
     send_message("🎨 Generating track covers with scene variation...")
@@ -1102,7 +1132,7 @@ def _generate_all_track_covers(proposal, tracklist, visual):
             if os.path.exists(GEN_WAVEFORM_SCRIPT):
                 subprocess.run(["/opt/hermes/.venv/bin/python3", GEN_WAVEFORM_SCRIPT,
                     "--image", cover_path, "--title", title,
-                    "--output-dir", os.path.join(ARTWORK_DIR, "..", "waveforms", album_name.replace(' ', '-'))], capture_output=True)
+                    "--output-dir", os.path.join(get_album_artwork_dir(album_name), "waveforms")], capture_output=True)
             
             # Title overlay
             if os.path.exists(OVERLAY_TITLE_SCRIPT):
@@ -1124,7 +1154,7 @@ def _generate_all_track_covers(proposal, tracklist, visual):
 def _redo_single_track_cover(proposal, tracklist, track_num, visual):
     """Regenerate a single track cover and send the new one."""
     album_name = proposal.get('album', 'Unknown Album')
-    track_art_dir = os.path.join(ARTWORK_DIR, album_name.replace(' ', '-'))
+    track_art_dir = get_album_artwork_dir(album_name)
     
     idx = track_num - 1
     if idx < 0 or idx >= len(tracklist):
@@ -1162,45 +1192,69 @@ def phase_5_final_review(tracklist, proposal):
     
     album_name = proposal.get('album', 'release')
     album_slug = album_name.lower().replace(' ', '-').replace('_', '-')
+    
+    # Use canonical album dir
+    album_dir = get_album_dir(album_name)
+    masters_dir = get_album_masters_dir(album_name)
+    art_dir = get_album_artwork_dir(album_name)
+    os.makedirs(masters_dir, exist_ok=True)
+    os.makedirs(art_dir, exist_ok=True)
+    
+    # Also maintain legacy releases/ dir for publish_release.py compat
     release_dir = f"/opt/data/music/releases/{album_slug}"
     os.makedirs(release_dir, exist_ok=True)
     
-    # Generate release.json
-    release_json = {
-        "title": album_name,
-        "genre": proposal.get("subgenre", "Electronic"),
-        "label": "VØIDRIDE",
-        "release_date": time.strftime("%Y-%m-%d"),
-        "description": proposal.get("description", proposal.get("brief", ""))
-    }
-    with open(os.path.join(release_dir, "release.json"), "w") as f:
-        json.dump(release_json, f, indent=2)
-        
-    # Generate tracks_meta.json & copy masters
-    tracks_meta = []
-    import shutil
+    # Build tracklist metadata
+    tl_meta = []
     for idx, t in enumerate(tracklist):
         title = t.get("title", f"Track_{idx+1}")
-        tracks_meta.append({
+        tl_meta.append({
+            "track": idx + 1,
             "title": title,
             "bpm": t.get("bpm"),
             "key": t.get("key"),
             "genre": proposal.get("subgenre", "Electronic")
         })
-        # Copy master FLAC if it exists, otherwise fall back to raw audio
+    
+    # Generate release.json in canonical location
+    release_json = {
+        "title": album_name,
+        "genre": proposal.get("subgenre", "Electronic"),
+        "label": "VØIDRIDE",
+        "release_date": time.strftime("%Y-%m-%d"),
+        "description": proposal.get("description", proposal.get("brief", "")),
+        "tracklist": tl_meta,
+        "soundcloud": {},
+        "artwork": {
+            "album_cover": "artwork/album_cover.png",
+            "track_covers": [f"artwork/{(idx+1):02d}_{slugify_title(t.get('title',''))}_cover.png" for idx, t in enumerate(tracklist)],
+        },
+    }
+    with open(os.path.join(album_dir, "release.json"), "w") as f:
+        json.dump(release_json, f, indent=2)
+    # Also write to legacy location
+    with open(os.path.join(release_dir, "release.json"), "w") as f:
+        json.dump(release_json, f, indent=2)
+        
+    # Copy masters to canonical dir
+    import shutil
+    for idx, t in enumerate(tracklist):
+        title = t.get("title", f"Track_{idx+1}")
         master_path = t.get("master_path")
         if not master_path or not os.path.exists(master_path):
-            # Fallback: try raw FLAC, then MP3
             master_path = t.get("flac_path") or t.get("mp3_path")
             if master_path:
                 logger.warning(f"No master for {title}, using raw: {master_path}")
         if master_path and os.path.exists(master_path):
             ext = os.path.splitext(master_path)[1]
-            flac_dest = os.path.join(release_dir, f"{(idx+1):02d}-{title.replace(' ', '-')}{ext}")
-            shutil.copy2(master_path, flac_dest)
-            
+            canonical_name = f"{(idx+1):02d}_{title.replace(' ', '_').upper()}_MASTER{ext}"
+            # Copy to canonical masters/
+            shutil.copy2(master_path, os.path.join(masters_dir, canonical_name))
+            # Also copy to legacy releases/
+            shutil.copy2(master_path, os.path.join(release_dir, canonical_name))
+    
     with open(os.path.join(release_dir, "tracks_meta.json"), "w") as f:
-        json.dump(tracks_meta, f, indent=2)
+        json.dump(tl_meta, f, indent=2)
     
     res = subprocess.run(["/opt/hermes/.venv/bin/python3", SHARE_SCRIPT, "--path", release_dir], capture_output=True, text=True)
     if res.returncode == 0:
