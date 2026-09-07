@@ -842,72 +842,139 @@ def upscale_artwork_venice(image_path, target_size=3000):
         return image_path
 
 def phase_3_daw_handoff(proposal, tracklist):
-    album_name = proposal.get('album', 'release').replace(' ', '_').replace('-', '_')
-    send_message(f"🎛️ Creating DAWAGENT session for <b>{proposal.get('album')}</b>...")
+    album_name = proposal.get('album', 'release')
+    album_slug = album_name.lower().replace(' ', '-').replace('_', '-')
+    send_message(f"🎛️ DAWAGENT mastering for <b>{album_name}</b>...")
     
-    # 1. Create session — use BPM from first track if available
+    # 1. Check if DAWAGENT already mastered tracks (it often runs ahead of pipeline)
+    exports_base = "/opt/data/dawagent/exports"
+    already_mastered = 0
+    for t in tracklist:
+        title = t.get('title', '')
+        track_slug = title.lower().replace(' ', '_')
+        # DAWAGENT uses: {album-slug}-{track_slug}
+        possible_slugs = [
+            f"{album_slug}-{track_slug}",
+            f"{album_slug}-{title.lower().replace(' ', '-')}",
+            f"{album_slug}-{title.lower().replace(' ', '')}",
+        ]
+        for slug in possible_slugs:
+            export_dir = os.path.join(exports_base, slug)
+            master_flac = os.path.join(export_dir, f"{slug}_MASTER.flac")
+            master_mp3 = os.path.join(export_dir, f"{slug}_MASTER.mp3")
+            if os.path.exists(master_flac):
+                t['master_path'] = master_flac
+                t['master_mp3'] = master_mp3
+                t['dawagent_mastered'] = True
+                already_mastered += 1
+                logger.info(f"DAWAGENT already mastered {title}: {master_flac}")
+                break
+    
+    if already_mastered == len(tracklist):
+        send_message(f"✅ DAWAGENT already mastered all {already_mastered} tracks!")
+        # Send masters for review
+        for t in tracklist:
+            if t.get('master_path') and os.path.exists(t['master_path']):
+                send_audio(t['master_path'], caption=f"💿 MASTER: {t.get('title')} (DAWAGENT)")
+        return
+    
+    # 2. Create DAW session for unmastered tracks
+    session_name = album_slug.replace('-', '_')
     bpm = str(tracklist[0].get('bpm', '130')) if tracklist else '130'
-    subprocess.run(["/opt/hermes/.venv/bin/python3", DAWCTL_SCRIPT, "session", "create", "--name", album_name, "--sr", "48000", "--bpm", bpm])
+    subprocess.run(["/opt/hermes/.venv/bin/python3", DAWCTL_SCRIPT, "session", "create",
+                    "--name", session_name, "--sr", "48000", "--bpm", bpm])
     
-    # 2. Write Handoff
+    # 3. Handoff stems
     stems = []
     stem_names = []
     for t in tracklist:
+        if t.get('dawagent_mastered'):
+            continue  # Skip already mastered tracks
         if t.get('flac_path') and os.path.exists(t.get('flac_path')):
             stems.append(t['flac_path'])
         elif t.get('mp3_path') and os.path.exists(t.get('mp3_path')):
             stems.append(t['mp3_path'])
         stem_names.append(t.get('title', f"Track_{t.get('track')}"))
-        
-    if not stems:
-        send_message("❌ No stems found for DAW handoff!")
-        return
-        
-    subprocess.run([
-        "/opt/hermes/.venv/bin/python3", HANDOFF_SCRIPT, "write",
-        "--session", album_name,
-        "--stems", ",".join(stems),
-        "--stem-names", ",".join(stem_names),
-        "--notes", f"Mastering for {proposal.get('album')}"
-    ])
     
-    send_message(f"✅ DAW Session `{album_name}` created and populated. Waiting for DAWAGENT masters (polling `/opt/data/dawagent/exports/{album_name}`)...")
+    if stems:
+        subprocess.run([
+            "/opt/hermes/.venv/bin/python3", HANDOFF_SCRIPT, "write",
+            "--session", session_name,
+            "--stems", ",".join(stems),
+            "--stem-names", ",".join(stem_names),
+            "--notes", f"Mastering for {album_name}"
+        ])
+        send_message(f"✅ DAW session created. {already_mastered}/{len(tracklist)} already mastered, waiting for remaining...")
+    else:
+        send_message("All tracks already have masters or no stems available.")
+        return
+    
     send_agent_notification("Waiting for DAW masters")
     
-    # 3. Poll for masters
-    exports_dir = f"/opt/data/dawagent/exports/{album_name}"
+    # 4. Poll per-track exports
     poll_start = time.time()
-    max_wait = 48 * 3600  # 48 hours
+    max_wait = 48 * 3600
     last_status = time.time()
     while True:
         elapsed = time.time() - poll_start
         if elapsed > max_wait:
-            send_message("⏰ Master polling timed out after 48 hours. Pipeline paused — use --resume to continue.")
+            send_message("⏰ Master polling timed out. Pipeline paused.")
             save_state({"phase": 3, "tracklist": tracklist, "proposal": proposal})
             return
-        # Send status every 30 minutes
+        
+        # Check per-track exports
+        all_mastered = True
+        for t in tracklist:
+            if t.get('dawagent_mastered'):
+                continue
+            title = t.get('title', '')
+            track_slug = title.lower().replace(' ', '_')
+            for slug in [f"{album_slug}-{track_slug}", f"{album_slug}-{title.lower().replace(' ', '-')}"]:
+                export_dir = os.path.join(exports_base, slug)
+                master_flac = os.path.join(export_dir, f"{slug}_MASTER.flac")
+                if os.path.exists(master_flac):
+                    t['master_path'] = master_flac
+                    t['master_mp3'] = os.path.join(export_dir, f"{slug}_MASTER.mp3")
+                    t['dawagent_mastered'] = True
+                    send_message(f"🎚️ {title} mastered!")
+                    break
+            if not t.get('dawagent_mastered'):
+                all_mastered = False
+        
+        if all_mastered:
+            break
+        
+        # Auto-skip after 5 minutes if DAWAGENT has no sessions
+        if elapsed > 300 and already_mastered == 0:
+            sessions_dir = "/opt/data/dawagent/sessions"
+            has_sessions = any(
+                album_slug in d for d in os.listdir(sessions_dir)
+            ) if os.path.isdir(sessions_dir) else False
+            if not has_sessions:
+                send_message("⚠️ DAWAGENT not processing this album. Using pre-master audio.")
+                # Use raw production audio as fallback
+                for t in tracklist:
+                    if not t.get('master_path'):
+                        t['master_path'] = t.get('flac_path') or t.get('mp3_path')
+                return
+        
         if time.time() - last_status > 1800:
             hours = int(elapsed // 3600)
             mins = int((elapsed % 3600) // 60)
-            send_message(f"⏳ Still waiting for masters… {hours}h {mins}m elapsed")
+            mastered = sum(1 for t in tracklist if t.get('dawagent_mastered'))
+            send_message(f"⏳ Waiting for masters… {mastered}/{len(tracklist)} done, {hours}h {mins}m elapsed")
             last_status = time.time()
+        
         time.sleep(10)
-        if os.path.exists(exports_dir):
-            masters = [f for f in os.listdir(exports_dir) if f.endswith("_MASTER.flac")]
-            if len(masters) >= len(tracklist):
-                break
     
-    send_message(f"🎚️ Master FLACs detected! Sending for final audio approval...")
+    send_message(f"🎚️ All {len(tracklist)} tracks mastered by DAWAGENT!")
     
-    # 4. Send audio
+    # Send masters for review
     for t in tracklist:
-        title = t.get('title')
-        master_path = os.path.join(exports_dir, f"{title}_MASTER.flac")
-        if os.path.exists(master_path):
-            t['master_path'] = master_path
-            send_audio(master_path, caption=f"💿 MASTER: {title}")
-            
-    # 5. Wait for approval
+        if t.get('master_path') and os.path.exists(t['master_path']):
+            send_audio(t['master_path'], caption=f"💿 MASTER: {t.get('title')} (DAWAGENT)")
+    
+    # Wait for approval
     buttons = [
         [{"text": "✅ Approve Masters", "callback_data": "ap:master:approve"}],
         [{"text": "🔄 Wait for Re-export", "callback_data": "ap:master:wait"}]
