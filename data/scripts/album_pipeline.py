@@ -72,6 +72,65 @@ def load_state():
         except Exception:
             pass
     return {}
+
+# ── Cost tracking ──
+# Venice API costs (per operation, based on Venice pricing)
+VENICE_IMAGE_GEN_COST = 0.04      # per image generation
+VENICE_UPSCALE_COST = 0.02        # per upscale
+DAWAGENT_COST = 0.00              # local processing, free
+
+def init_cost_tracker(state):
+    """Initialize or load cost tracker from state."""
+    if "costs" not in state:
+        state["costs"] = {
+            "track_production": 0.0,    # initial song generation
+            "track_redos": 0.0,         # song re-productions
+            "cover_generation": 0.0,    # Venice image gen
+            "cover_regeneration": 0.0,  # cover re-generations
+            "cover_upscale": 0.0,       # Venice upscale
+            "mastering": 0.0,           # DAWAGENT (free)
+            "redo_count": 0,            # how many track redos
+            "cover_regen_count": 0,     # how many cover regens
+        }
+    return state["costs"]
+
+def add_cost(state, category, amount):
+    """Add cost to a category and save state."""
+    costs = init_cost_tracker(state)
+    costs[category] = costs.get(category, 0) + amount
+    save_state(state)
+
+def get_total_cost(state):
+    """Get total cost across all categories."""
+    costs = state.get("costs", {})
+    return sum(v for k, v in costs.items() if isinstance(v, (int, float)) and k not in ("redo_count", "cover_regen_count"))
+
+def format_cost_summary(state, album_name):
+    """Format a human-readable cost summary."""
+    costs = state.get("costs", {})
+    total = get_total_cost(state)
+    track_count = len(state.get("tracklist", []))
+    
+    lines = [
+        f"💰 <b>{album_name}</b> — Production Cost Summary",
+        f"━━━━━━━━━━━━━━━━━━━━━━",
+        f"🎵 Track Production:    ${costs.get('track_production', 0):.2f}  ({track_count} tracks)",
+    ]
+    if costs.get("track_redos", 0) > 0:
+        lines.append(f"🔄 Track Redos:         ${costs.get('track_redos', 0):.2f}  ({costs.get('redo_count', 0)} redos)")
+    lines.extend([
+        f"🎨 Cover Generation:    ${costs.get('cover_generation', 0):.2f}",
+    ])
+    if costs.get("cover_regeneration", 0) > 0:
+        lines.append(f"🔄 Cover Regeneration:  ${costs.get('cover_regeneration', 0):.2f}  ({costs.get('cover_regen_count', 0)} regens)")
+    lines.extend([
+        f"⬆️ Cover Upscale:       ${costs.get('cover_upscale', 0):.2f}",
+        f"🎛️ DAWAGENT Mastering:  $0.00  (local)",
+        f"━━━━━━━━━━━━━━━━━━━━━━",
+        f"📊 <b>Total: ${total:.2f}</b>  (${total/max(track_count,1):.2f}/track)",
+    ])
+    return "\n".join(lines)
+
 # Scripts
 PRODUCE_SCRIPT = "/opt/data/skills/master-producer/master-producer/scripts/produce-album.py"
 SHARE_SCRIPT = "/opt/data/skills/secure-share/scripts/share.py"
@@ -1003,7 +1062,7 @@ def phase_3_daw_handoff(proposal, tracklist):
             except FileNotFoundError:
                 pass
 
-def phase_4_artwork(proposal, tracklist):
+def phase_4_artwork(proposal, tracklist, state=None):
     send_agent_notification("User approved songs, generating artwork")
     send_message("🎨 Generating album cover + all track covers...")
     
@@ -1014,6 +1073,8 @@ def phase_4_artwork(proposal, tracklist):
     while True:
         # ── 1. Generate album cover ──
         cover_path = generate_artwork_venice(visual, album_name)
+        if state:
+            add_cost(state, "cover_generation", VENICE_IMAGE_GEN_COST)
         if not cover_path:
             cmd = [
                 "/opt/hermes/.venv/bin/python3", GEN_ARTWORK_SCRIPT,
@@ -1044,7 +1105,7 @@ def phase_4_artwork(proposal, tracklist):
             return
         
         # ── 2. Generate all track covers (each with its own regen button) ──
-        track_cover_paths = _generate_all_track_covers(proposal, tracklist, visual)
+        track_cover_paths = _generate_all_track_covers(proposal, tracklist, visual, state=state)
         
         # ── 3. Final buttons after ALL covers shown ──
         buttons = [
@@ -1067,6 +1128,8 @@ def phase_4_artwork(proposal, tracklist):
                 if os.path.exists(album_cover_path):
                     send_message(f"⬆️ Upscaling album cover...")
                     upscale_artwork_venice(album_cover_path)
+                    if state:
+                        add_cost(state, "cover_upscale", VENICE_UPSCALE_COST)
                 
                 # Upscale each track cover
                 track_art_dir = art_dir
@@ -1076,19 +1139,37 @@ def phase_4_artwork(proposal, tracklist):
                     if os.path.exists(cover_file):
                         send_message(f"⬆️ Upscaling {title} cover...")
                         upscale_artwork_venice(cover_file)
+                        if state:
+                            add_cost(state, "cover_upscale", VENICE_UPSCALE_COST)
                 
                 send_message("✅ All covers upscaled to 3000×3000!")
                 return
             elif flag == "art_edit":
                 send_message(f"✏️ Regenerating with new direction: {content}")
                 visual += f" {content}"
+                if state:
+                    # Full regen = album + all tracks
+                    add_cost(state, "cover_regeneration", VENICE_IMAGE_GEN_COST * (1 + len(tracklist)))
+                    costs = init_cost_tracker(state)
+                    costs["cover_regen_count"] = costs.get("cover_regen_count", 0) + 1 + len(tracklist)
+                    save_state(state)
                 break  # break inner loop → outer while regenerates everything
             elif flag == "art_regen":
                 send_message("🔄 Regenerating all artwork from scratch...")
+                if state:
+                    add_cost(state, "cover_regeneration", VENICE_IMAGE_GEN_COST * (1 + len(tracklist)))
+                    costs = init_cost_tracker(state)
+                    costs["cover_regen_count"] = costs.get("cover_regen_count", 0) + 1 + len(tracklist)
+                    save_state(state)
                 break  # break inner loop → outer while regenerates everything
             elif flag == "art_regen_album":
                 send_message("🔄 Regenerating album cover...")
                 new_cover = generate_artwork_venice(visual, album_name)
+                if state:
+                    add_cost(state, "cover_regeneration", VENICE_IMAGE_GEN_COST)
+                    costs = init_cost_tracker(state)
+                    costs["cover_regen_count"] = costs.get("cover_regen_count", 0) + 1
+                    save_state(state)
                 if new_cover and os.path.exists(new_cover):
                     if os.path.exists(OVERLAY_TITLE_SCRIPT):
                         styled_album = stylize_title(album_name)
@@ -1105,6 +1186,11 @@ def phase_4_artwork(proposal, tracklist):
                 except ValueError:
                     continue
                 _redo_single_track_cover(proposal, tracklist, track_num, visual)
+                if state:
+                    add_cost(state, "cover_regeneration", VENICE_IMAGE_GEN_COST)
+                    costs = init_cost_tracker(state)
+                    costs["cover_regen_count"] = costs.get("cover_regen_count", 0) + 1
+                    save_state(state)
                 continue  # keep polling
 
 def _build_varied_scene(visual, title, direction, track_idx, total_tracks):
@@ -1185,7 +1271,7 @@ def _build_varied_scene(visual, title, direction, track_idx, total_tracks):
     )
     return scene
 
-def _generate_all_track_covers(proposal, tracklist, visual):
+def _generate_all_track_covers(proposal, tracklist, visual, state=None):
     """Generate all track covers, each sent with its own regen button."""
     album_name = proposal.get('album', 'Unknown Album')
     track_art_dir = get_album_artwork_dir(album_name)
@@ -1202,6 +1288,8 @@ def _generate_all_track_covers(proposal, tracklist, visual):
         send_agent_notification(f"Generating cover {i+1}/{len(tracklist)}: {title}")
         
         cover_path = generate_artwork_venice(scene, f"{album_name}/{title}")
+        if state:
+            add_cost(state, "cover_generation", VENICE_IMAGE_GEN_COST)
         if cover_path and os.path.exists(cover_path):
             final_path = os.path.join(track_art_dir, f"{title}_cover.png")
             if cover_path != final_path:
@@ -1460,12 +1548,20 @@ def main():
         
     acquire_lock()
     
+    # Initialize cost tracker
+    init_cost_tracker(state)
+    
     try:
         while True:
             # Phase 1: Produce
             if current_phase <= 1:
                 if not tracklist or redo_track or redo_feedback:
                     tracklist = phase_1_produce(proposal, profile, redo_track, redo_feedback)
+                    # Accumulate track production costs
+                    for t in tracklist:
+                        track_cost = float(t.get("cost", 0))
+                        if track_cost > 0:
+                            add_cost(state, "track_production", track_cost)
                     redo_track, redo_feedback = None, None
                     state["tracklist"] = tracklist
                     state["proposal"] = proposal
@@ -1486,6 +1582,15 @@ def main():
                     feedback = payload[1]
                     send_message(f"🔄 Redoing only track {track_num}...")
                     tracklist = phase_1_redo_single(proposal, profile, tracklist, track_num, feedback)
+                    # Track redo costs: production + cover regen + upscale
+                    redo_track_data = tracklist[track_num - 1] if track_num <= len(tracklist) else {}
+                    redo_cost = float(redo_track_data.get("cost", 3.66))  # default avg
+                    add_cost(state, "track_redos", redo_cost)
+                    add_cost(state, "cover_regeneration", VENICE_IMAGE_GEN_COST)
+                    add_cost(state, "cover_upscale", VENICE_UPSCALE_COST)
+                    costs = init_cost_tracker(state)
+                    costs["redo_count"] = costs.get("redo_count", 0) + 1
+                    costs["cover_regen_count"] = costs.get("cover_regen_count", 0) + 1
                     state["tracklist"] = tracklist
                     save_state(state)
                     # Stay in phase 2 for review — don't re-produce everything
@@ -1506,7 +1611,7 @@ def main():
 
             # Phase 4: Artwork
             if current_phase == 4:
-                art_decision = phase_4_artwork(proposal, tracklist)
+                art_decision = phase_4_artwork(proposal, tracklist, state=state)
                 if art_decision == "publish":
                     state["phase"] = 6
                     save_state(state)
@@ -1530,6 +1635,30 @@ def main():
             # Phase 6: Publish
             if current_phase == 6:
                 phase_6_publish(proposal)
+                
+                # ── Send cost summary ──
+                album_name = proposal.get('album', 'Unknown Album')
+                cost_summary = format_cost_summary(state, album_name)
+                send_message(cost_summary)
+                logger.info(f"Total production cost: ${get_total_cost(state):.2f}")
+                
+                # Save costs to release.json
+                album_slug = album_name.lower().replace(' ', '-').replace('_', '-')
+                for release_path in [
+                    os.path.join(get_album_dir(album_name), "release.json"),
+                    f"/opt/data/music/releases/{album_slug}/release.json",
+                ]:
+                    if os.path.exists(release_path):
+                        try:
+                            with open(release_path) as f:
+                                rj = json.load(f)
+                            rj["production_costs"] = state.get("costs", {})
+                            rj["production_costs"]["total"] = get_total_cost(state)
+                            with open(release_path, "w") as f:
+                                json.dump(rj, f, indent=2)
+                        except Exception as e:
+                            logger.error(f"Failed to save costs to {release_path}: {e}")
+                
                 # Pipeline complete, clear state
                 if os.path.exists(STATE_FILE):
                     os.remove(STATE_FILE)
