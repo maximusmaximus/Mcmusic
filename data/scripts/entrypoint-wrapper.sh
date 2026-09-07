@@ -73,6 +73,22 @@ if [ -f "$WATCHDOG" ]; then
     ) &
     echo "[wrapper] Watchdog cron started (10 min interval)"
 fi
+# ── Pipeline auto-resume watchdog ──
+# If pipeline_state.json exists but no album_pipeline.py is running, resume it
+PIPELINE_STATE="/opt/data/music/pipeline_state.json"
+PIPELINE_SCRIPT="/opt/data/scripts/album_pipeline.py"
+(
+    sleep 30  # Let gateway initialize first
+    while true; do
+        if [ -f "$PIPELINE_STATE" ] && ! pgrep -f "album_pipeline.py" > /dev/null 2>&1; then
+            echo "[pipeline-watchdog] $(date) State exists but no pipeline running — resuming..."
+            "$VENV_PYTHON" "$PIPELINE_SCRIPT" --resume >> "$LOG_DIR/pipeline.log" 2>&1 &
+            sleep 300  # Wait 5 min before checking again after restart
+        fi
+        sleep 60
+    done
+) &
+echo "[wrapper] Pipeline watchdog started (60s interval)"
 
 # ── Hand off to gateway ──
 exec /opt/hermes/entrypoint.sh "$@"

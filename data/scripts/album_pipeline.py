@@ -158,10 +158,14 @@ def stylize_title(title):
     try:
         res = subprocess.run(
             ["/opt/hermes/.venv/bin/python3", STYLIZE_SCRIPT, title],
-            capture_output=True, text=True
+            capture_output=True, text=True, timeout=10
         )
-        if res.returncode == 0 and '->' in res.stdout:
-            return res.stdout.strip().split('-> ')[-1]
+        if res.returncode == 0 and res.stdout.strip():
+            styled = res.stdout.strip()
+            # Backward compat: parse arrow format if still present
+            if '->' in styled:
+                styled = styled.split('->')[-1].strip()
+            return styled
     except Exception:
         pass
     return title  # fallback to plain
@@ -829,6 +833,12 @@ def upscale_artwork_venice(image_path, target_size=3000):
         # Save final 3k as the main file
         final.save(image_path, 'PNG')
         
+        # Auto-convert to JPEG if file exceeds 5MB (SoundCloud limit is 10MB)
+        if os.path.getsize(image_path) > 5_000_000:
+            jpg_path = os.path.splitext(image_path)[0] + '.jpg'
+            final.convert('RGB').save(jpg_path, 'JPEG', quality=95)
+            logger.info(f"Auto-converted to JPEG: {os.path.getsize(jpg_path)/1e6:.1f}MB (was {os.path.getsize(image_path)/1e6:.1f}MB PNG)")
+        
         # Clean up temp
         if os.path.exists(tmp_path):
             os.remove(tmp_path)
@@ -1017,9 +1027,14 @@ def phase_4_artwork(proposal, tracklist):
             
         # Optional title overlay on album cover
         if os.path.exists(OVERLAY_TITLE_SCRIPT) and cover_path and os.path.exists(cover_path):
+            # Save raw bg backup before overlay
+            album_bg = cover_path.replace('.png', '_bg.png')
+            if not os.path.exists(album_bg):
+                shutil.copy2(cover_path, album_bg)
             styled_album = stylize_title(album_name)
+            overlay_source = album_bg if os.path.exists(album_bg) else cover_path
             subprocess.run(["/opt/hermes/.venv/bin/python3", OVERLAY_TITLE_SCRIPT,
-                "--image", cover_path, "--title", styled_album, "--auto-color", "--output", cover_path])
+                "--image", overlay_source, "--title", styled_album, "--auto-color", "--output", cover_path])
         
         if cover_path and os.path.exists(cover_path):
             album_art_buttons = [[{"text": "🔄 Regen Album Cover", "callback_data": "ap:art:regen_album"}]]
@@ -1200,11 +1215,17 @@ def _generate_all_track_covers(proposal, tracklist, visual):
                     "--image", cover_path, "--title", title,
                     "--output-dir", os.path.join(get_album_artwork_dir(album_name), "waveforms")], capture_output=True)
             
-            # Title overlay
+            # Save raw background BEFORE overlay (for clean re-overlays)
+            bg_backup = cover_path.replace('_cover.png', '_cover_bg.png')
+            if not os.path.exists(bg_backup):
+                shutil.copy2(cover_path, bg_backup)
+            
+            # Title overlay (always read from clean _bg to avoid stacking)
             if os.path.exists(OVERLAY_TITLE_SCRIPT):
                 styled_title = stylize_title(title)
+                overlay_source = bg_backup if os.path.exists(bg_backup) else cover_path
                 subprocess.run(["/opt/hermes/.venv/bin/python3", OVERLAY_TITLE_SCRIPT,
-                    "--image", cover_path, "--title", styled_title,
+                    "--image", overlay_source, "--title", styled_title,
                     "--bottom", "--auto-color", "--output", cover_path], capture_output=True)
             
             # Send with per-track regen button
@@ -1242,10 +1263,14 @@ def _redo_single_track_cover(proposal, tracklist, track_num, visual):
             shutil.move(cover_path, final_path)
             cover_path = final_path
         
+        # Save raw bg backup before overlay
+        bg_backup = cover_path.replace('_cover.png', '_cover_bg.png')
+        shutil.copy2(cover_path, bg_backup)  # Always overwrite on redo
+        
         if os.path.exists(OVERLAY_TITLE_SCRIPT):
             styled_title = stylize_title(title)
             subprocess.run(["/opt/hermes/.venv/bin/python3", OVERLAY_TITLE_SCRIPT,
-                "--image", cover_path, "--title", styled_title,
+                "--image", bg_backup, "--title", styled_title,
                 "--bottom", "--auto-color", "--output", cover_path], capture_output=True)
         
         track_btn = [[{"text": f"🔄 Regen Track {track_num}", "callback_data": f"ap:art:redo:{track_num}"}]]
@@ -1318,6 +1343,31 @@ def phase_5_final_review(tracklist, proposal):
             shutil.copy2(master_path, os.path.join(masters_dir, canonical_name))
             # Also copy to legacy releases/
             shutil.copy2(master_path, os.path.join(release_dir, canonical_name))
+    
+    # Copy covers to releases dir — prefer titled versions, use JPEG if available
+    covers_dir = os.path.join(release_dir, "covers")
+    os.makedirs(covers_dir, exist_ok=True)
+    
+    # Album cover — prefer titled version
+    for ext in ['.jpg', '.png']:
+        album_cover_src = os.path.join(art_dir, f"album_cover{ext}")
+        if os.path.exists(album_cover_src):
+            shutil.copy2(album_cover_src, os.path.join(release_dir, f"{album_name.replace(' ','_')}_cover{ext}"))
+            break
+    
+    # Track covers — prefer JPEG (under 10MB SoundCloud limit)
+    for t in tracklist:
+        title = t.get("title", "")
+        slug = title.lower().replace(' ', '_')
+        copied = False
+        for ext in ['.jpg', '.png']:
+            cover_src = os.path.join(art_dir, f"{title}_cover{ext}")
+            if os.path.exists(cover_src):
+                shutil.copy2(cover_src, os.path.join(covers_dir, f"{slug}_cover{ext}"))
+                copied = True
+                break
+        if not copied:
+            logger.warning(f"No cover found for {title}")
     
     with open(os.path.join(release_dir, "tracks_meta.json"), "w") as f:
         json.dump(tl_meta, f, indent=2)
