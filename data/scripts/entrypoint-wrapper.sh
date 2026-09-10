@@ -75,15 +75,35 @@ if [ -f "$WATCHDOG" ]; then
 fi
 # ── Pipeline auto-resume watchdog ──
 # If pipeline_state.json exists but no album_pipeline.py is running, resume it
+# Guard: skip if the release is already published (stale state)
 PIPELINE_STATE="/opt/data/music/pipeline_state.json"
 PIPELINE_SCRIPT="/opt/data/scripts/album_pipeline.py"
 (
     sleep 30  # Let gateway initialize first
     while true; do
         if [ -f "$PIPELINE_STATE" ] && ! pgrep -f "album_pipeline.py" > /dev/null 2>&1; then
-            echo "[pipeline-watchdog] $(date) State exists but no pipeline running — resuming..."
-            "$VENV_PYTHON" "$PIPELINE_SCRIPT" --resume >> "$LOG_DIR/pipeline.log" 2>&1 &
-            sleep 300  # Wait 5 min before checking again after restart
+            # Check if album is already published — if so, clean up stale state
+            ALREADY_PUBLISHED=$("$VENV_PYTHON" -c "
+import json, os, sys
+try:
+    state = json.load(open('$PIPELINE_STATE'))
+    album = state.get('proposal',{}).get('album','').lower().replace(' ','-')
+    for rpath in [f'/opt/data/music/releases/{album}/release.json', f'/opt/data/music/albums/{album}/release.json']:
+        if os.path.exists(rpath):
+            rj = json.load(open(rpath))
+            if rj.get('status') == 'published' or rj.get('soundcloud',{}).get('track_ids'):
+                print('yes'); sys.exit(0)
+    print('no')
+except: print('no')
+" 2>/dev/null)
+            if [ "$ALREADY_PUBLISHED" = "yes" ]; then
+                echo "[pipeline-watchdog] $(date) Album already published, removing stale state"
+                rm -f "$PIPELINE_STATE"
+            else
+                echo "[pipeline-watchdog] $(date) State exists but no pipeline running — resuming..."
+                "$VENV_PYTHON" "$PIPELINE_SCRIPT" --resume >> "$LOG_DIR/pipeline.log" 2>&1 &
+                sleep 300  # Wait 5 min before checking again after restart
+            fi
         fi
         sleep 60
     done
