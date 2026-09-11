@@ -656,7 +656,7 @@ def phase_1_produce(proposal, profile, redo_track=None, redo_feedback=None):
     send_agent_notification("All tracks complete, sent for user review")
     return tracklist
 
-def phase_3_song_review(tracklist):
+def phase_3_song_review(tracklist, proposal=None):
     for t in tracklist:
         mp3 = t.get('mp3_path')
         if mp3 and os.path.exists(mp3):
@@ -1470,10 +1470,11 @@ def main():
 
             # Phase 3: Song Review (moved from old Phase 2) - now reviewing MASTERED tracks
             if current_phase == 3:
-                decision, payload = phase_3_song_review(tracklist)
+                decision, payload = phase_3_song_review(tracklist, proposal=proposal)
                 if decision == "reject":
                     send_message(f"Album rejected. Restarting production with new direction: {payload}")
-                    proposal['description'] += f"\n[USER REVISION]: {payload}"
+                    # proposals use 'brief' key, not 'description'
+                    proposal['brief'] = proposal.get('brief', '') + f"\n[USER REVISION]: {payload}"
                     current_phase = 1
                     continue
                 elif decision == "redo_track":

@@ -395,6 +395,15 @@ PATCH_CODE = '''
                 await query.answer(text='🔄 Regenerating all track covers...')
                 return
 
+            # ── Individual Track Cover Redo Handler ──
+            if choice.startswith('art:redo:'):
+                track_num = choice.split(':')[-1]
+                os.makedirs('/tmp/pipeline_flags', exist_ok=True)
+                with open(f'/tmp/pipeline_flags/art_redo_{track_num}', 'w') as f:
+                    f.write('redo')
+                await query.answer(text=f'🔄 Regenerating cover for track {track_num}...')
+                return
+
             # ── Select N (produce album) ──
             try:
                 idx = int(choice)
