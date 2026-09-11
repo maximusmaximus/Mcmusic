@@ -1,0 +1,53 @@
+{
+  "name": "phonkrider",
+  "slug": "phonkrider",
+  "created_at": "2026-07-12T01:32:16.021109+00:00Z",
+  "updated_at": "2026-07-12T16:23:05.363759+00:00Z",
+  "description": "Phonk and Nightride specialist \u2014 dark, gritty, atmospheric midnight drive vibes. Cowbells, Memphis samples, deep 808s, distorted synths, hi-hat rolls. Cruising the dark highway.",
+  "style": {
+    "genres": [
+      "phonk",
+      "drift phonk",
+      "nightride",
+      "Memphis rap"
+    ],
+    "mood": "dark, gritty, atmospheric, midnight cruise, hypnotic",
+    "instruments": "cowbell, Memphis rap vocal chops, deep 808 bass, distorted synth pads, hi-hat rolls, vinyl crackle",
+    "influences": "Kordhell, DVRST, LVCRFT, PlayaPhonk, Cissofield",
+    "era": ""
+  },
+  "defaults": {
+    "main_model": "elevenlabs-music",
+    "quality": "premium",
+    "duration": 120,
+    "instrumental": true
+  },
+  "mastering": {
+    "target_lufs": -14,
+    "bass_boost_db": 1.0,
+    "presence_boost_db": 2.0,
+    "air_boost_db": 1.5,
+    "compression_ratio": 4
+  },
+  "prompt_prefix": "Phonk nightride, dark atmospheric midnight drive, deep 808 bass, cowbell melody, Memphis rap vocal chops, distorted synth pads, hi-hat rolls, vinyl crackle texture, hypnotic groove",
+  "catalog": [
+    {
+      "title": "Phonk nightride, dark atmospheric midnight drive, deep 808 b",
+      "file": "/opt/data/music/productions/20260712_160612_drift-phonk-nightride-track/mix_20260712_160706.wav",
+      "linked_at": "2026-07-12T16:07:09.267728+00:00Z",
+      "notes": ""
+    },
+    {
+      "title": "Phonk nightride, dark atmospheric midnight drive, deep 808 b",
+      "file": "/opt/data/music/productions/20260712_161317_a-dark-drift-phonk-nightride/mix_20260712_161449.wav",
+      "linked_at": "2026-07-12T16:14:59.237259+00:00Z",
+      "notes": ""
+    },
+    {
+      "title": "Phonk nightride, dark atmospheric midnight drive, deep 808 b",
+      "file": "/opt/data/music/productions/20260712_162115_a-dark-glitch-infused-drift/mix_20260712_162254.wav",
+      "linked_at": "2026-07-12T16:23:05.363034+00:00Z",
+      "notes": ""
+    }
+  ]
+}

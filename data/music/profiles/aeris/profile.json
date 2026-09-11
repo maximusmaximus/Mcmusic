@@ -1,0 +1,48 @@
+{
+  "name": "AERIS",
+  "slug": "aeris",
+  "created_at": "2026-07-13T02:16:37.501910+00:00Z",
+  "updated_at": "2026-07-13T02:27:29.872925+00:00Z",
+  "description": "Top 40 electronic pop producer \u2014 polished, anthemic, festival-ready crossover hits. Crystal synths, punchy drums, soaring vocals, stadium-sized drops. The sound of mainstage energy meets radio melody.",
+  "style": {
+    "genres": [
+      "pop-electronic",
+      "electro-pop",
+      "dance-pop",
+      "future bass",
+      "tropical house"
+    ],
+    "mood": "euphoric,anthemic,polished,energetic,uplifting,sexy",
+    "instruments": "crystal lead synth,punchy 808 kick,plucked arpeggios,lush pad layers,vocal chops,snare rim,sub bass,shimmer cymbals",
+    "influences": "Zedd,The Chainsmokers,Kygo,Marshmello,Martin Garrix,CALVIN HARRIS",
+    "era": ""
+  },
+  "defaults": {
+    "main_model": "elevenlabs-music",
+    "quality": "premium",
+    "duration": 210,
+    "instrumental": true
+  },
+  "mastering": {
+    "target_lufs": -14,
+    "bass_boost_db": 1.0,
+    "presence_boost_db": 2.0,
+    "air_boost_db": 1.5,
+    "compression_ratio": 4
+  },
+  "prompt_prefix": "Polished top 40 pop-electronic production, anthemic stadium energy, crystal lead synths, punchy modern drums, soaring melodies, radio-ready mix",
+  "catalog": [
+    {
+      "title": "Polished top 40 pop-electronic production, anthemic stadium ",
+      "file": "/opt/data/music/productions/20260713_021717_a-euphoric-dance-pop-anthem/mix_20260713_021837.wav",
+      "linked_at": "2026-07-13T02:18:45.959000+00:00Z",
+      "notes": ""
+    },
+    {
+      "title": "Polished top 40 pop-electronic production, anthemic stadium ",
+      "file": "/opt/data/music/productions/20260713_022603_actually-re-reading-the/mix_20260713_022721.wav",
+      "linked_at": "2026-07-13T02:27:29.872163+00:00Z",
+      "notes": ""
+    }
+  ]
+}

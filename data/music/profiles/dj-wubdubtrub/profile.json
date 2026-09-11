@@ -1,0 +1,92 @@
+{
+  "name": "dj wubdubtrub",
+  "slug": "dj-wubdubtrub",
+  "created_at": "2026-08-08T06:48:57.519603+00:00Z",
+  "updated_at": "2026-08-08T06:56:24.612563+00:00Z",
+  "description": "Pure West Coast dubstep annihilator \u2014 heavy wobble bass, 808s, sub-bass destruction, no classical",
+  "style": {
+    "genres": [
+      "west coast dubstep",
+      "riddim",
+      "bass music",
+      "wobble"
+    ],
+    "mood": "aggressive, filthy, bounce-heavy, neck-snapping, unhinged",
+    "instruments": "808 sub-bass, wobble synth, snare, hi-hats, vocal chops, reese bass",
+    "influences": "Zeds Dead, Excision, Liquid Stranger, Snoop Dogg, Dj Snake",
+    "era": ""
+  },
+  "defaults": {
+    "main_model": "elevenlabs-music",
+    "quality": "standard",
+    "duration": 120,
+    "instrumental": true
+  },
+  "mastering": {
+    "target_lufs": -14,
+    "bass_boost_db": 1.0,
+    "presence_boost_db": 2.0,
+    "air_boost_db": 1.5,
+    "compression_ratio": 4
+  },
+  "prompt_prefix": "West Coast dubstep, heavy wobble bass, aggressive 808 sub-bass, bounce groove, neck-snapping drops",
+  "catalog": [
+    {
+      "title": "Filth Circuit",
+      "file": "/opt/data/music/productions/20260808_065407_west-coast-dubstep-heavy/master_20260808_065556.flac",
+      "linked_at": "2026-08-08T06:56:24.610971+00:00Z",
+      "notes": "",
+      "plan": {
+        "genre": "West Coast dubstep / riddim",
+        "bpm": 140,
+        "key": "Cm",
+        "energy": "Relentlessly aggressive and unhinged \u2014 a filthy, bounce-heavy groove that coils tension in a dark atmospheric intro before detonating into neck-snapping drops, morphing wobble bass, and a destructive double-layered finale that never lets the pressure dip.",
+        "stems": {
+          "main": {
+            "model": "elevenlabs-music",
+            "prompt": "West Coast dubstep, heavy wobble bass, aggressive 808 sub-bass, bounce groove, neck-snapping drops. 140 BPM, C minor. Pure unfiltered West Coast dubstep, no orchestral elements. Opens with a dark atmospheric intro: filtered reese bass humming underneath, sparse hi-hat pattern, distant echoing vocal chop, sub-bass rumble building tension. At 0:20 the groove kicks in heavy: bouncing 808 sub-bass pattern in C minor with signature West Coast wobble, LFO modulation sweeping the filter open and closed, syncopated snare on 2 and 4 with huge spatial reverb, crisp hi-hat triplets weaving between kicks. First drop at 0:40 hits hard: massive 808 sub-bass with aggressive pitch bends, deep wobble synth, churning mid-range bass growls, snappy snare patterns, chopped vocal fragments scattered across the stereo field. Wobble bass morphs continuously through different LFO rates, filter sweeps, and octave drops. Breakdown at 1:10 strips to a sparse 808 heartbeat and distant vocal chop, building with a rising filter sweep and snare roll into a filthier second drop at 1:25 with double-time hi-hats and inverted 808 pattern. Final section layers both drop bass lines together. Wide stereo field, punchy low end, crisp highs. Aggressive, filthy, bounce-heavy, unhinged. Instrumental."
+          },
+          "texture": {
+            "model": "stable-audio-25",
+            "prompt": "Dark atmospheric dubstep texture in C minor at 140 BPM. Filtered reese bass drone humming low, airy noise sweeps, subtle static grit, distant echoing vocal chop fragments, deep sub rumble pulsing slowly in time. Ominous, spacious, tense warehouse mood. No drums, no lead melody \u2014 a pure evolving ambient layer designed to sit under a heavy West Coast dubstep mix and glue the intro and breakdown together."
+          },
+          "accent": {
+            "model": "elevenlabs-sound-effects-v2",
+            "prompt": "Massive dubstep drop impact in C minor at 140 BPM: a huge cinematic sub-bass boom layered with a cracking snare hit, followed by a short aggressive wobble synth growl tail and a quick reversed riser suck-back into silence. Five seconds long, filthy, punchy, wide stereo slam built for a neck-snapping drop transition."
+          },
+          "atmosphere": {
+            "model": "mmaudio-v2-text-to-audio",
+            "prompt": "Dark urban night atmosphere tuned to C minor with a subtle 140 BPM low pulse: distant freeway hum, a faint faraway siren, cold wind moving through an empty warehouse district, deep sub-bass rumble, an occasional metallic clang echoing in the distance. Moody, menacing, spacious environmental bed for a West Coast dubstep intro and breakdown."
+          }
+        },
+        "qc": {
+          "lufs": -13.59,
+          "true_peak_db": -0.92,
+          "bpm_actual": null,
+          "key_actual": null
+        }
+      }
+    }
+  ],
+  "sonic_dna": {
+    "primary_genres": [
+      "West Coast dubstep",
+      "riddim"
+    ],
+    "bpm_range": [
+      140,
+      140
+    ],
+    "preferred_keys": [
+      "Cm"
+    ],
+    "preferred_models": {
+      "main": "elevenlabs-music",
+      "texture": "stable-audio-25",
+      "accent": "elevenlabs-sound-effects-v2",
+      "atmosphere": "mmaudio-v2-text-to-audio"
+    },
+    "total_tracks": 1,
+    "last_updated": "2026-08-08T06:56:24.656061Z"
+  }
+}

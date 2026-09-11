@@ -1,0 +1,40 @@
+{
+  "name": "Myco G",
+  "slug": "myco-g",
+  "created_at": "2026-07-06T21:16:52.380285Z",
+  "updated_at": "2026-07-06T21:24:21.387675Z",
+  "description": "Swamp Bass and Psychedelic Left-Field Bass producer \u2014 dank, squelchy, murky, mind-bending low-end experiments",
+  "style": {
+    "genres": [
+      "swamp bass",
+      "west coast halftime",
+      "psychedelic left-field bass"
+    ],
+    "mood": "dank, squelchy, mind-bending, relentless, murky",
+    "instruments": "muddy sub-bass, neuro-squelches, croaking bass growls, warped G-funk synth, lo-fi kicks, snapping rimshots, swamp foley",
+    "influences": "G Jones, Bleep Bloop, Liquid Stranger, Eprom, Zeds Dead",
+    "era": ""
+  },
+  "defaults": {
+    "main_model": "ace-step-15",
+    "quality": "premium",
+    "duration": 60,
+    "instrumental": true
+  },
+  "mastering": {
+    "target_lufs": -14,
+    "bass_boost_db": 1.0,
+    "presence_boost_db": 2.0,
+    "air_boost_db": 1.5,
+    "compression_ratio": 4
+  },
+  "prompt_prefix": "Swamp Bass, West Coast Halftime, Psychedelic Left-Field Bass, 85 BPM, dank squelchy murky, muddy sub-bass, neuro-squelches, warped G-funk synth, swamp foley, lo-fi drums",
+  "catalog": [
+    {
+      "title": "Swamp Bass",
+      "file": "/opt/data/music/productions/myco-g-stems/myco-g-swamp-bass.mp3",
+      "linked_at": "2026-07-06T21:24:21.386731Z",
+      "notes": ""
+    }
+  ]
+}

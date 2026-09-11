@@ -1,0 +1,88 @@
+{
+  "name": "phishy",
+  "slug": "phishy",
+  "created_at": "2026-08-04T19:28:46.456708+00:00Z",
+  "updated_at": "2026-08-04T19:31:31.769120+00:00Z",
+  "description": "Phish jam band meets gangster rap \u2014 psychedelic funk grooves with street-hard beats and 808 bass",
+  "style": {
+    "genres": [
+      "jam band",
+      "gangster rap",
+      "psychedelic funk",
+      "trap-fusion"
+    ],
+    "mood": "psychedelic, gritty, funky, aggressive",
+    "instruments": "guitar solos, funk bass, 808 kick, hi-hats, organ, turntable scratches",
+    "influences": "Phish, NWA, Tupac, Snoop Dogg, Trey Anastasio, Dr. Dre",
+    "era": ""
+  },
+  "defaults": {
+    "main_model": "minimax-music-v2",
+    "quality": "quick",
+    "duration": 60,
+    "instrumental": false
+  },
+  "mastering": {
+    "target_lufs": -14,
+    "bass_boost_db": 1.0,
+    "presence_boost_db": 2.0,
+    "air_boost_db": 1.5,
+    "compression_ratio": 4
+  },
+  "prompt_prefix": "Psychedelic jam band meets gangster rap fusion, funky guitar licks over heavy 808 beats, improvised groove, gritty street flow",
+  "catalog": [
+    {
+      "title": "Nebula Hustle",
+      "file": "/opt/data/music/productions/20260804_193030_psychedelic-jam-band-meets/master_20260804_193101.flac",
+      "linked_at": "2026-08-04T19:31:23.071501+00:00Z",
+      "notes": "",
+      "plan": {
+        "genre": "psychedelic funk / trap-fusion",
+        "bpm": 95,
+        "key": "Em",
+        "energy": "Smoky, head-nodding groove with cosmic haze \u2014 gritty street swagger riding a deep, hypnotic jam-band pocket, heavy and laid-back at once",
+        "stems": {
+          "main": {
+            "model": "elevenlabs-music",
+            "prompt": "Psychedelic jam band meets gangster rap fusion at 95 BPM in E minor. Funky guitar licks over heavy 808 beats: a greasy wah-wah guitar riff locks tight with a booming 808 kick and a slap bass funk groove, while Hammond organ swirls in psychedelic waves behind crisp turntable scratches and sparse, laid-back hi-hats. Improvised groove with a gritty street flow attitude \u2014 raw, smoky, head-nodding West Coast energy filtered through a cosmic jam-band lens. Clean, smooth production with a tight pocket and warm analog saturation; absolutely no glitch, no stutter, no chopped effects. Instrumental only, hypnotic and heavy, building subtle intensity like a live band riding one deep pocket for a full minute."
+          },
+          "texture": {
+            "model": "stable-audio-25",
+            "prompt": "Ambient psychedelic texture at 95 BPM in E minor: slow swirling Hammond organ drones, warm vinyl crackle, subtle tape hiss, hazy reverb-washed wah guitar echoes, and a deep sub rumble. Smooth, smoky, heady atmosphere with no percussion, no glitch, no stutter. Designed to layer under a funky jam-band hip-hop groove."
+          }
+        },
+        "qc": {
+          "lufs": -13.55,
+          "true_peak_db": -0.98,
+          "bpm_actual": null,
+          "key_actual": null
+        }
+      }
+    },
+    {
+      "title": "Phishy Jam Gangster Test",
+      "file": "/opt/data/music/productions/20260804_193030_psychedelic-jam-band-meets/master_20260804_193101.flac",
+      "linked_at": "2026-08-04T19:31:31.768180+00:00Z",
+      "notes": ""
+    }
+  ],
+  "sonic_dna": {
+    "primary_genres": [
+      "psychedelic funk",
+      "trap-fusion"
+    ],
+    "bpm_range": [
+      95,
+      95
+    ],
+    "preferred_keys": [
+      "Em"
+    ],
+    "preferred_models": {
+      "main": "elevenlabs-music",
+      "texture": "stable-audio-25"
+    },
+    "total_tracks": 1,
+    "last_updated": "2026-08-04T19:31:23.124042Z"
+  }
+}

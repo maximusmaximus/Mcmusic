@@ -1,0 +1,291 @@
+{
+  "name": "dj nutting ananuaki",
+  "slug": "dj-nutting-ananuaki",
+  "created_at": "2026-08-08T00:32:57.534340+00:00Z",
+  "updated_at": "2026-08-08T07:25:38.501714+00:00Z",
+  "description": "Classical fugue to filthy dubstep \u2014 baroque precision dissolving into bass chaos. Bach meets the drop.",
+  "style": {
+    "genres": [
+      "classical dubstep",
+      "baroque bass",
+      "orchestral dubstep",
+      "fugue-step"
+    ],
+    "mood": "scholarly, apocalyptic, frenetic, majestic, unhinged",
+    "instruments": "harpsichord, pipe organ, contrabass, cello, 808 sub-bass, snare, synth bass",
+    "influences": "Bach, Apashe,Danshe, Noisia, Zeds Dead",
+    "era": ""
+  },
+  "defaults": {
+    "main_model": "elevenlabs-music",
+    "quality": "standard",
+    "duration": 120,
+    "instrumental": true
+  },
+  "mastering": {
+    "target_lufs": -14,
+    "bass_boost_db": 1.0,
+    "presence_boost_db": 2.0,
+    "air_boost_db": 1.5,
+    "compression_ratio": 4
+  },
+  "prompt_prefix": "Baroque classical evolving into dubstep, Bach-style counterpoint sweeps the bass then ramp into heavy dubstep drops",
+  "catalog": [
+    {
+      "title": "Fuguebreaker",
+      "file": "/opt/data/music/productions/20260808_003407_baroque-classical-fugue-that/master_20260808_003459.flac",
+      "linked_at": "2026-08-08T00:35:26.344341+00:00Z",
+      "notes": "",
+      "plan": {
+        "genre": "baroque bass / orchestral dubstep",
+        "bpm": 150,
+        "key": "Dm",
+        "energy": "Scholarly and majestic baroque precision detonating into apocalyptic, unhinged dubstep chaos \u2014 a cathedral collapsing into a bass ritual",
+        "stems": {
+          "main": {
+            "model": "elevenlabs-music",
+            "prompt": "Baroque classical evolving into dubstep, Bach-style counterpoint sweeps the bass then ramp into heavy dubstep drops. 150 BPM, D minor. Opens with an intricate four-voice harpsichord fugue in strict J.S. Bach style, contrabass and cello walking chromatically beneath, pipe organ sustaining deep pedal tones. At 0:25 the bass lines sweep upward in cascading runs as triple meter tightens into halftime feel, contrabass mutating into 808 sub-bass, harpsichord arpeggios warping into synth wobble bass. At 0:40 the classical facade shatters into a massive dubstep drop: tearing bass growls, syncopated snare patterns, ground-shaking 808 sub-bass, stuttered choir vocal-chops, shredded fragments of the fugue motif woven through the chaos. Coda at 1:40 layers the original fugue theme over the raging bass for a grand final fusion. Grandiose, scholarly, apocalyptic, unhinged, cinematic dynamics, crisp modern dubstep production."
+          },
+          "texture": {
+            "model": "stable-audio-25",
+            "prompt": "Sustained pipe organ pedal tones and distant harpsichord arpeggios in D minor at 150 BPM, vast cathedral reverb, dark scholarly baroque atmosphere. Slow contrapuntal swells evolve into dubstep tension with subtle sub-bass rumble and ominous choir drones. Majestic, apocalyptic ambient bed, cinematic and haunting, no drums, no lead melody."
+          },
+          "accent": {
+            "model": "elevenlabs-sound-effects-v2",
+            "prompt": "A dramatic 5-second transition impact in D minor at 150 BPM: ascending contrabass bass sweep morphing into a distorted 808 sub-bass slam, shattering harpsichord fragments like glass, cinematic bass swell erupting into a massive tearing dubstep growl hit. Apocalyptic, grandiose, single decisive moment."
+          }
+        },
+        "qc": {
+          "lufs": -14.21,
+          "true_peak_db": -1.0,
+          "bpm_actual": null,
+          "key_actual": null
+        }
+      }
+    },
+    {
+      "title": "Cathedral Collapse",
+      "file": "/opt/data/music/productions/20260808_004058_dj-nutting-ananuaki-baroque/master_20260808_004201.flac",
+      "linked_at": "2026-08-08T00:42:30.579266+00:00Z",
+      "notes": "",
+      "plan": {
+        "genre": "baroque bass / orchestral dubstep",
+        "bpm": 152,
+        "key": "Gm",
+        "energy": "Immediate and relentless \u2014 detonates at full intensity from the first bar, a fugue played at siege tempo that tightens into an apocalyptic buildup before the drop caves the cathedral in; scholarly menace fused with unhinged bass weight and majestic wide-screen stereo scale.",
+        "stems": {
+          "main": {
+            "model": "elevenlabs-music",
+            "prompt": "Baroque classical evolving into dubstep, Bach-style counterpoint sweeps the bass then ramp into heavy dubstep drops. 152 BPM, G minor. Heavy bass-driven instrumental opener with immediate presence from the very first second: a thunderous pipe organ pedal tone and four-voice harpsichord fugue detonate instantly, no intro fade. Contrabass and cello walk tight chromatic lines that sweep upward and mutate into a growling 808 sub-bass. Massive orchestral buildup with choir drones and brass stabs, then the classical facade shatters into a colossal dubstep drop: aggressive synth wobble bass, syncopated snare with huge spatial reverb, thundering sub frequencies. Wide stereo field, cinematic dungeon atmosphere, two-minute arrangement. Scholarly, apocalyptic, frenetic, majestic, unhinged. Apashe-style cinematic bass design meets Bach fugue precision. Coda layers the fugue theme over the wobble bass for a grand fusion finale. Instrumental, no vocals."
+          },
+          "texture": {
+            "model": "stable-audio-25",
+            "prompt": "Atmospheric orchestral texture at 152 BPM in G minor: sustained pipe organ drone, distant choir pads, reverberant cello harmonics, and sparse harpsichord arpeggio echoes floating in a vast cathedral space. Dark, scholarly, apocalyptic ambience designed to layer under a heavy dubstep track. Wide stereo field, deep rumbling low end, no percussion, no vocals."
+          },
+          "accent": {
+            "model": "elevenlabs-sound-effects-v2",
+            "prompt": "Massive cinematic impact for a 152 BPM track in G minor: a cathedral pipe organ chord shattering like stained glass into a deep 808 sub-bass boom, with a reversed harpsichord riser sucking into the hit. Dark, apocalyptic one-shot transition effect for a dubstep drop. Huge spatial reverb tail, roughly 5 seconds."
+          }
+        },
+        "qc": {
+          "lufs": -13.41,
+          "true_peak_db": -0.92,
+          "bpm_actual": null,
+          "key_actual": null
+        }
+      }
+    },
+    {
+      "title": "Wobble-Tempered Clavier",
+      "file": "/opt/data/music/productions/20260808_052255_baroque-classical-evolving/master_20260808_052408.flac",
+      "linked_at": "2026-08-08T05:24:39.200335+00:00Z",
+      "notes": "",
+      "plan": {
+        "genre": "baroque bass / fugue-step",
+        "bpm": 148,
+        "key": "Am",
+        "energy": "Scholarly and apocalyptic \u2014 a strict Bach fugue detonating into frenetic West Coast wobble chaos; majestic, cinematic, and gloriously unhinged from first subject to final crash.",
+        "stems": {
+          "main": {
+            "model": "elevenlabs-music",
+            "prompt": "Baroque classical evolving into dubstep: Bach-style counterpoint sweeps the bass, then ramps into heavy dubstep drops. 148 BPM, A minor, instrumental. Opens with an intricate four-voice harpsichord fugue in strict J.S. Bach style, contrapuntal lines interweaving over walking cello and contrabass above sustained pipe organ pedal tones. At 0:25 the bass sweeps upward in chromatic cascading runs as the classical structure warps and disintegrates, the contrabass mutating into a searing 808 sub-bass. A filigree harpsichord cadenza spirals into a halftime West Coast dubstep drop at 0:45: deep 808 bends, aggressive LFO wobble bass, syncopated snare with huge spatial reverb, chopped-and-screwed pipe organ fragments, the fugue theme crashing through the chaos. Continuous evolution, no loops. Coda at 1:40 layers the original fugue subject over the dubstep wobble for a grand baroque-bass fusion finale. Scholarly, apocalyptic, cinematic, unhinged. Crisp modern dubstep production, wide stereo field."
+          },
+          "texture": {
+            "model": "stable-audio-25",
+            "prompt": "Atmospheric baroque texture in A minor at 148 BPM: sustained pipe organ pedal drones, distant harpsichord fugue fragments echoing through a vast cathedral, contrabass harmonics, faint reversed cello swells, stone reverb and cold chapel air. Dark, scholarly, apocalyptic ambience designed to sit beneath a heavy dubstep arrangement."
+          },
+          "accent": {
+            "model": "elevenlabs-sound-effects-v2",
+            "prompt": "Cinematic transition riser in A minor at 148 BPM: a harpsichord glissando warping and pitch-bending upward into a distorted 808 sub-bass swell, ending in a massive dubstep impact with cathedral reverb tail and a shattering pipe organ stinger. 5 seconds, dramatic, apocalyptic."
+          }
+        },
+        "qc": {
+          "lufs": -13.92,
+          "true_peak_db": -0.99,
+          "bpm_actual": null,
+          "key_actual": null
+        }
+      }
+    },
+    {
+      "title": "Stretto Inferno",
+      "file": "/opt/data/music/productions/20260808_055124_baroque-classical-evolving/master_20260808_055221.flac",
+      "linked_at": "2026-08-08T05:52:49.361298+00:00Z",
+      "notes": "",
+      "plan": {
+        "genre": "baroque bass / orchestral dubstep",
+        "bpm": 150,
+        "key": "Dm",
+        "energy": "Scholarly and apocalyptic \u2014 a disciplined Bach fugue slowly possessed by chaos, tightening through chromatic tension before detonating into unhinged, majestic dubstep destruction and fusing both worlds in the coda",
+        "stems": {
+          "main": {
+            "model": "elevenlabs-music",
+            "prompt": "Instrumental baroque bass / orchestral dubstep at 150 BPM in D minor. Baroque classical evolving into dubstep: Bach-style counterpoint sweeps the bass then ramps into heavy dubstep drops. Opens with a stately four-voice harpsichord fugue in strict J.S. Bach style, contrapuntal lines weaving over sustained pipe organ pedal points and walking cello bass. Around 0:25 the bass tightens and sweeps upward through chromatic runs, contrabass and cello cascading Bb-C-D as the harmony strains and the classical texture fractures. By 0:45 the contrabass mutates into a searing 808 sub-bass that climbs and resolves onto a massive D root. At 0:50 the fugue detonates into a full dubstep drop rooted on D: ground-shaking 808 sub-bass, aggressive wobble synth bass, syncopated snare patterns with huge spatial reverb, shredded fragments of the fugue subject woven through the chaos. Breakdown near 1:20 strips back to the original fugue theme over sparse pipe organ, then the final drop resolves powerfully on D. Coda layers full fugue counterpoint over the wobble bass for a baroque-bass fusion ending. Scholarly, apocalyptic, cinematic, unhinged. Wide stereo field, crisp modern dubstep production. Continuously evolving arrangement, no static loops."
+          },
+          "texture": {
+            "model": "stable-audio-25",
+            "prompt": "Atmospheric texture in D minor at 150 BPM: sustained pipe organ pedal drones, faint distant harpsichord arpeggios, dark cathedral reverb tails, subtle cello harmonics and low contrabass rumble slowly swelling. Scholarly, ominous, apocalyptic ambience designed to sit beneath a baroque-fugue-to-dubstep fusion track. Cinematic, slowly evolving, no drums, no wobble bass, no lead melody."
+          },
+          "accent": {
+            "model": "elevenlabs-sound-effects-v2",
+            "prompt": "Massive cinematic riser-into-impact transition, D minor tonal center: a harpsichord fugue fragment accelerates and pitch-rises over a swelling sub-bass sweep, then detonates into a huge dubstep drop impact with distorted 808 boom, orchestral hit and shattering reverb tail. Dark, apocalyptic, 5 seconds."
+          }
+        },
+        "qc": {
+          "lufs": -13.49,
+          "true_peak_db": -0.89,
+          "bpm_actual": null,
+          "key_actual": null
+        }
+      }
+    },
+    {
+      "title": "Picardy Detonation",
+      "file": "/opt/data/music/productions/20260808_060554_premium-baroque-dubstep/master_20260808_060705.flac",
+      "linked_at": "2026-08-08T06:07:37.518279+00:00Z",
+      "notes": "",
+      "plan": {
+        "genre": "baroque bass / orchestral dubstep",
+        "bpm": 150,
+        "key": "Dm",
+        "energy": "Scholarly four-voice fugue discipline tightening like a spring, then detonating into apocalyptic West Coast wobble \u2014 relentless, majestic, unhinged, continuously evolving from cathedral counterpoint to a thunderous D-root dubstep coda with a blinding Picardy third resolution.",
+        "stems": {
+          "main": {
+            "model": "elevenlabs-music",
+            "prompt": "Baroque classical evolving into dubstep, Bach-style counterpoint sweeps the bass then ramp into heavy dubstep drops. 150 BPM, D minor. Opens with a stately four-voice harpsichord fugue in strict J.S. Bach style, subject and two countersubjects weaving over sustained pipe organ pedal points on D, walking cello bass in steady quarter notes doubled by contrabass an octave below, crisp articulation, cathedral reverb tail. The bass tightens: contrabass chromatic ascent Bb-C-D, cello sixteenth-note cascades, harpsichord trills accelerating, sidechain pump and snare rolls building gain. Then the drop detonates on D: deep 808 sub-bass with aggressive pitch bends and LFO wobble, syncopated snare with cathedral-scale spatial reverb, distorted synth bass growling the fugue subject as a wobble motif, chopped pipe organ stabs, shredded harpsichord fragments syncopated against the snare. Arrangement evolves constantly, new counterpoint every 8 bars, breakdown strips to solo harpsichord over sparse 808 heartbeat, final drop layers all four fugue voices over roaring wobble bass, resolving on a thunderous D major Picardy third. Scholarly, apocalyptic, majestic, unhinged. Wide stereo imaging, crisp modern dubstep production, balanced volume across sections. Instrumental."
+          },
+          "texture": {
+            "model": "stable-audio-25",
+            "prompt": "Atmospheric texture bed in D minor at 150 BPM: sustained pipe organ pedal drones grinding on root D with slow menacing modulation, long cathedral reverb tails, faint contrabass harmonics, airy harpsichord resonance shimmering underneath. Dark, scholarly, apocalyptic ambience to sit beneath a baroque-dubstep arrangement. Evolving organ swells, no drums, no percussion."
+          },
+          "accent": {
+            "model": "elevenlabs-sound-effects-v2",
+            "prompt": "Single massive transition impact, about 5 seconds: cathedral-reverbed dubstep snare crack layered with a sharp harpsichord stab and a rising 808 sub-bass sweep climbing Bb-C-D, detonating into a deep D root hit in D minor at 150 BPM. Dramatic baroque-to-bass drop detonation, wide stereo boom, long stone-hall decay tail."
+          },
+          "atmosphere": {
+            "model": "mmaudio-v2-text-to-audio",
+            "prompt": "Vast cathedral interior ambience for a 150 BPM D minor baroque-dubstep track: cold stone hall reverb wash, faint wind moving through arched windows, distant echoing footsteps on marble, low pipe organ rumble resonating on a D fundamental. Dark, scholarly, apocalyptic mood. Continuous environmental bed, no drums, no melody."
+          }
+        },
+        "qc": {
+          "lufs": -13.57,
+          "true_peak_db": -0.97,
+          "bpm_actual": null,
+          "key_actual": null
+        }
+      }
+    },
+    {
+      "title": "Ricercar Ruin",
+      "file": "/opt/data/music/productions/20260808_063552_baroque-classical-evolving/master_20260808_063653.flac",
+      "linked_at": "2026-08-08T06:37:21.351968+00:00Z",
+      "notes": "",
+      "plan": {
+        "genre": "baroque bass / orchestral dubstep",
+        "bpm": 150,
+        "key": "Dm",
+        "energy": "Scholarly precision detonating into apocalyptic chaos \u2014 strict contrapuntal discipline slowly possessed by unhinged low-end violence, majestic and frenetic from first fugue subject to final wobble-soaked resolution",
+        "stems": {
+          "main": {
+            "model": "elevenlabs-music",
+            "prompt": "Baroque classical evolving into dubstep, Bach-style counterpoint sweeps the bass then ramp into heavy dubstep drops. Instrumental, 150 BPM, D minor. Opens with an intricate four-voice harpsichord fugue in strict J.S. Bach style, subject and countersubjects weaving over sustained pipe organ pedal points on D, walking cello and contrabass in steady quarter notes. Bass lines sweep upward through chromatic Bb-C-D passages as contrabass mutates into a searing 808 sub-bass ramping hard to a massive D root. Tension builds with accelerating harpsichord trills, sidechain pump entering, snare rolls tightening, pipe organ grinding through modulations. The drop detonates into West Coast dubstep: deep 808 sub rooted on D with aggressive pitch bends and LFO wobble, syncopated snare patterns with huge spatial reverb, distorted synth bass growling the fugue subject as a wobble motif, chopped pipe organ stabs, shredded harpsichord fragments against the snare. Breakdown strips to solo harpsichord over sparse 808 heartbeat, then final drop layering all four fugue voices over wobble bass resolving powerfully on D. Scholarly, apocalyptic, majestic, unhinged. Wide stereo field, crisp modern dubstep production."
+          },
+          "texture": {
+            "model": "stable-audio-25",
+            "prompt": "Atmospheric pipe organ texture in D minor at 150 BPM: sustained cathedral organ drones on a low D pedal point, slow ominous swells, faint baroque cello harmonics, distant harpsichord echoes washed in vast church reverb. Dark, scholarly, apocalyptic ambience with a subtle pulsing undertone suggesting an approaching dubstep drop. Instrumental pad, no drums, no vocals."
+          },
+          "accent": {
+            "model": "elevenlabs-sound-effects-v2",
+            "prompt": "Short transition SFX: a harpsichord trill in D minor accelerating at 150 BPM, morphing into a rising distorted synth bass wobble, then a massive cinematic sub-bass impact with a pipe organ stab and snare crack. 5 seconds, dramatic baroque-to-dubstep drop transition."
+          }
+        },
+        "qc": {
+          "lufs": -14.23,
+          "true_peak_db": -1.15,
+          "bpm_actual": null,
+          "key_actual": null
+        }
+      }
+    },
+    {
+      "title": "Semitone Siege",
+      "file": "/opt/data/music/productions/20260808_072403_baroque-classical-evolving/master_20260808_072510.flac",
+      "linked_at": "2026-08-08T07:25:38.500408+00:00Z",
+      "notes": "",
+      "plan": {
+        "genre": "baroque bass / orchestral dubstep",
+        "bpm": 150,
+        "key": "Dm",
+        "energy": "Relentless scholarly menace compressing into apocalyptic detonation \u2014 strict counterpoint straining upward semitone by semitone until it collapses into unhinged bass warfare, majestic and frenetic throughout",
+        "stems": {
+          "main": {
+            "model": "elevenlabs-music",
+            "prompt": "Baroque classical evolving into dubstep, Bach-style counterpoint sweeps the bass then ramp into heavy dubstep drops. 150 BPM, D minor. Opens with a strict four-voice harpsichord fugue, subject and two countersubjects, over sustained pipe organ pedal on D. Cello and contrabass execute chromatic sweep passages climbing Bb-C-D, intervals compressing and accelerating as harmony strains upward. The contrabass mutates into a roaring 808 sub-bass ramping from Bb through C to a devastating D root, gain and filter sweeps tightening with every semitone. Harpsichord trills fracture into distortion, organ pedal grinds, snare rolls tighten, sidechain pumps until the drop detonates on D: aggressive LFO wobble bass with pitch bends, syncopated snare with cathedral-scale reverb, synth bass growling the fugue subject as a wobble motif, chopped pipe organ stabs, shredded harpsichord fragments. Breakdown strips to solo harpsichord over sparse 808 heartbeat. Final drop layers all four fugue voices over wobble bass resolving on thunderous D. Scholarly, apocalyptic, majestic, unhinged. Wide stereo, crisp modern dubstep production."
+          },
+          "texture": {
+            "model": "stable-audio-25",
+            "prompt": "Atmospheric baroque texture at 150 BPM in D minor: sustained pipe organ pedal drone on low D, distant harpsichord fugue fragments echoing through a vast stone cathedral, soft cello and contrabass harmonics, faint chromatic string swells climbing Bb-C-D, dark scholarly ambience, spacious reverb, slowly evolving, no drums, no drops."
+          },
+          "accent": {
+            "model": "elevenlabs-sound-effects-v2",
+            "prompt": "Short sound effect in D minor at 150 BPM: a menacing chromatic sub-bass riser climbing Bb to C to D over six seconds, tightening snare roll and grinding pipe organ underneath, culminating in a massive cinematic dubstep drop impact with deep 808 boom, distorted harpsichord shard, and long cathedral reverb tail."
+          },
+          "atmosphere": {
+            "model": "mmaudio-v2-text-to-audio",
+            "prompt": "Cavernous cathedral interior ambience tuned to D minor at 150 BPM: vast stone hall reverb, faint wind moaning through ancient organ pipes, distant echoing footsteps on marble, low rumbling air pressure like an approaching storm, subtle creaking of wooden pews, dark apocalyptic stillness."
+          }
+        },
+        "qc": {
+          "lufs": -13.9,
+          "true_peak_db": -0.99,
+          "bpm_actual": null,
+          "key_actual": null
+        }
+      }
+    }
+  ],
+  "sonic_dna": {
+    "primary_genres": [
+      "baroque bass",
+      "orchestral dubstep",
+      "fugue-step"
+    ],
+    "bpm_range": [
+      148,
+      152
+    ],
+    "preferred_keys": [
+      "Dm",
+      "Gm",
+      "Am"
+    ],
+    "preferred_models": {
+      "main": "elevenlabs-music",
+      "texture": "stable-audio-25",
+      "accent": "elevenlabs-sound-effects-v2",
+      "atmosphere": "mmaudio-v2-text-to-audio"
+    },
+    "total_tracks": 7,
+    "last_updated": "2026-08-08T07:25:38.634268Z"
+  }
+}

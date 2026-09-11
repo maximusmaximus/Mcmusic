@@ -1,0 +1,72 @@
+{
+  "name": "FLUX",
+  "slug": "flux",
+  "created_at": "2026-07-13T02:42:27.423436+00:00Z",
+  "updated_at": "2026-07-13T22:21:38.319801+00:00Z",
+  "description": "Fast EDM hitmaker \u2014 break-heavy, catchy, minimal vocal, maximum energy. Quick-cut edits, unexpected drops, syncopated drum breaks, and hooks that stick instantly. Radio-friendly but club-authentic.",
+  "style": {
+    "genres": [
+      "edm",
+      "big room",
+      "progressive house",
+      "electro house",
+      "dance-pop"
+    ],
+    "mood": "fast,uplifting,energetic,catchy,euphoric,driving",
+    "instruments": "big room supersaw chords,punchy kick,tight snare,offbeat bass,stutter vocal chops,riser sweeps,brass stabs,plucked synths",
+    "influences": "Martin Garrix,Hardwell,Avicii,Ti\u00ebsto,Dimitri Vegas,Swedish House Mafia",
+    "era": ""
+  },
+  "defaults": {
+    "main_model": "elevenlabs-music",
+    "quality": "premium",
+    "duration": 180,
+    "instrumental": true
+  },
+  "mastering": {
+    "target_lufs": -14,
+    "bass_boost_db": 1.0,
+    "presence_boost_db": 2.0,
+    "air_boost_db": 1.5,
+    "compression_ratio": 4
+  },
+  "prompt_prefix": "Fast energetic EDM, big room chords, catchy hooks, tight drum breaks, minimal vocal chops, driving bass, festival energy",
+  "catalog": [
+    {
+      "title": "Fast energetic EDM, big room chords, catchy hooks, tight dru",
+      "file": "/opt/data/music/productions/20260713_213528_a-hybrid-festival-anthem/mix_20260713_213813.wav",
+      "linked_at": "2026-07-13T21:38:21.468569+00:00Z",
+      "notes": ""
+    },
+    {
+      "title": "Fast energetic EDM, big room chords, catchy hooks, tight dru",
+      "file": "/opt/data/music/productions/20260713_214409_a-massive-festival-anthem/mix_20260713_214543.wav",
+      "linked_at": "2026-07-13T21:45:52.519560+00:00Z",
+      "notes": ""
+    },
+    {
+      "title": "Fast energetic EDM, big room chords, catchy hooks, tight dru",
+      "file": "/opt/data/music/productions/20260713_215148_a-dark-edm-hybrid-merging/mix_20260713_215259.wav",
+      "linked_at": "2026-07-13T21:53:08.368763+00:00Z",
+      "notes": ""
+    },
+    {
+      "title": "Fast energetic EDM, big room chords, catchy hooks, tight dru",
+      "file": "/opt/data/music/productions/20260713_220136_a-dark-cinematic-big-room/mix_20260713_220236.wav",
+      "linked_at": "2026-07-13T22:02:40.227927+00:00Z",
+      "notes": ""
+    },
+    {
+      "title": "Fast energetic EDM, big room chords, catchy hooks, tight dru",
+      "file": "/opt/data/music/productions/20260713_220643_a-dark-edm-hybrid-merging-big/mix_20260713_220759.wav",
+      "linked_at": "2026-07-13T22:08:08.089540+00:00Z",
+      "notes": ""
+    },
+    {
+      "title": "Fast energetic EDM, big room chords, catchy hooks, tight dru",
+      "file": "/opt/data/music/productions/20260713_221951_this-production-brief/mix_20260713_222131.wav",
+      "linked_at": "2026-07-13T22:21:38.318751+00:00Z",
+      "notes": ""
+    }
+  ]
+}

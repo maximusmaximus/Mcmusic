@@ -1,0 +1,40 @@
+{
+  "name": "Maestro Tremor",
+  "slug": "maestro-tremor",
+  "created_at": "2026-07-06T20:56:57.243190Z",
+  "updated_at": "2026-07-06T21:01:49.314881Z",
+  "description": "Cinematic orchestral bass producer \u2014 fuses classical elegance with earth-shattering dubstep aggression",
+  "style": {
+    "genres": [
+      "cinematic orchestral bass",
+      "classical dubstep",
+      "orchestral trap"
+    ],
+    "mood": "elegant, grandiose, deceptive, shockingly aggressive, earth-shattering",
+    "instruments": "orchestral strings, grand piano, symphonic brass, timpani, 808 sub-bass, Reese bass, dubstep growls, trap drums",
+    "influences": "Noisia, Apashe, Hans Zimmer, Skrillex, Two Steps From Hell",
+    "era": ""
+  },
+  "defaults": {
+    "main_model": "elevenlabs-music",
+    "quality": "premium",
+    "duration": 60,
+    "instrumental": true
+  },
+  "mastering": {
+    "target_lufs": -14,
+    "bass_boost_db": 1.0,
+    "presence_boost_db": 2.0,
+    "air_boost_db": 1.5,
+    "compression_ratio": 4
+  },
+  "prompt_prefix": "Cinematic orchestral bass, classical elegance meets aggressive dubstep, sweeping orchestral strings, grand piano, symphonic brass, heavy 808 sub-bass, guttural Reese bass, dubstep growls, 140 BPM, half-time drop",
+  "catalog": [
+    {
+      "title": "Cinematic Orchestral Bass",
+      "file": "/opt/data/music/productions/maestro-tremor-stems/maestro-tremor-cinematic-orchestral-bass.mp3",
+      "linked_at": "2026-07-06T21:01:49.313562Z",
+      "notes": ""
+    }
+  ]
+}

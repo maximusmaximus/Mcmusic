@@ -1,11 +1,20 @@
 # Secrets
 .env
 
-# Runtime state (sessions, logs, generated music, vector DB, caches)
-data/
+# Runtime state — exclude (generated music, logs, sessions, caches)
+data/logs/
+data/sessions/
+data/home/
+data/dawagent/
+data/music/productions/
+data/music/albums/
+data/music/releases/
+data/music/exports/
+data/music/proposals/
+data/music/profiles/*/batches/
 
 # Python bytecode
-__pycache__/
+**/__pycache__/
 *.pyc
 *.pyo
 
@@ -20,3 +29,9 @@ __pycache__/
 # OS artifacts
 .DS_Store
 Thumbs.db
+
+# Source — explicitly tracked (override runtime exclusions above)
+!data/scripts/
+!data/skills/
+!data/music/profiles/
+!data/soul/

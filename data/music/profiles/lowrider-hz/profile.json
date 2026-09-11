@@ -1,0 +1,40 @@
+{
+  "name": "Lowrider Hz",
+  "slug": "lowrider-hz",
+  "created_at": "2026-07-06T21:10:54.444689Z",
+  "updated_at": "2026-07-06T21:12:46.283149Z",
+  "description": "Experimental Dubstep and West Coast Bass producer \u2014 menacing, psychedelic, swaggering low-frequency pressure",
+  "style": {
+    "genres": [
+      "experimental dubstep",
+      "west coast bass",
+      "g-funk bass"
+    ],
+    "mood": "menacing, heavyweight, psychedelic, swaggering, club-shaking",
+    "instruments": "808 sub-bass, trap kicks, metallic snares, rolling hi-hats, G-Funk portamento synth, laser zaps, vocal chops",
+    "influences": "DJ Snake, Baauer, Doctor P, DJ Mustard, Warren G",
+    "era": ""
+  },
+  "defaults": {
+    "main_model": "ace-step-15",
+    "quality": "premium",
+    "duration": 60,
+    "instrumental": true
+  },
+  "mastering": {
+    "target_lufs": -14,
+    "bass_boost_db": 1.0,
+    "presence_boost_db": 2.0,
+    "air_boost_db": 1.5,
+    "compression_ratio": 4
+  },
+  "prompt_prefix": "Experimental Dubstep, West Coast Bass, G-Funk Bass, 140 BPM, menacing psychedelic swagger, 808 sub-bass, G-Funk synth whistle, trap drums, laser zaps, vocal chops",
+  "catalog": [
+    {
+      "title": "West Coast Bass",
+      "file": "/opt/data/music/productions/lowrider-hz-stems/lowrider-hz-west-coast-bass.mp3",
+      "linked_at": "2026-07-06T21:12:46.282108Z",
+      "notes": ""
+    }
+  ]
+}

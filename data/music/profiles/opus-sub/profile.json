@@ -1,0 +1,112 @@
+{
+  "name": "OPUS SUB",
+  "slug": "opus-sub",
+  "created_at": "2026-08-07T23:00:32.124797+00:00Z",
+  "updated_at": "2026-08-07T23:08:43.070765+00:00Z",
+  "description": "Classical orchestration meets earth-shattering bass \u2014 baroque strings, timpani, and grand piano torn apart by 808 sub-bass. Sophisticated violence.",
+  "style": {
+    "genres": [
+      "classical bass",
+      "orchestral dubstep",
+      "symphonic bass music",
+      "cinematic trap"
+    ],
+    "mood": "grandiose, thunderous, dark, dramatic, baroque",
+    "instruments": "orchestral strings, timpani, grand piano, 808 sub-bass, choir, brass",
+    "influences": "Danshe, Apashe, Zeds Dead orchestral sets, Hans Zimmer scoring",
+    "era": ""
+  },
+  "defaults": {
+    "main_model": "elevenlabs-music",
+    "quality": "quick",
+    "duration": 20,
+    "instrumental": true
+  },
+  "mastering": {
+    "target_lufs": -14,
+    "bass_boost_db": 1.0,
+    "presence_boost_db": 2.0,
+    "air_boost_db": 1.5,
+    "compression_ratio": 4
+  },
+  "prompt_prefix": "Classical orchestral bass music, baroque strings meet sub-bass destruction",
+  "catalog": [
+    {
+      "title": "Iron Requiem",
+      "file": "/opt/data/music/productions/20260807_230124_classical-orchestral-bass/master_20260807_230155.flac",
+      "linked_at": "2026-08-07T23:02:12.525603+00:00Z",
+      "notes": "",
+      "plan": {
+        "genre": "symphonic dubstep / classical bass",
+        "bpm": 140,
+        "key": "Dm",
+        "energy": "Grandiose and thunderous \u2014 a slow-burning orchestral tension that erupts into crushing, synchronized bass violence. Dark, dramatic, baroque menace with cinematic scale.",
+        "stems": {
+          "main": {
+            "model": "elevenlabs-music",
+            "prompt": "Classical orchestral bass music, baroque strings meet sub-bass destruction. Symphonic dubstep at 140 BPM in D minor. Opens with haunting grand piano arpeggios and sweeping baroque string section building ominous tension, timpani rolls swelling underneath, distant choral humming. Then a crushing drop: massive 808 sub-bass hits synchronized with aggressive orchestral stabs, brass section blasting dark staccato accents, strings sawing in dramatic runs. Grandiose, thunderous, dark, dramatic mood \u2014 sophisticated violence. Cinematic Hans Zimmer-scale orchestration fused with Apashe-style bass weight. Half-time dubstep drum pattern, deep sub frequencies, wide stereo strings, punchy timpani. 20-second arrangement: tension intro exploding into the drop."
+          },
+          "texture": {
+            "model": "stable-audio-25",
+            "prompt": "Dark cinematic orchestral texture in D minor at 140 BPM. Sustained brooding string drones, low cello and contrabass rumble, soft ominous choir pad humming, distant timpani resonance, subtle grand piano reverb tails. Baroque, haunting, grandiose atmosphere. No drums, no lead melody \u2014 pure ambient orchestral tension bed for layering under a bass drop."
+          }
+        },
+        "qc": {
+          "lufs": -13.36,
+          "true_peak_db": -0.93,
+          "bpm_actual": null,
+          "key_actual": null
+        }
+      }
+    },
+    {
+      "title": "Regicide",
+      "file": "/opt/data/music/productions/20260807_230756_opus-sub-classical/master_20260807_230824.flac",
+      "linked_at": "2026-08-07T23:08:43.069477+00:00Z",
+      "notes": "",
+      "plan": {
+        "genre": "symphonic dubstep / orchestral bass",
+        "bpm": 145,
+        "key": "Gm",
+        "energy": "Immediate thunderous impact from the very first second \u2014 a regal, menacing album opener where a colossal orchestral hit gives way to tense baroque string builds, then detonates into a crushing synchronized bass drop with cavernous percussion reverb and a wide cinematic stereo field.",
+        "stems": {
+          "main": {
+            "model": "elevenlabs-music",
+            "prompt": "Classical orchestral bass music, baroque strings meet sub-bass destruction. Symphonic dubstep opener at 145 BPM in G minor. Hard-hitting from second one: a colossal timpani strike and brass stab announce immediate presence, then sweeping baroque string ostinatos and grand piano arpeggios ratchet tension over a rising contrabass rumble. The massive buildup erupts into an earth-shattering drop \u2014 synchronized orchestral hits fused with crushing 808 sub-bass and snarling dubstep growl basses. Choral humming swells beneath thunderous percussion drenched in vast cathedral reverb, strings panned broad across a wide stereo field. Grandiose, dark, regal, dramatic \u2014 Hans Zimmer-scale orchestration meeting Apashe-style bass design. Heavy, cinematic, instrumental only, no vocals."
+          },
+          "texture": {
+            "model": "stable-audio-25",
+            "prompt": "Atmospheric orchestral texture in G minor at 145 BPM: haunting choral drone and distant timpani echoes inside a vast cathedral hall, dark baroque string sustains layered over a slow contrabass rumble, wide stereo ambience with cavernous reverb tails, cinematic regal tension, no drum groove and no lead melody \u2014 pure atmospheric bed for layering beneath a heavy bass drop."
+          }
+        },
+        "qc": {
+          "lufs": -14.05,
+          "true_peak_db": -1.31,
+          "bpm_actual": null,
+          "key_actual": null
+        }
+      }
+    }
+  ],
+  "sonic_dna": {
+    "primary_genres": [
+      "symphonic dubstep",
+      "classical bass",
+      "orchestral bass"
+    ],
+    "bpm_range": [
+      140,
+      145
+    ],
+    "preferred_keys": [
+      "Dm",
+      "Gm"
+    ],
+    "preferred_models": {
+      "main": "elevenlabs-music",
+      "texture": "stable-audio-25"
+    },
+    "total_tracks": 2,
+    "last_updated": "2026-08-07T23:08:43.144980Z"
+  }
+}
