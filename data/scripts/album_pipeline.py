@@ -1244,7 +1244,6 @@ def _generate_all_track_covers(proposal, tracklist, visual, state=None):
         if cover_path and os.path.exists(cover_path):
             final_path = os.path.join(track_art_dir, f"{title}_cover.png")
             if cover_path != final_path:
-                import shutil
                 shutil.move(cover_path, final_path)
                 cover_path = final_path
             
@@ -1298,7 +1297,6 @@ def _redo_single_track_cover(proposal, tracklist, track_num, visual):
     if cover_path and os.path.exists(cover_path):
         final_path = os.path.join(track_art_dir, f"{title}_cover.png")
         if cover_path != final_path:
-            import shutil
             shutil.move(cover_path, final_path)
             cover_path = final_path
         
