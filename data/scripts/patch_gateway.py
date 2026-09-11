@@ -280,49 +280,6 @@ PATCH_CODE = '''
                     f.write('pending')
                 await query.answer(text='❌ What direction instead?')
                 return
-            
-            # ── Artwork Review Handlers ──
-            if choice == 'art:approve':
-                os.makedirs('/tmp/pipeline_flags', exist_ok=True)
-                with open('/tmp/pipeline_flags/art_approved', 'w') as f:
-                    f.write('approved')
-                await query.answer(text='✅ Artwork approved!')
-                try:
-                    await query.edit_message_reply_markup(reply_markup=None)
-                except: pass
-                return
-            
-            if choice == 'art:edit':
-                os.makedirs('/tmp/pipeline_flags', exist_ok=True)
-                with open('/tmp/pipeline_flags/art_edit', 'w') as f:
-                    f.write('pending')
-                await query.answer(text='✏️ What to change?')
-                return
-            
-            if choice == 'art:regen':
-                os.makedirs('/tmp/pipeline_flags', exist_ok=True)
-                with open('/tmp/pipeline_flags/art_regen', 'w') as f:
-                    f.write('regen')
-                await query.answer(text='🔄 Regenerating artwork...')
-                return
-            
-            # ── Final Review Handlers ──
-            if choice == 'final:publish':
-                os.makedirs('/tmp/pipeline_flags', exist_ok=True)
-                with open('/tmp/pipeline_flags/final_publish', 'w') as f:
-                    f.write('publish')
-                await query.answer(text='🚀 Publishing...')
-                try:
-                    await query.edit_message_reply_markup(reply_markup=None)
-                except: pass
-                return
-            
-            if choice == 'final:back':
-                os.makedirs('/tmp/pipeline_flags', exist_ok=True)
-                with open('/tmp/pipeline_flags/final_back', 'w') as f:
-                    f.write('back')
-                await query.answer(text='↩️ Going back to artwork...')
-                return
 
             # ── DAW Mastering Handlers ──
             if choice == 'daw:skip':

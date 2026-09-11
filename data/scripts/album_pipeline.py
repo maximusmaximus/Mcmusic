@@ -542,7 +542,7 @@ def phase_1_redo_single(proposal, profile, tracklist, track_num, feedback=None):
             send_message(f"⬆️ Upscaling {new_title} cover to 3000×3000...")
             upscale_artwork_venice(cover_path)
             
-            track_btn = [[{"text": f"🔄 Regen Track {track_num}", "callback_data": f"ap:art:redo:{track_num}"}]]
+            track_btn = [[{"text": f"🔄 Regen {new_title}", "callback_data": f"ap:art:redo:{track_num}"}]]
             send_photo(cover_path, caption=f"🎨 Track {track_num}: {new_title} (new cover — 3000×3000)", reply_markup={"inline_keyboard": track_btn})
             logger.info(f"Sent new cover for redone track {track_num}: {cover_path}")
             
@@ -1014,7 +1014,8 @@ def phase_2_daw_handoff(proposal, tracklist):
             break
         
         # After 5 minutes, offer manual skip if DAWAGENT hasn't started
-        if elapsed > 300 and already_mastered == 0 and not getattr(phase_2_daw_handoff, '_skip_offered', False):
+        skip_offered_flag = os.path.join(FLAGS_DIR, "daw_skip_offered")
+        if elapsed > 300 and already_mastered == 0 and not os.path.exists(skip_offered_flag):
             sessions_dir = "/opt/data/dawagent/sessions"
             has_sessions = any(
                 album_slug in d for d in os.listdir(sessions_dir)
@@ -1025,7 +1026,10 @@ def phase_2_daw_handoff(proposal, tracklist):
                     [{"text": "⏳ Keep Waiting", "callback_data": "ap:daw:wait"}],
                 ]
                 send_message("⚠️ DAWAGENT hasn't started processing. Skip or keep waiting?", reply_markup={"inline_keyboard": skip_buttons})
-                phase_2_daw_handoff._skip_offered = True
+                # Use flag file instead of function attribute — survives container restart
+                os.makedirs(FLAGS_DIR, exist_ok=True)
+                with open(skip_offered_flag, 'w') as f:
+                    f.write('offered')
 
         # Check for manual skip
         skip_flag = os.path.join(FLAGS_DIR, "daw_skipped")
@@ -1264,7 +1268,7 @@ def _generate_all_track_covers(proposal, tracklist, visual, state=None):
                     "--bottom", "--auto-color", "--output", cover_path], capture_output=True)
             
             # Send with per-track regen button
-            track_btn = [[{"text": f"🔄 Regen Track {i+1}", "callback_data": f"ap:art:redo:{i+1}"}]]
+            track_btn = [[{"text": f"🔄 Regen {title}", "callback_data": f"ap:art:redo:{i+1}"}]]
             send_photo(cover_path, caption=f"🎨 Track {i+1}: {title}", reply_markup={"inline_keyboard": track_btn})
             track_cover_paths.append(cover_path)
         else:
@@ -1308,7 +1312,7 @@ def _redo_single_track_cover(proposal, tracklist, track_num, visual):
                 "--image", bg_backup, "--title", styled_title,
                 "--bottom", "--auto-color", "--output", cover_path], capture_output=True)
         
-        track_btn = [[{"text": f"🔄 Regen Track {track_num}", "callback_data": f"ap:art:redo:{track_num}"}]]
+        track_btn = [[{"text": f"🔄 Regen {title}", "callback_data": f"ap:art:redo:{track_num}"}]]
         send_photo(cover_path, caption=f"🎨 Track {track_num}: {title} (NEW)", reply_markup={"inline_keyboard": track_btn})
     else:
         send_message(f"❌ Failed to regenerate cover for {title}")
