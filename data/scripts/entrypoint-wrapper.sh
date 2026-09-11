@@ -101,7 +101,7 @@ except: print('no')
                 rm -f "$PIPELINE_STATE"
             else
                 echo "[pipeline-watchdog] $(date) State exists but no pipeline running — resuming..."
-                "$VENV_PYTHON" "$PIPELINE_SCRIPT" --resume >> "$LOG_DIR/pipeline.log" 2>&1 &
+                "$VENV_PYTHON" -B "$PIPELINE_SCRIPT" --resume >> "$LOG_DIR/pipeline.log" 2>&1 &
                 sleep 300  # Wait 5 min before checking again after restart
             fi
         fi
