@@ -656,7 +656,7 @@ def phase_1_produce(proposal, profile, redo_track=None, redo_feedback=None):
     send_agent_notification("All tracks complete, sent for user review")
     return tracklist
 
-def phase_2_song_review(tracklist):
+def phase_3_song_review(tracklist):
     for t in tracklist:
         mp3 = t.get('mp3_path')
         if mp3 and os.path.exists(mp3):
@@ -910,7 +910,7 @@ def upscale_artwork_venice(image_path, target_size=3000):
         logger.error(f"Venice upscale failed for {image_path}: {e}")
         return image_path
 
-def phase_3_daw_handoff(proposal, tracklist):
+def phase_2_daw_handoff(proposal, tracklist):
     album_name = proposal.get('album', 'release')
     album_slug = album_name.lower().replace(' ', '-').replace('_', '-')
     send_message(f"🎛️ DAWAGENT mastering for <b>{album_name}</b>...")
@@ -1013,19 +1013,31 @@ def phase_3_daw_handoff(proposal, tracklist):
         if all_mastered:
             break
         
-        # Auto-skip after 5 minutes if DAWAGENT has no sessions
-        if elapsed > 300 and already_mastered == 0:
+        # After 5 minutes, offer manual skip if DAWAGENT hasn't started
+        if elapsed > 300 and already_mastered == 0 and not getattr(phase_2_daw_handoff, '_skip_offered', False):
             sessions_dir = "/opt/data/dawagent/sessions"
             has_sessions = any(
                 album_slug in d for d in os.listdir(sessions_dir)
             ) if os.path.isdir(sessions_dir) else False
             if not has_sessions:
-                send_message("⚠️ DAWAGENT not processing this album. Using pre-master audio.")
-                # Use raw production audio as fallback
-                for t in tracklist:
-                    if not t.get('master_path'):
-                        t['master_path'] = t.get('flac_path') or t.get('mp3_path')
-                return
+                skip_buttons = [
+                    [{"text": "⏭ Skip DAW (use raw audio)", "callback_data": "ap:daw:skip"}],
+                    [{"text": "⏳ Keep Waiting", "callback_data": "ap:daw:wait"}],
+                ]
+                send_message("⚠️ DAWAGENT hasn't started processing. Skip or keep waiting?", reply_markup={"inline_keyboard": skip_buttons})
+                phase_2_daw_handoff._skip_offered = True
+
+        # Check for manual skip
+        skip_flag = os.path.join(FLAGS_DIR, "daw_skipped")
+        if os.path.exists(skip_flag):
+            try:
+                os.remove(skip_flag)
+            except: pass
+            send_message("⏭ Skipping DAW mastering. Using raw audio.")
+            for t in tracklist:
+                if not t.get('master_path'):
+                    t['master_path'] = t.get('flac_path') or t.get('mp3_path')
+            return
         
         if time.time() - last_status > 1800:
             hours = int(elapsed // 3600)
@@ -1062,13 +1074,12 @@ def phase_3_daw_handoff(proposal, tracklist):
             except FileNotFoundError:
                 pass
 
-def phase_4_artwork(proposal, tracklist, state=None):
-    send_agent_notification("User approved songs, generating artwork")
-    send_message("🎨 Generating album cover + all track covers...")
+def phase_4_album_cover(proposal, tracklist, state=None):
+    send_agent_notification("User approved songs, generating album cover")
+    send_message("🎨 Generating album cover...")
     
     album_name = proposal.get('album', 'Unknown Album')
     visual = proposal.get('visual', '')
-    track_names = ",".join([t.get('title', '') for t in tracklist])
     
     while True:
         # ── 1. Generate album cover ──
@@ -1081,13 +1092,17 @@ def phase_4_artwork(proposal, tracklist, state=None):
                 "--prompt", f"{visual} NO TEXT, NO LETTERS, NO TYPOGRAPHY",
                 "--model", "grok-imagine-image-quality",
                 "--album", album_name,
-                "--tracks", track_names
+                "--tracks", ""
             ]
             subprocess.run(cmd)
             cover_path = os.path.join(get_album_artwork_dir(album_name), "album_cover.png")
             
+        if not (cover_path and os.path.exists(cover_path)):
+            send_message("❌ Failed to generate album cover.")
+            return "regen"
+            
         # Optional title overlay on album cover
-        if os.path.exists(OVERLAY_TITLE_SCRIPT) and cover_path and os.path.exists(cover_path):
+        if os.path.exists(OVERLAY_TITLE_SCRIPT):
             # Save raw bg backup before overlay
             album_bg = cover_path.replace('.png', '_bg.png')
             if not os.path.exists(album_bg):
@@ -1097,101 +1112,33 @@ def phase_4_artwork(proposal, tracklist, state=None):
             subprocess.run(["/opt/hermes/.venv/bin/python3", OVERLAY_TITLE_SCRIPT,
                 "--image", overlay_source, "--title", styled_album, "--auto-color", "--output", cover_path])
         
-        if cover_path and os.path.exists(cover_path):
-            album_art_buttons = [[{"text": "🔄 Regen Album Cover", "callback_data": "ap:art:regen_album"}]]
-            send_photo(cover_path, caption=f"🎨 Album Cover: {album_name}", reply_markup={"inline_keyboard": album_art_buttons})
-        else:
-            send_message("❌ Failed to generate album cover.")
-            return
-        
-        # ── 2. Generate all track covers (each with its own regen button) ──
-        track_cover_paths = _generate_all_track_covers(proposal, tracklist, visual, state=state)
-        
-        # ── 3. Final buttons after ALL covers shown ──
-        buttons = [
-            [{"text": "✅ Approve All Artwork", "callback_data": "ap:art:approve"}],
-            [{"text": "🔄 Regenerate Everything", "callback_data": "ap:art:regen"}],
-            [{"text": "✏️ Edit Direction", "callback_data": "ap:art:edit"}]
+        # Upscale to 3000x3000
+        send_message("⬆️ Upscaling album cover to 3000×3000...")
+        upscale_artwork_venice(cover_path)
+        if state:
+            add_cost(state, "cover_upscale", VENICE_UPSCALE_COST)
+            
+        album_art_buttons = [
+            [{"text": "✅ Approve Album Cover", "callback_data": "ap:albumcover:approve"}],
+            [{"text": "🔄 Regenerate", "callback_data": "ap:albumcover:regen"}]
         ]
-        send_message("👆 <b>Review all covers above. Tap 🔄 on any individual cover to redo it, or:</b>", reply_markup={"inline_keyboard": buttons})
+        send_photo(cover_path, caption=f"🎨 Album Cover: {album_name}", reply_markup={"inline_keyboard": album_art_buttons})
         
-        # ── 4. Poll — handle per-track redos or full approve/regen ──
+        # ── Poll ──
         while True:
             flag, content = poll_flags()
-            if flag == "art_approved":
-                # ── Upscale all approved covers to 3000×3000 ──
-                send_message("⬆️ Upscaling all covers to 3000×3000 for SoundCloud...")
-                
-                # Upscale album cover
-                art_dir = get_album_artwork_dir(album_name)
-                album_cover_path = os.path.join(art_dir, "album_cover.png")
-                if os.path.exists(album_cover_path):
-                    send_message(f"⬆️ Upscaling album cover...")
-                    upscale_artwork_venice(album_cover_path)
-                    if state:
-                        add_cost(state, "cover_upscale", VENICE_UPSCALE_COST)
-                
-                # Upscale each track cover
-                track_art_dir = art_dir
-                for t in tracklist:
-                    title = t.get('title', '')
-                    cover_file = os.path.join(track_art_dir, f"{title}_cover.png")
-                    if os.path.exists(cover_file):
-                        send_message(f"⬆️ Upscaling {title} cover...")
-                        upscale_artwork_venice(cover_file)
-                        if state:
-                            add_cost(state, "cover_upscale", VENICE_UPSCALE_COST)
-                
-                send_message("✅ All covers upscaled to 3000×3000!")
-                return
-            elif flag == "art_edit":
-                send_message(f"✏️ Regenerating with new direction: {content}")
-                visual += f" {content}"
-                if state:
-                    # Full regen = album + all tracks
-                    add_cost(state, "cover_regeneration", VENICE_IMAGE_GEN_COST * (1 + len(tracklist)))
-                    costs = init_cost_tracker(state)
-                    costs["cover_regen_count"] = costs.get("cover_regen_count", 0) + 1 + len(tracklist)
-                    save_state(state)
-                break  # break inner loop → outer while regenerates everything
-            elif flag == "art_regen":
-                send_message("🔄 Regenerating all artwork from scratch...")
-                if state:
-                    add_cost(state, "cover_regeneration", VENICE_IMAGE_GEN_COST * (1 + len(tracklist)))
-                    costs = init_cost_tracker(state)
-                    costs["cover_regen_count"] = costs.get("cover_regen_count", 0) + 1 + len(tracklist)
-                    save_state(state)
-                break  # break inner loop → outer while regenerates everything
-            elif flag == "art_regen_album":
+            if flag == "albumcover_approved":
+                send_message("✅ Album cover approved!")
+                return "approved"
+            elif flag == "albumcover_regen":
                 send_message("🔄 Regenerating album cover...")
-                new_cover = generate_artwork_venice(visual, album_name)
                 if state:
                     add_cost(state, "cover_regeneration", VENICE_IMAGE_GEN_COST)
                     costs = init_cost_tracker(state)
                     costs["cover_regen_count"] = costs.get("cover_regen_count", 0) + 1
                     save_state(state)
-                if new_cover and os.path.exists(new_cover):
-                    if os.path.exists(OVERLAY_TITLE_SCRIPT):
-                        styled_album = stylize_title(album_name)
-                        subprocess.run(["/opt/hermes/.venv/bin/python3", OVERLAY_TITLE_SCRIPT,
-                            "--image", new_cover, "--title", styled_album, "--auto-color", "--output", new_cover])
-                    regen_btns = [[{"text": "🔄 Regen Album Cover", "callback_data": "ap:art:regen_album"}]]
-                    send_photo(new_cover, caption=f"🎨 Album Cover (new): {album_name}", reply_markup={"inline_keyboard": regen_btns})
-                else:
-                    send_message("❌ Album cover regen failed")
-                continue  # keep polling
-            elif flag and flag.startswith("art_redo_"):
-                try:
-                    track_num = int(flag.split("_")[-1])
-                except ValueError:
-                    continue
-                _redo_single_track_cover(proposal, tracklist, track_num, visual)
-                if state:
-                    add_cost(state, "cover_regeneration", VENICE_IMAGE_GEN_COST)
-                    costs = init_cost_tracker(state)
-                    costs["cover_regen_count"] = costs.get("cover_regen_count", 0) + 1
-                    save_state(state)
-                continue  # keep polling
+                break  # break inner loop to regenerate
+
 
 def _build_varied_scene(visual, title, direction, track_idx, total_tracks):
     """Build a varied but cohesive scene prompt for each track cover.
@@ -1366,118 +1313,58 @@ def _redo_single_track_cover(proposal, tracklist, track_num, visual):
     else:
         send_message(f"❌ Failed to regenerate cover for {title}")
 
-def phase_5_final_review(tracklist, proposal):
-    send_message("📦 Packaging final release files...")
+def phase_5_track_covers(proposal, tracklist, state=None):
+    send_message("🎨 Generating track covers...")
+    visual = proposal.get('visual', '')
+    album_name = proposal.get('album', 'Unknown Album')
     
-    album_name = proposal.get('album', 'release')
-    album_slug = album_name.lower().replace(' ', '-').replace('_', '-')
-    
-    # Use canonical album dir
-    album_dir = get_album_dir(album_name)
-    masters_dir = get_album_masters_dir(album_name)
-    art_dir = get_album_artwork_dir(album_name)
-    os.makedirs(masters_dir, exist_ok=True)
-    os.makedirs(art_dir, exist_ok=True)
-    
-    # Also maintain legacy releases/ dir for publish_release.py compat
-    release_dir = f"/opt/data/music/releases/{album_slug}"
-    os.makedirs(release_dir, exist_ok=True)
-    
-    # Build tracklist metadata
-    tl_meta = []
-    for idx, t in enumerate(tracklist):
-        title = t.get("title", f"Track_{idx+1}")
-        tl_meta.append({
-            "track": idx + 1,
-            "title": title,
-            "bpm": t.get("bpm"),
-            "key": t.get("key"),
-            "genre": proposal.get("subgenre", "Electronic")
-        })
-    
-    # Generate release.json in canonical location
-    release_json = {
-        "title": album_name,
-        "genre": proposal.get("subgenre", "Electronic"),
-        "label": "VØIDRIDE",
-        "release_date": time.strftime("%Y-%m-%d"),
-        "description": proposal.get("description", proposal.get("brief", "")),
-        "tracklist": tl_meta,
-        "soundcloud": {},
-        "artwork": {
-            "album_cover": "artwork/album_cover.png",
-            "track_covers": [f"artwork/{slugify_title(t.get('title',''))}_cover.png" for idx, t in enumerate(tracklist)],
-        },
-    }
-    with open(os.path.join(album_dir, "release.json"), "w") as f:
-        json.dump(release_json, f, indent=2)
-    # Also write to legacy location
-    with open(os.path.join(release_dir, "release.json"), "w") as f:
-        json.dump(release_json, f, indent=2)
-        
-    # Copy masters to canonical dir
-    import shutil
-    for idx, t in enumerate(tracklist):
-        title = t.get("title", f"Track_{idx+1}")
-        master_path = t.get("master_path")
-        if not master_path or not os.path.exists(master_path):
-            master_path = t.get("flac_path") or t.get("mp3_path")
-            if master_path:
-                logger.warning(f"No master for {title}, using raw: {master_path}")
-        if master_path and os.path.exists(master_path):
-            ext = os.path.splitext(master_path)[1]
-            canonical_name = f"{title.upper()}_MASTER{ext}"
-            # Copy to canonical masters/
-            shutil.copy2(master_path, os.path.join(masters_dir, canonical_name))
-            # Also copy to legacy releases/
-            shutil.copy2(master_path, os.path.join(release_dir, canonical_name))
-    
-    # Copy covers to releases dir — prefer titled versions, use JPEG if available
-    covers_dir = os.path.join(release_dir, "covers")
-    os.makedirs(covers_dir, exist_ok=True)
-    
-    # Album cover — prefer titled version
-    for ext in ['.jpg', '.png']:
-        album_cover_src = os.path.join(art_dir, f"album_cover{ext}")
-        if os.path.exists(album_cover_src):
-            shutil.copy2(album_cover_src, os.path.join(release_dir, f"{album_name.replace(' ','_')}_cover{ext}"))
-            break
-    
-    # Track covers — prefer JPEG (under 10MB SoundCloud limit)
-    for t in tracklist:
-        title = t.get("title", "")
-        slug = title.lower().replace(' ', '_')
-        copied = False
-        for ext in ['.jpg', '.png']:
-            cover_src = os.path.join(art_dir, f"{title}_cover{ext}")
-            if os.path.exists(cover_src):
-                shutil.copy2(cover_src, os.path.join(covers_dir, f"{slug}_cover{ext}"))
-                copied = True
-                break
-        if not copied:
-            logger.warning(f"No cover found for {title}")
-    
-    with open(os.path.join(release_dir, "tracks_meta.json"), "w") as f:
-        json.dump(tl_meta, f, indent=2)
-    
-    res = subprocess.run(["/opt/hermes/.venv/bin/python3", SHARE_SCRIPT, "--path", release_dir], capture_output=True, text=True)
-    if res.returncode == 0:
-        link = res.stdout.strip()
-        buttons = [
-            [{"text": "🚀 Publish to SoundCloud", "callback_data": "ap:final:publish"}],
-            [{"text": "↩️ Go Back", "callback_data": "ap:final:back"}]
-        ]
-        send_message(f"✅ Final Mastered Package Ready: {link}", reply_markup={"inline_keyboard": buttons})
-    else:
-        send_message("❌ Failed to package final release.")
-        return "back"
-        
     while True:
-        flag, content = poll_flags()
-        if flag == "final_publish":
-            return "publish"
-        elif flag == "final_back":
-            return "back"
+        # ── 1. Generate all track covers ──
+        track_cover_paths = _generate_all_track_covers(proposal, tracklist, visual, state=state)
+        
+        # ── 2. Final buttons after ALL covers shown ──
+        buttons = [
+            [{"text": "✅ Approve All Covers", "callback_data": "ap:trackcovers:approve"}],
+            [{"text": "🔄 Regenerate All", "callback_data": "ap:trackcovers:regenall"}],
+        ]
+        send_message("👆 <b>Review all track covers above. Tap 🔄 on any individual cover to redo it, or:</b>", reply_markup={"inline_keyboard": buttons})
+        
+        # ── 3. Poll ──
+        while True:
+            flag, content = poll_flags()
+            if flag == "trackcovers_approved":
+                send_message("⬆️ Upscaling all track covers to 3000×3000 for SoundCloud...")
+                track_art_dir = get_album_artwork_dir(album_name)
+                for t in tracklist:
+                    title = t.get('title', '')
+                    cover_file = os.path.join(track_art_dir, f"{title}_cover.png")
+                    if os.path.exists(cover_file):
+                        send_message(f"⬆️ Upscaling {title} cover...")
+                        upscale_artwork_venice(cover_file)
+                        if state:
+                            add_cost(state, "cover_upscale", VENICE_UPSCALE_COST)
+                send_message("✅ All track covers upscaled to 3000×3000!")
+                return "approved"
+            elif flag == "trackcovers_regenall":
+                send_message("🔄 Regenerating all track covers...")
+                if state:
+                    add_cost(state, "cover_regeneration", VENICE_IMAGE_GEN_COST * len(tracklist))
+                    costs = init_cost_tracker(state)
+                    costs["cover_regen_count"] = costs.get("cover_regen_count", 0) + len(tracklist)
+                    save_state(state)
+                break  # break inner loop to regenerate all
+            elif flag and flag.startswith("art_redo_"):
+                try:
+                    track_num = int(flag.split("_")[-1])
+                except ValueError:
+                    continue
+                _redo_single_track_cover(proposal, tracklist, track_num, visual)
+                if state:
+                    add_cost(state, "cover_regeneration", VENICE_IMAGE_GEN_COST)
+                    costs = init_cost_tracker(state)
+                    costs["cover_regen_count"] = costs.get("cover_regen_count", 0) + 1
+                    save_state(state)
+                continue  # keep polling
 
 def phase_6_publish(proposal):
     album_slug = proposal.get('album', 'release').lower().replace(' ', '-')
@@ -1556,6 +1443,10 @@ def main():
             # Phase 1: Produce
             if current_phase <= 1:
                 if not tracklist or redo_track or redo_feedback:
+                    # Save state BEFORE production so watchdog can resume if killed
+                    state["phase"] = 1
+                    state["proposal"] = proposal
+                    save_state(state)
                     tracklist = phase_1_produce(proposal, profile, redo_track, redo_feedback)
                     # Accumulate track production costs
                     for t in tracklist:
@@ -1569,9 +1460,17 @@ def main():
                     save_state(state)
                 current_phase = 2
                 
-            # Phase 2: Song Review
+            # Phase 2: DAW Mastering (moved from old Phase 3)
             if current_phase == 2:
-                decision, payload = phase_2_song_review(tracklist)
+                phase_2_daw_handoff(proposal, tracklist)
+                state["tracklist"] = tracklist
+                state["phase"] = 3
+                save_state(state)
+                current_phase = 3
+
+            # Phase 3: Song Review (moved from old Phase 2) - now reviewing MASTERED tracks
+            if current_phase == 3:
+                decision, payload = phase_3_song_review(tracklist)
                 if decision == "reject":
                     send_message(f"Album rejected. Restarting production with new direction: {payload}")
                     proposal['description'] += f"\n[USER REVISION]: {payload}"
@@ -1582,54 +1481,41 @@ def main():
                     feedback = payload[1]
                     send_message(f"🔄 Redoing only track {track_num}...")
                     tracklist = phase_1_redo_single(proposal, profile, tracklist, track_num, feedback)
-                    # Track redo costs: production + cover regen + upscale
+                    # Track redo costs
                     redo_track_data = tracklist[track_num - 1] if track_num <= len(tracklist) else {}
-                    redo_cost = float(redo_track_data.get("cost", 3.66))  # default avg
+                    redo_cost = float(redo_track_data.get("cost", 3.66))
                     add_cost(state, "track_redos", redo_cost)
-                    add_cost(state, "cover_regeneration", VENICE_IMAGE_GEN_COST)
-                    add_cost(state, "cover_upscale", VENICE_UPSCALE_COST)
                     costs = init_cost_tracker(state)
                     costs["redo_count"] = costs.get("redo_count", 0) + 1
-                    costs["cover_regen_count"] = costs.get("cover_regen_count", 0) + 1
                     state["tracklist"] = tracklist
                     save_state(state)
-                    # Stay in phase 2 for review — don't re-produce everything
+                    # Go back to DAW mastering for the redone track
+                    current_phase = 2
                     continue
                 elif decision == "approved":
-                    send_message("✅ All songs approved! Moving to DAW Handoff & Mastering.")
-                    state["phase"] = 3
+                    send_message("✅ All songs approved! Moving to album cover art.")
+                    state["phase"] = 4
                     save_state(state)
-                    current_phase = 3
-                    
-            # Phase 3: DAW Handoff & Mastering
-            if current_phase == 3:
-                phase_3_daw_handoff(proposal, tracklist)
-                state["tracklist"] = tracklist  # Update with master_paths
-                state["phase"] = 4
-                save_state(state)
-                current_phase = 4
+                    current_phase = 4
 
-            # Phase 4: Artwork
+            # Phase 4: Album Cover + Review
             if current_phase == 4:
-                art_decision = phase_4_artwork(proposal, tracklist, state=state)
-                if art_decision == "publish":
-                    state["phase"] = 6
-                    save_state(state)
-                    current_phase = 6
-                else:
+                art_decision = phase_4_album_cover(proposal, tracklist, state=state)
+                if art_decision == "approved":
                     state["phase"] = 5
                     save_state(state)
                     current_phase = 5
-                
-            # Phase 5: Final Review (Packaging)
+                else:  # "regen" - stay in phase 4
+                    continue
+
+            # Phase 5: Track Covers + Review
             if current_phase == 5:
-                fin_decision = phase_5_final_review(tracklist, proposal)
-                if fin_decision == "publish":
+                covers_decision = phase_5_track_covers(proposal, tracklist, state=state)
+                if covers_decision == "approved":
                     state["phase"] = 6
                     save_state(state)
                     current_phase = 6
-                elif fin_decision == "back":
-                    current_phase = 4
+                else:  # "regen" or "regen_track" - stay in phase 5
                     continue
                     
             # Phase 6: Publish

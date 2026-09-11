@@ -324,6 +324,77 @@ PATCH_CODE = '''
                 await query.answer(text='↩️ Going back to artwork...')
                 return
 
+            # ── DAW Mastering Handlers ──
+            if choice == 'daw:skip':
+                os.makedirs('/tmp/pipeline_flags', exist_ok=True)
+                with open('/tmp/pipeline_flags/daw_skipped', 'w') as f:
+                    f.write('skipped')
+                await query.answer(text='⏭ Skipping DAW mastering...')
+                try:
+                    await query.edit_message_reply_markup(reply_markup=None)
+                except: pass
+                return
+
+            if choice == 'daw:wait':
+                await query.answer(text='⏳ Continuing to wait for DAWAGENT...')
+                try:
+                    await query.edit_message_reply_markup(reply_markup=None)
+                except: pass
+                return
+
+            if choice == 'master:approve':
+                os.makedirs('/tmp/pipeline_flags', exist_ok=True)
+                with open('/tmp/pipeline_flags/master_approved', 'w') as f:
+                    f.write('approved')
+                await query.answer(text='✅ Masters approved!')
+                try:
+                    await query.edit_message_reply_markup(reply_markup=None)
+                except: pass
+                return
+
+            if choice == 'master:wait':
+                os.makedirs('/tmp/pipeline_flags', exist_ok=True)
+                with open('/tmp/pipeline_flags/master_wait', 'w') as f:
+                    f.write('wait')
+                await query.answer(text='⏳ Waiting for re-export...')
+                return
+
+            # ── Album Cover Review Handlers ──
+            if choice == 'albumcover:approve':
+                os.makedirs('/tmp/pipeline_flags', exist_ok=True)
+                with open('/tmp/pipeline_flags/albumcover_approved', 'w') as f:
+                    f.write('approved')
+                await query.answer(text='✅ Album cover approved!')
+                try:
+                    await query.edit_message_reply_markup(reply_markup=None)
+                except: pass
+                return
+
+            if choice == 'albumcover:regen':
+                os.makedirs('/tmp/pipeline_flags', exist_ok=True)
+                with open('/tmp/pipeline_flags/albumcover_regen', 'w') as f:
+                    f.write('regen')
+                await query.answer(text='🔄 Regenerating album cover...')
+                return
+
+            # ── Track Covers Review Handlers ──
+            if choice == 'trackcovers:approve':
+                os.makedirs('/tmp/pipeline_flags', exist_ok=True)
+                with open('/tmp/pipeline_flags/trackcovers_approved', 'w') as f:
+                    f.write('approved')
+                await query.answer(text='✅ Track covers approved!')
+                try:
+                    await query.edit_message_reply_markup(reply_markup=None)
+                except: pass
+                return
+
+            if choice == 'trackcovers:regenall':
+                os.makedirs('/tmp/pipeline_flags', exist_ok=True)
+                with open('/tmp/pipeline_flags/trackcovers_regenall', 'w') as f:
+                    f.write('regenall')
+                await query.answer(text='🔄 Regenerating all track covers...')
+                return
+
             # ── Select N (produce album) ──
             try:
                 idx = int(choice)
