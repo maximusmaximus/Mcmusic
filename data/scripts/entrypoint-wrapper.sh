@@ -73,6 +73,21 @@ if [ -f "$WATCHDOG" ]; then
     ) &
     echo "[wrapper] Watchdog cron started (10 min interval)"
 fi
+
+# ── Patch health-check: re-apply gateway patches if wiped by gateway self-restart ──
+(
+    sleep 15  # Let gateway fully boot first
+    while true; do
+        TELEGRAM_PY="/opt/hermes/gateway/platforms/telegram.py"
+        if [ -f "$TELEGRAM_PY" ] && ! grep -q "Album proposal callbacks" "$TELEGRAM_PY" 2>/dev/null; then
+            echo "[patch-watchdog] $(date) Patch missing — re-applying..." >> "$LOG_DIR/startup.log"
+            "$VENV_PYTHON" "$PATCH_SCRIPT" >> "$LOG_DIR/startup.log" 2>&1
+            [ -f "$PATCH_PUB" ] && "$VENV_PYTHON" "$PATCH_PUB" >> "$LOG_DIR/startup.log" 2>&1
+        fi
+        sleep 60
+    done
+) &
+echo "[wrapper] Patch health-check watchdog started (60s interval)"
 # ── Pipeline auto-resume watchdog ──
 # If pipeline_state.json exists but no album_pipeline.py is running, resume it
 # Guard: skip if the release is already published (stale state)
