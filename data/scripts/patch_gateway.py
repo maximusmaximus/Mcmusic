@@ -417,8 +417,8 @@ PATCH_CODE = '''
             # Edit message to show selection, remove buttons
             try:
                 await query.edit_message_text(
-                    text=f"✅ Selected: *{album_name}* — production starting\\.\\.\\.",
-                    parse_mode="MarkdownV2",
+                    text=f"✅ Selected: *{album_name}* — production starting...",
+                    parse_mode="Markdown",
                     reply_markup=None,
                 )
             except Exception:
