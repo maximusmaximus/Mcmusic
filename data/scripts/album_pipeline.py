@@ -44,14 +44,29 @@ def slugify_title(title):
 def acquire_lock():
     if os.path.exists(LOCK_FILE):
         try:
-            pid = int(open(LOCK_FILE).read().strip())
-            if os.path.exists(f"/proc/{pid}"):
-                logger.error(f"Pipeline already running (PID {pid})")
-                sys.exit(1)
+            data = open(LOCK_FILE).read().strip().split(":")
+            pid = int(data[0])
+            saved_start = data[1] if len(data) > 1 else ""
+            proc_start_file = f"/proc/{pid}/stat"
+            if os.path.exists(proc_start_file):
+                # Check if process start time matches (prevents false positives after container restart)
+                stat = open(proc_start_file).read().split()
+                current_start = stat[21] if len(stat) > 21 else ""
+                if current_start == saved_start:
+                    logger.error(f"Pipeline already running (PID {pid})")
+                    sys.exit(1)
+                else:
+                    logger.info(f"Stale lock (PID {pid} reused, start mismatch) — clearing")
         except Exception:
             pass
+        os.remove(LOCK_FILE)
+    try:
+        stat = open(f"/proc/{os.getpid()}/stat").read().split()
+        start_time = stat[21] if len(stat) > 21 else "0"
+    except Exception:
+        start_time = "0"
     with open(LOCK_FILE, "w") as f:
-        f.write(str(os.getpid()))
+        f.write(f"{os.getpid()}:{start_time}")
 
 def release_lock():
     try:
