@@ -427,17 +427,14 @@ PATCH_CODE = '''
             import subprocess as _subprocess
             _venv_python = '/opt/hermes/.venv/bin/python3'
             _script = '/opt/data/scripts/album_pipeline.py'
+            _log = open('/opt/data/logs/pipeline.log', 'a')
             _proc = _subprocess.Popen(
-                [_venv_python, _script, '--proposal-index', str(idx)],
-                stdout=_subprocess.PIPE, stderr=_subprocess.PIPE,
+                [_venv_python, '-B', _script, '--proposal-index', str(idx)],
+                stdout=_log, stderr=_log,
                 env={**dict(os.environ)},
+                close_fds=True,
             )
-            import asyncio
-            async def _wait_pipeline():
-                loop = asyncio.get_event_loop()
-                await loop.run_in_executor(None, _proc.wait)
-            asyncio.create_task(_wait_pipeline())
-
+            # Fire and forget — don't await, pipeline runs independently
             return
 
 '''
