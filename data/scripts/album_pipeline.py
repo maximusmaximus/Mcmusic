@@ -400,11 +400,9 @@ def phase_1_redo_single(proposal, profile, tracklist, track_num, feedback=None):
         "/opt/hermes/.venv/bin/python3",
         MASTER_PRODUCER_SCRIPT,
         "--prompt", brief,
-        "--duration", "260",
+        "--duration", "180",
         "--quality", "standard",
-        "--target", "streaming",
-        "--director",
-        "--profile", "vidride",
+        "--no-deliver",
     ]
     
     logger.info(f"Redo track {track_num}: {' '.join(cmd[:6])}...")
@@ -602,7 +600,7 @@ def phase_1_produce(proposal, profile, redo_track=None, redo_feedback=None):
         "/opt/hermes/.venv/bin/python3", PRODUCE_SCRIPT,
         "--brief", brief,
         "--tracks", "5",
-        "--duration", "260",
+        "--duration", "180",
         "--quality", "standard"
     ]
     
