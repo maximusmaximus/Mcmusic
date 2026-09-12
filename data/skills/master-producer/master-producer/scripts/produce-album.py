@@ -301,8 +301,7 @@ def main():
                "--prompt", enriched_brief,
                "--duration", str(args.duration),
                "--quality", args.quality,
-               "--target", args.target,
-               "--director", "--no-deliver"]
+               "--no-deliver"]
 
         if has_vocals:
             cmd.extend(["--lyrics", "[Verse]\nMmm ahh\n(breathy humming)"])
