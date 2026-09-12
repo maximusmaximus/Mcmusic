@@ -425,16 +425,14 @@ PATCH_CODE = '''
                 pass
 
             import subprocess as _subprocess
-            _venv_python = '/opt/hermes/.venv/bin/python3'
-            _script = '/opt/data/scripts/album_pipeline.py'
-            _log = open('/opt/data/logs/pipeline.log', 'a')
-            _proc = _subprocess.Popen(
-                [_venv_python, '-B', _script, '--proposal-index', str(idx)],
-                stdout=_log, stderr=_log,
-                env={**dict(os.environ)},
-                close_fds=True,
+            _cmd = (
+                f'nohup /opt/hermes/.venv/bin/python3 -B '
+                f'/opt/data/scripts/album_pipeline.py '
+                f'--proposal-index {idx} '
+                f'>> /opt/data/logs/pipeline.log 2>&1 &'
             )
-            # Fire and forget — don't await, pipeline runs independently
+            _subprocess.Popen(_cmd, shell=True, env={**dict(os.environ)})
+            # Fire and forget — pipeline runs independently
             return
 
 '''
