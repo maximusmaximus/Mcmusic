@@ -121,6 +121,13 @@ import json, os, sys
 try:
     state = json.load(open('$PIPELINE_STATE'))
     album = state.get('proposal',{}).get('album','').lower().replace(' ','-')
+    # Check if a different album was selected in current_proposals.json
+    try:
+        props = json.load(open('/opt/data/music/proposals/current_proposals.json'))
+        sel = props.get('selected_slug') or props.get('selected','').lower().replace(' ','-')
+        if sel and sel != album:
+            print('stale'); sys.exit(0)
+    except Exception: pass
     for rpath in [f'/opt/data/music/releases/{album}/release.json', f'/opt/data/music/albums/{album}/release.json']:
         if os.path.exists(rpath):
             rj = json.load(open(rpath))
@@ -129,8 +136,8 @@ try:
     print('no')
 except: print('no')
 " 2>/dev/null)
-            if [ "$ALREADY_PUBLISHED" = "yes" ]; then
-                echo "[pipeline-watchdog] $(date) Album already published, removing stale state"
+            if [ "$ALREADY_PUBLISHED" = "yes" ] || [ "$ALREADY_PUBLISHED" = "stale" ]; then
+                echo "[pipeline-watchdog] $(date) Album published or replaced by new selection ($ALREADY_PUBLISHED), removing state"
                 rm -f "$PIPELINE_STATE"
             else
                 NOW=$(date +%s)

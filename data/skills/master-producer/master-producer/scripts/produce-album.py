@@ -190,6 +190,9 @@ def main():
     parser.add_argument("--brief", required=True, help="Album concept")
     parser.add_argument("--tracks", type=int, default=5)
     parser.add_argument("--duration", type=int, default=20)
+    parser.add_argument("--mode", default=None, choices=["full", "sample", "samples", "full tracks"])
+    parser.add_argument("--no-deliver", action="store_true", help="Skip Telegram delivery and status messages")
+    parser.add_argument("--resume-tracks", type=int, default=0, help="Number of tracks already completed")
     parser.add_argument("--quality", default="quick", choices=["quick", "standard", "premium"])
     parser.add_argument("--target", default="streaming")
     parser.add_argument("--vocals-pct", type=int, default=0, help="Pct of tracks with vocals (0-100)")
@@ -199,7 +202,12 @@ def main():
     profile, slug = load_active_profile()
     profile_name = profile.get("name", "VØIDRIDE") if profile else "VØIDRIDE"
 
-    is_sample = args.duration <= 30
+    if args.mode in ["sample", "samples"]:
+        is_sample = True
+    elif args.mode in ["full", "full tracks"]:
+        is_sample = False
+    else:
+        is_sample = args.duration <= 30
     mode = "samples" if is_sample else "full tracks"
 
     # Which tracks get vocals
@@ -212,8 +220,9 @@ def main():
 
     log(f"📀 {args.brief} — {args.tracks} × {args.duration}s {mode}")
 
-    progress_id = tg_send(
-        f"⏳ *{args.brief}*\nGenerating {args.tracks} {mode}...")
+    progress_id = None
+    if not args.no_deliver:
+        progress_id = tg_send(f"⏳ *{args.brief}*\nGenerating {args.tracks} {mode}...")
 
     completed = []
     track_files = []
@@ -222,7 +231,22 @@ def main():
     track_times = []  # for ETA calculation
     avg_track_time = 0
 
-    for i in range(args.tracks):
+    # Load any prior completed tracks if resuming
+    if args.resume_tracks > 0 and os.path.exists("/tmp/completed_tracks.json"):
+        try:
+            with open("/tmp/completed_tracks.json") as cf:
+                cdata = json.load(cf)
+                completed = cdata.get("completed", [])
+                total_cost = float(cdata.get("total_cost", 0.0))
+                for ct in completed:
+                    mp3 = ct.get("mp3_path") or ct.get("files", {}).get("mp3")
+                    flac = ct.get("flac_path") or ct.get("files", {}).get("flac")
+                    if mp3 and os.path.exists(mp3):
+                        track_files.append((ct.get("title", f"Track {ct.get('track', len(track_files)+1)}"), mp3, flac or ""))
+        except Exception:
+            pass
+
+    for i in range(args.resume_tracks, args.tracks):
         track_num = i + 1
         variation = VARIATION_TEMPLATES[i % len(VARIATION_TEMPLATES)]
         has_vocals = i in vocal_positions
@@ -272,6 +296,14 @@ def main():
                     with open(progress_file) as pf:
                         prog = json.load(pf)
                     phase_info = f"  Phase: {prog.get('phase_name', '?')}"
+                    # Update pipeline_progress.json for album_pipeline LiveStatusDashboard
+                    with open("/tmp/pipeline_progress.json", "w") as ppf:
+                        json.dump({
+                            "track_num": track_num,
+                            "elapsed_sec": int(elapsed),
+                            "phase_name": prog.get("phase_name", "Generating stems"),
+                            "total_cost": round(total_cost, 2)
+                        }, ppf)
                 except Exception:
                     pass
 
@@ -286,12 +318,13 @@ def main():
                 for j, ct in enumerate(completed, 1):
                     completed_list += f"\n  {j}. ✅ {ct.get('title', '?')}"
 
-                tg_edit(progress_id,
-                    f"⏳ *{args.brief}*\n\n"
-                    f"Track {track_num}/{args.tracks} — {variation['direction']}\n"
-                    f"{phase_info} | ⏱ {int(elapsed)}s{eta}\n"
-                    f"💰 ${total_cost:.2f} so far"
-                    f"{completed_list}")
+                if not args.no_deliver and progress_id:
+                    tg_edit(progress_id,
+                        f"⏳ *{args.brief}*\n\n"
+                        f"Track {track_num}/{args.tracks} — {variation['direction']}\n"
+                        f"{phase_info} | ⏱ {int(elapsed)}s{eta}\n"
+                        f"💰 ${total_cost:.2f} so far"
+                        f"{completed_list}")
 
         progress_thread = threading.Thread(target=_update_progress, daemon=True)
         progress_thread.start()
@@ -303,6 +336,9 @@ def main():
                "--quality", args.quality,
                "--target", args.target,
                "--director", "--no-deliver"]
+
+        if is_sample:
+            cmd.append("--preview")
 
         if has_vocals:
             cmd.extend(["--lyrics", "[Verse]\nMmm ahh\n(breathy humming)"])
@@ -465,25 +501,26 @@ def main():
             tracklist += f" ({t['bpm']} BPM, {t.get('key', '?')})"
         tracklist += "\n"
 
-    tg_edit(progress_id,
-            f"📀 *{args.brief}*\n\n"
-            f"{tracklist}\n"
-            f"💰 ${total_cost:.2f} | Delivering {len(track_files)} {mode}...")
+    if not args.no_deliver and progress_id:
+        tg_edit(progress_id,
+                f"📀 *{args.brief}*\n\n"
+                f"{tracklist}\n"
+                f"💰 ${total_cost:.2f} | Delivering {len(track_files)} {mode}...")
 
-    sent = 0
-    for j, (title, mp3, flac) in enumerate(track_files, 1):
-        ok = tg_send_audio(mp3, title=f"{j}. {title}", performer=profile_name)
-        if ok:
-            sent += 1
-            log(f"  📤 {j}/{len(track_files)}: {title}")
-        time.sleep(1)
+        sent = 0
+        for j, (title, mp3, flac) in enumerate(track_files, 1):
+            ok = tg_send_audio(mp3, title=f"{j}. {title}", performer=profile_name)
+            if ok:
+                sent += 1
+                log(f"  📤 {j}/{len(track_files)}: {title}")
+            time.sleep(1)
 
-    tg_edit(progress_id,
-            f"📀 *{args.brief}*\n\n"
-            f"{tracklist}\n"
-            f"💰 ${total_cost:.2f} | ✅ {sent} {mode} delivered")
+        tg_edit(progress_id,
+                f"📀 *{args.brief}*\n\n"
+                f"{tracklist}\n"
+                f"💰 ${total_cost:.2f} | ✅ {sent} {mode} delivered")
 
-    log(f"✅ {sent}/{len(track_files)} delivered to Telegram")
+        log(f"✅ {sent}/{len(track_files)} delivered to Telegram")
 
     # Output batch JSON for upstream consumers
     print(json.dumps(batch_data))

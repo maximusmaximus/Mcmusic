@@ -76,7 +76,7 @@ def get_album_masters_dir(album_name):
     return os.path.join(get_album_dir(album_name), "masters")
 
 
-def acquire_lock():
+def acquire_lock(force=False):
     if os.path.exists(LOCK_FILE):
         try:
             data = open(LOCK_FILE).read().strip().split(":")
@@ -87,8 +87,16 @@ def acquire_lock():
                 stat = open(proc_start_file).read().split()
                 current_start = stat[21] if len(stat) > 21 else ""
                 if current_start == saved_start:
-                    logger.error(f"Pipeline already running (PID {pid})")
-                    sys.exit(1)
+                    if force:
+                        logger.warning(f"Force acquisition: terminating existing pipeline (PID {pid})")
+                        try:
+                            os.kill(pid, 9)
+                            time.sleep(1)
+                        except Exception:
+                            pass
+                    else:
+                        logger.error(f"Pipeline already running (PID {pid})")
+                        sys.exit(1)
                 else:
                     logger.info(f"Stale lock (PID {pid} reused, start mismatch) — clearing")
         except Exception:
@@ -223,6 +231,15 @@ def _send_tg_request(method, data=None):
         try:
             with urllib.request.urlopen(req, timeout=20) as response:
                 return json.loads(response.read().decode('utf-8'))
+        except urllib.error.HTTPError as e:
+            try:
+                err_body = e.read().decode('utf-8', errors='ignore')
+                if "message is not modified" in err_body:
+                    return {"ok": True, "result": True}
+            except Exception:
+                pass
+            logger.warning(f"Telegram API HTTP error ({method}, attempt {attempt+1}/3): {e}")
+            time.sleep(1.5)
         except Exception as e:
             logger.warning(f"Telegram API error ({method}, attempt {attempt+1}/3): {e}")
             time.sleep(1.5)
@@ -1242,6 +1259,7 @@ def main():
     parser.add_argument("--mode", default="full", choices=["full", "sample"])
     parser.add_argument("--duration", type=int, default=None)
     parser.add_argument("--resume", action="store_true")
+    parser.add_argument("--force", action="store_true", help="Force acquire lock by terminating any existing pipeline")
     parser.add_argument("--test", action="store_true")
     args = parser.parse_args()
 
@@ -1264,7 +1282,11 @@ def main():
                 with open(PROFILE_FILE) as pf:
                     profile = json.load(pf)
             except Exception: pass
+        current_phase = state.get("phase", 1)
+        tracklist = state.get("completed_tracks") or state.get("tracklist") or []
     else:
+        # Starting a new album production — force lock acquisition and create clean fresh state
+        args.force = True
         if not os.path.exists(PROPOSALS_FILE):
             logger.error(f"Proposals file not found: {PROPOSALS_FILE}")
             sys.exit(1)
@@ -1284,15 +1306,28 @@ def main():
                     profile = json.load(pf)
             except Exception: pass
 
+        state = {
+            "proposal": proposal,
+            "mode": mode,
+            "duration": duration,
+            "phase": 1,
+            "completed_tracks": [],
+            "tracklist": [],
+            "costs": {}
+        }
+        current_phase = 1
+        tracklist = []
+        if os.path.exists("/tmp/completed_tracks.json"):
+            try: os.remove("/tmp/completed_tracks.json")
+            except Exception: pass
+
     state["mode"] = mode
     state["duration"] = duration
     state["proposal"] = proposal
 
-    current_phase = state.get("phase", 1) if args.resume else 1
-    tracklist = state.get("completed_tracks") or state.get("tracklist")
     redo_track, redo_feedback = None, None
 
-    acquire_lock()
+    acquire_lock(force=args.force)
     init_cost_tracker(state)
 
     # Initialize Live Status Dashboard

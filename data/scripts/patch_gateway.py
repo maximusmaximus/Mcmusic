@@ -670,14 +670,29 @@ PATCH_CODE = '''
                 except Exception:
                     pass
 
+                # Terminate any existing pipeline, clear old locks, flags, and stale state
+                import subprocess as _subprocess
+                try:
+                    _subprocess.run(["pkill", "-9", "-f", "album_pipeline.py"], check=False)
+                    for _f in ["/tmp/album_pipeline.lock", "/tmp/completed_tracks.json", "/opt/data/music/pipeline_state.json"]:
+                        if os.path.exists(_f):
+                            try: os.remove(_f)
+                            except Exception: pass
+                    import glob as _glob
+                    for _fl in _glob.glob("/tmp/pipeline_flags/*"):
+                        try: os.remove(_fl)
+                        except Exception: pass
+                except Exception:
+                    pass
+
                 # FIX: Pass 0-based index (idx - 1) so Proposal 1 is index 0 and Proposal 5 is index 4!
                 zero_based_index = idx - 1
-                import subprocess as _subprocess
                 _cmd = (
                     f'nohup /opt/hermes/.venv/bin/python3 -B '
                     f'/opt/data/scripts/album_pipeline.py '
                     f'--proposal-index {zero_based_index} '
                     f'--mode {prod_mode} '
+                    f'--force '
                     f'>> /opt/data/logs/pipeline.log 2>&1 &'
                 )
                 _subprocess.Popen(_cmd, shell=True, env={**dict(os.environ)})
