@@ -1,5 +1,8 @@
-# Secrets
+# Secrets & Credentials
 .env
+data/config.yaml
+data/.soundcloud_auth/
+data/auth.lock
 
 # Runtime state — exclude (generated music, logs, sessions, caches)
 data/logs/
@@ -12,6 +15,26 @@ data/music/releases/
 data/music/exports/
 data/music/proposals/
 data/music/profiles/*/batches/
+data/productions/
+data/snapshots/
+data/cache/
+data/.cache/
+data/.config/
+data/.local/
+data/bin/
+data/audio_cache/
+data/tmp/
+data/gateway*
+data/channel_directory.json
+data/processes.json
+data/memories/
+data/cron/
+data/*cache*.json
+data/*.lock
+data/*.tmp
+data/*.zip
+**/cloudflared
+**/cloudflared.exe
 
 # Python bytecode
 **/__pycache__/

@@ -1,49 +1,29 @@
 ---
 name: secure-share
-description: A file service infrastructure for agents to securely package and share files via local and external shareable links.
+description: File service infrastructure to securely package music releases, FLACs, and Windows playlists into ZIP archives and generate live local and Cloudflare external download links for review.
 ---
 
-# Secure Share
+# Secure Share Skill
 
-This skill allows agents to package files or directories into a ZIP archive and expose them via a secure shareable link.
+This skill packages music production files, FLAC masters, artwork, and Windows `.m3u8` playlists into ZIP archives and exposes them via live local and Cloudflare shareable links.
 
 ## Usage
 
-Agents can call the share.py script provided in the scripts directory.
+### 1. Deliver Release / Package for Review (Primary)
+Packages a release directory, generates a live Cloudflare download link, and sends a notification to Telegram:
+```bash
+python3 /opt/data/skills/secure-share/scripts/deliver_release.py --path "/opt/data/music/exports/<session>" --title "<ALBUM TITLE>"
+```
 
-### Command Line
-`powershell
-python path\to\scripts\share.py --path "C:\path\to\your\folder_or_file" [--external]
-`
+### 2. Package Folder / File (CLI)
+Packages any directory or file into `shared_files` and outputs local and external Cloudflare links:
+```bash
+python3 /opt/data/skills/secure-share/scripts/share.py --path "/opt/data/music/exports/<session>"
+```
 
-### Options
-- --path: The absolute path to the file or directory you want to share. If a directory is provided, it will be automatically zipped.
-- --external: Optional. If provided, the packaged file will also be uploaded to 	ransfer.sh to generate a public, ephemeral download link (valid for 14 days).
-
-### Local Server
-The sharing infrastructure relies on a local background file server serving C:\Users\maxin\.gemini\antigravity\shared_files on port 8123.
-To start the server (if not already running), an agent can execute:
-`powershell
-python path\to\scripts\server.py
-`
-"@
-
- = @"
-import http.server
-import socketserver
-import os
-from pathlib import Path
-
-PORT = 8123
-DIRECTORY = Path(r"C:\Users\maxin\.gemini\antigravity\shared_files")
-DIRECTORY.mkdir(parents=True, exist_ok=True)
-
-class Handler(http.server.SimpleHTTPRequestHandler):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, directory=str(DIRECTORY), **kwargs)
-
-if __name__ == "__main__":
-    with socketserver.TCPServer(("", PORT), Handler) as httpd:
-        print(f"Secure File Service running at http://localhost:{PORT}")
-        print(f"Serving directory: {DIRECTORY}")
-        httpd.serve_forever()
+### 3. Server & Tunnel Service
+Runs the local file server on port 8124 and maintains the Cloudflare tunnel (`*.trycloudflare.com`):
+```bash
+python3 /opt/data/skills/secure-share/scripts/server.py
+```
+*(Automatically launched in the background by `share.py` and `deliver_release.py` if not running).*

@@ -88,16 +88,34 @@ fi
     done
 ) &
 echo "[wrapper] Patch health-check watchdog started (60s interval)"
-# ── Pipeline auto-resume watchdog ──
-# If pipeline_state.json exists but no album_pipeline.py is running, resume it
-# Guard: skip if the release is already published (stale state)
+# ── Cron: recursive_sp2_update.py every Sunday ──
+RECURSIVE_UPDATE_SCRIPT="/opt/data/scripts/recursive_sp2_update.py"
+if [ -f "$RECURSIVE_UPDATE_SCRIPT" ]; then
+    (
+        while true; do
+            dow=$(date +%u)
+            if [ "$dow" -eq 7 ]; then
+                marker="/tmp/.recursive_update_ran_$(date +%Y%m%d)"
+                if [ ! -f "$marker" ]; then
+                    echo "[cron] Running weekly recursive_sp2_update.py..." >> "$LOG_DIR/recursive_update.log"
+                    "$VENV_PYTHON" "$RECURSIVE_UPDATE_SCRIPT" >> "$LOG_DIR/recursive_update.log" 2>&1
+                    touch "$marker"
+                fi
+            fi
+            sleep 3600
+        done
+    ) &
+    echo "[wrapper] Weekly recursive_sp2_update cron scheduled"
+fi
+
+# ── Pipeline auto-resume watchdog with crash-loop protection ──
 PIPELINE_STATE="/opt/data/music/pipeline_state.json"
 PIPELINE_SCRIPT="/opt/data/scripts/album_pipeline.py"
 (
     sleep 30  # Let gateway initialize first
+    CRASH_FILE="/tmp/.pipeline_crashes"
     while true; do
         if [ -f "$PIPELINE_STATE" ] && ! pgrep -f "album_pipeline.py" > /dev/null 2>&1; then
-            # Check if album is already published — if so, clean up stale state
             ALREADY_PUBLISHED=$("$VENV_PYTHON" -c "
 import json, os, sys
 try:
@@ -115,15 +133,23 @@ except: print('no')
                 echo "[pipeline-watchdog] $(date) Album already published, removing stale state"
                 rm -f "$PIPELINE_STATE"
             else
-                echo "[pipeline-watchdog] $(date) State exists but no pipeline running — resuming..."
-                "$VENV_PYTHON" -B "$PIPELINE_SCRIPT" --resume >> "$LOG_DIR/pipeline.log" 2>&1 &
-                sleep 300  # Wait 5 min before checking again after restart
+                NOW=$(date +%s)
+                touch "$CRASH_FILE"
+                COUNT=$(awk -v now="$NOW" '$1 > now - 600' "$CRASH_FILE" 2>/dev/null | wc -l)
+                if [ "$COUNT" -ge 3 ]; then
+                    echo "[pipeline-watchdog] $(date) 🚨 Crash loop detected ($COUNT restarts in 10m). Pausing auto-resume." >> "$LOG_DIR/pipeline.log"
+                else
+                    echo "$NOW" >> "$CRASH_FILE"
+                    echo "[pipeline-watchdog] $(date) State exists but no pipeline running — resuming..."
+                    "$VENV_PYTHON" -B "$PIPELINE_SCRIPT" --resume >> "$LOG_DIR/pipeline.log" 2>&1 &
+                    sleep 300
+                fi
             fi
         fi
         sleep 60
     done
 ) &
-echo "[wrapper] Pipeline watchdog started (60s interval)"
+echo "[wrapper] Pipeline watchdog started (60s interval with crash-loop guard)"
 
 # ── Hand off to gateway ──
 exec /opt/hermes/entrypoint.sh "$@"

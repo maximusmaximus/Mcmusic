@@ -187,7 +187,7 @@ QUALITY_TIERS = {
 STEM_CONFIG = {
     "main": {
         "model_vocal": "ace-step-15",           # Cheapest vocal ($0.03), structured [Verse]/[Chorus]
-        "model_vocal_freeform": "minimax-music-v26",  # Freeform vocal ($0.04)
+        "model_vocal_freeform": "minimax-music-v2",  # Freeform vocal ($0.04)
         "model_vocal_premium": "elevenlabs-music",   # Premium vocal ($0.69)
         "model_instrumental": "elevenlabs-music",
         "model_instrumental_budget": "ace-step-15",
@@ -407,7 +407,7 @@ def compose_prompt(user_prompt, profile=None):
     )
 
     payload = json.dumps({
-        "model": "deepseek-v4-flash",
+        "model": "zai-org-glm-5-1",
         "messages": [
             {"role": "system", "content": system},
             {"role": "user", "content": user_prompt[:800]},  # Cap input length
@@ -513,7 +513,7 @@ Output ONLY the production brief as flowing text. No markdown headers, no number
         system += profile_ctx
 
     payload = json.dumps({
-        "model": "deepseek-v4-flash",
+        "model": "zai-org-glm-5-1",
         "messages": [
             {"role": "system", "content": system},
             {"role": "user", "content": user_prompt},
@@ -581,14 +581,9 @@ def creative_director(user_prompt, quality_tier, duration, lyrics=None, profile=
             "strengths": "Structured vocals with [Verse]/[Chorus] tags, cheapest vocal",
             "supports": "lyrics (required), duration (only 60/90/120/150/180/210s)",
         },
-        "minimax-music-v26": {
+        "minimax-music-v2": {
             "type": "vocal", "cost": 0.04, "max_prompt": 300,
-            "strengths": "Latest MiniMax — tighter rhythm, clearer vocals, atmospheric, breathy textures",
-            "supports": "lyrics (required), prompt max 300 chars. NO duration control.",
-        },
-        "minimax-music-v25": {
-            "type": "vocal", "cost": 0.04, "max_prompt": 300,
-            "strengths": "Mid-tier MiniMax — reliable freeform vocals, catchy melodies",
+            "strengths": "Freeform vocals, catchy melodies, breathy/atmospheric vocals",
             "supports": "lyrics (required), prompt max 300 chars. NO duration control.",
         },
         "stable-audio-25": {
@@ -757,7 +752,7 @@ OUTPUT VALID JSON (no markdown, no code fences):
     if lyrics:
         user_msg += f"\n\nLYRICS:\n{lyrics[:500]}"
 
-    director_model = os.environ.get("DIRECTOR_MODEL", "deepseek-v4-pro")
+    director_model = os.environ.get("DIRECTOR_MODEL", "kimi-k3")
 
     # Retry loop — K3 sometimes returns empty on rapid successive calls
     max_retries = 2
@@ -870,7 +865,7 @@ OUTPUT VALID JSON (no markdown, no code fences):
                 wait = 5 * (attempt + 1)  # 5s, 10s exponential backoff
                 log(f"  ⚠️ K3 attempt {attempt + 1} failed ({e}) — retrying in {wait}s...")
                 # Try alternate model on last retry
-                if attempt == max_retries - 1 and director_model == "deepseek-v4-pro":
+                if attempt == max_retries - 1 and director_model == "kimi-k3":
                     director_model = "qwen-3-7-plus"
                     log(f"  🔄 Switching to fallback model: {director_model}")
                 time.sleep(wait)
@@ -884,7 +879,7 @@ OUTPUT VALID JSON (no markdown, no code fences):
             if attempt < max_retries:
                 wait = 10 * (attempt + 1)  # 10s, 20s — longer for network issues
                 log(f"  ⚠️ K3 network error attempt {attempt + 1} ({e}) — retrying in {wait}s...")
-                if attempt == max_retries - 1 and director_model == "deepseek-v4-pro":
+                if attempt == max_retries - 1 and director_model == "kimi-k3":
                     director_model = "qwen-3-7-plus"
                     log(f"  🔄 Switching to fallback model: {director_model}")
                 time.sleep(wait)
@@ -900,7 +895,7 @@ OUTPUT VALID JSON (no markdown, no code fences):
 # These use cheap K3/qwen calls to make adaptive decisions at each
 # pipeline stage instead of using hardcoded values.
 
-def _quick_inference(system_prompt, user_prompt, model="deepseek-v4-flash", max_tokens=800):
+def _quick_inference(system_prompt, user_prompt, model="qwen-3-7-plus", max_tokens=800):
     """Make a quick inference call for pipeline decisions. Returns parsed JSON or None."""
     api_key = os.environ.get("VENICE_API_KEY", "")
     if not api_key:
@@ -1928,7 +1923,9 @@ def mix_stems(stems, output_dir, target="streaming"):
         return main_stem["file"]
 
 
-def master_audio(input_path, output_dir, skip_master=False, target="streaming", track_title="Hermes Music"):
+def master_audio(input_path, output_dir, skip_master=False, target="streaming",
+                 track_title="VØIDRIDE Track", artist="VØIDRIDE", album=None,
+                 genre=None, track_num=None, total_tracks=None, comment=None):
     """Apply target-specific mastering chain using ffmpeg. Returns dict with primary path and all files."""
     if skip_master:
         log("  Mastering skipped (--skip-master)")
@@ -2008,9 +2005,21 @@ def master_audio(input_path, output_dir, skip_master=False, target="streaming", 
     # Metadata for all outputs
     meta = [
         "-metadata", f"title={track_title}",
-        "-metadata", "artist=Hermes Music",
-        "-metadata", f"comment=Mastered by Hermes Music — {target} target",
+        "-metadata", f"artist={artist}",
+        "-metadata", f"album_artist={artist}",
+        "-metadata", "copyright=© 2026 Max Infeld",
+        "-metadata", f"publisher={artist}",
     ]
+    if album:
+        meta += ["-metadata", f"album={album}"]
+    if genre:
+        meta += ["-metadata", f"genre={genre}"]
+    if track_num:
+        meta += ["-metadata", f"track={track_num}/{total_tracks}" if total_tracks else f"track={track_num}"]
+    if comment:
+        meta += ["-metadata", f"comment={comment}"]
+    else:
+        meta += ["-metadata", f"comment=Mastered by {artist} — {target} target"]
 
     output_files = {}
     primary_path = None
@@ -2093,7 +2102,8 @@ def master_audio(input_path, output_dir, skip_master=False, target="streaming", 
         return {"primary": input_path, "files": {}}
 
 
-def matchering_master(input_path, output_dir, reference_dir=None, track_title="Hermes Music"):
+def matchering_master(input_path, output_dir, reference_dir=None, track_title="VØIDRIDE Track",
+                      artist="VØIDRIDE", album=None, genre=None, track_num=None, total_tracks=None):
     """Apply reference-based mastering using Matchering.
     Matches RMS, frequency response, peak amplitude, and stereo width to a reference track."""
     try:
@@ -2140,9 +2150,23 @@ def matchering_master(input_path, output_dir, reference_dir=None, track_title="H
         log(f"    WAV: {out_wav}")
         log(f"    MP3: {out_mp3}")
 
-        # Also create FLAC
+        # Also create FLAC with metadata
+        meta = [
+            "-metadata", f"title={track_title}",
+            "-metadata", f"artist={artist}",
+            "-metadata", f"album_artist={artist}",
+            "-metadata", "copyright=© 2026 Max Infeld",
+            "-metadata", f"publisher={artist}",
+        ]
+        if album:
+            meta += ["-metadata", f"album={album}"]
+        if genre:
+            meta += ["-metadata", f"genre={genre}"]
+        if track_num:
+            meta += ["-metadata", f"track={track_num}/{total_tracks}" if total_tracks else f"track={track_num}"]
+
         out_flac = os.path.join(output_dir, f"master_ref_{timestamp}.flac")
-        flac_cmd = ["ffmpeg", "-y", "-i", out_wav, "-ar", "48000", "-sample_fmt", "s32", out_flac]
+        flac_cmd = ["ffmpeg", "-y", "-i", out_wav, "-ar", "48000", "-sample_fmt", "s32", *meta, out_flac]
         subprocess.run(flac_cmd, capture_output=True, text=True, timeout=60)
         if os.path.isfile(out_flac):
             log(f"    FLAC: {out_flac}")
@@ -2510,12 +2534,22 @@ def main():
                         help="Path to a production_plan.json to replay (locks prompts/models from a preview)")
     parser.add_argument("--profile", default=None,
                         help="DJ profile name to load defaults from (auto-detects active if omitted)")
+    parser.add_argument("--title", default=None, help="Track title for metadata")
+    parser.add_argument("--artist", default=None, help="Artist name for metadata (default: VØIDRIDE)")
+    parser.add_argument("--album", default=None, help="Album name for metadata")
+    parser.add_argument("--genre", default=None, help="Genre for metadata")
+    parser.add_argument("--track-number", type=int, default=None, help="Track number for metadata")
+    parser.add_argument("--total-tracks", type=int, default=None, help="Total track count for metadata")
 
     args = parser.parse_args()
 
     # Set up Telegram notifications — auto-detect if --chat-id not passed
     _CHAT_ID = args.chat_id
     _auto_detect_telegram()
+
+    # Mode detection: Sample preview (<=30s) vs Full track
+    is_sample_mode = args.preview or (args.preview is None and args.duration <= 30)
+    mode_label = "20s SAMPLE PREVIEW (MP3)" if is_sample_mode else f"FULL TRACK ({args.duration}s, Lossless FLAC)"
 
     # Suppress Telegram spam in batch/album mode
     global _SILENT_MODE
@@ -2531,6 +2565,7 @@ def main():
     log("║          🎵 MASTER PRODUCER — AI STUDIO 🎵              ║")
     log("╚══════════════════════════════════════════════════════════╝")
     log(f"")
+    log(f"Mode:     {mode_label}")
     log(f"Quality:  {args.quality} ({tier['description']})")
     log(f"Target:   {args.target} ({target_profile['description']})")
     log(f"Stems:    {', '.join(stem_names)}")
@@ -2706,7 +2741,7 @@ def main():
     stem_labels = {"main": "🎤 Main Track", "texture": "🌊 Texture Layer", "accent": "💥 Accent FX", "atmosphere": "🌌 Atmosphere"}
 
     telegram_notify(
-        f"🎵 *Starting {args.quality} production*\n"
+        f"🎵 *Starting {args.quality} production* — `{mode_label}`\n"
         f"🎯 Target: {args.target}\n"
         f"📋 Pipeline: {total_stems} stems → mix → master\n"
         f"⏱️ Estimated: {3 * total_stems + 2}-{5 * total_stems + 5} minutes"
@@ -2890,14 +2925,29 @@ def main():
     log("-" * 60)
     report_progress("mastering")
     fmt_str = ', '.join(f.upper() for f in target_profile['outputs'])
-    telegram_notify(f"🎚️ *Mastering for {args.target}...* ({fmt_str})")
-    master_result = master_audio(mix_path, session_dir, skip_master=args.skip_master,
-                                  target=args.target, track_title=args.prompt[:60])
+    # Resolve metadata fields
+    resolved_title = args.title or (production_plan.get("title") if production_plan else None) or args.prompt[:60]
+    resolved_artist = args.artist or (active_profile.get("name") if active_profile else "VØIDRIDE")
+    resolved_album = args.album or (album_context.get("brief") if album_context else None)
+    resolved_genre = args.genre or (production_plan.get("genre") if production_plan else None)
+    resolved_track_num = args.track_number or (album_context.get("track_number") if album_context else None)
+    resolved_total_tracks = args.total_tracks or (album_context.get("total_tracks") if album_context else None)
+
+    master_result = master_audio(
+        mix_path, session_dir, skip_master=args.skip_master,
+        target=args.target, track_title=resolved_title,
+        artist=resolved_artist, album=resolved_album, genre=resolved_genre,
+        track_num=resolved_track_num, total_tracks=resolved_total_tracks,
+    )
     master_primary = master_result["primary"]
     master_files = master_result["files"]
 
     # Step 3b: Reference-based mastering (Matchering) — if reference tracks available
-    ref_result = matchering_master(mix_path, session_dir, track_title=args.prompt[:60])
+    ref_result = matchering_master(
+        mix_path, session_dir, track_title=resolved_title,
+        artist=resolved_artist, album=resolved_album, genre=resolved_genre,
+        track_num=resolved_track_num, total_tracks=resolved_total_tracks,
+    )
     if ref_result:
         log(f"  🎯 Reference master available (matched to: {ref_result.get('reference', 'unknown')})")
         # Use reference master as primary if available
@@ -2912,7 +2962,7 @@ def main():
         log("-" * 60)
         telegram_notify("🔊 *Exporting L-ISA stems...*")
         lisa_dir = export_stems_lisa(generated_stems, session_dir, args.target,
-                                     track_title=args.prompt[:60])
+                                     track_title=resolved_title)
 
     pipeline_time = time.time() - pipeline_start
 

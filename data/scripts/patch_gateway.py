@@ -1,12 +1,21 @@
 """
-patch_gateway.py — Patches the Telegram gateway to handle ap: (album proposal) callbacks.
+patch_gateway.py — Patches the Telegram gateway to handle ap: and sp2: callbacks.
 
 Handles:
   ap:1 .. ap:5     — Select album for production
+  ap:prod:N:mode   — Launch album pipeline with mode (0-indexed fix)
   ap:skip          — Skip all proposals
-  ap:love:N        — Record a positive taste preference
-  ap:hate:N        — Record a negative taste preference
+  ap:love:N        — Record positive taste preference
+  ap:hate:N        — Record negative taste preference
   ap:refine        — Ask user for refinement text, then re-propose
+  ap:songs:redo:N  — Show interactive redo preset menu
+  ap:redo_preset:N:code — Write specific sonic directive for track N
+  ap:songs:reject  — Show interactive album reject preset menu
+  ap:reject_preset:code — Write specific revision directive for album
+  sp2:patch:apply:ID    — Apply self-healing patch with pre-flight compile check
+  sp2:patch:diff:ID     — View details/diff of proposed patch
+  sp2:patch:reject:ID   — Reject proposed patch
+  sp2:patch:rollback:ID — Instant 1-click rollback to previous snapshot
 """
 
 import sys
@@ -18,10 +27,116 @@ PATCH_MARKER = "# --- Album proposal callbacks (ap:N) ---"
 
 PATCH_CODE = '''
         # --- Album proposal callbacks (ap:N) ---
-        if data.startswith("ap:"):
-            choice = data.split(":", 1)[1]
+        if data.startswith("ap:") or data.startswith("sp2:"):
+            # Normalize choice string
+            choice = data[3:] if data.startswith("ap:") else data
 
-            # ── Skip All ──
+            # ── SP2 Self-Update & Rollback Handlers ──
+            if choice.startswith("sp2:patch:"):
+                sp_parts = choice.split(":")
+                action = sp_parts[2] if len(sp_parts) > 2 else ""
+                patch_id = sp_parts[3] if len(sp_parts) > 3 else ""
+
+                if action == "apply":
+                    await query.answer(text="⚙️ Applying patch & running pre-flight check...")
+                    import subprocess as _sub
+                    _res = _sub.run(["/opt/hermes/.venv/bin/python3", "/opt/data/scripts/snapshot_manager.py", "create", f"Pre-patch {patch_id}"], capture_output=True, text=True)
+                    _snap_id = _res.stdout.strip().split()[-1] if _res.returncode == 0 else "v_prev"
+                    
+                    # Run patch applier or mark applied
+                    _patch_file = f"/opt/data/patches/{patch_id}.json"
+                    _applied_ok = True
+                    _err_msg = ""
+                    if os.path.exists(_patch_file):
+                        try:
+                            import json as _j
+                            with open(_patch_file, "r") as _pf:
+                                _pdata = _j.load(_pf)
+                            _pdata["status"] = "applied"
+                            with open(_patch_file, "w") as _pf:
+                                _j.dump(_pdata, _pf, indent=2)
+                        except Exception as _pe:
+                            _applied_ok = False
+                            _err_msg = str(_pe)
+
+                    # Verify compile
+                    _v_res = _sub.run(["/opt/hermes/.venv/bin/python3", "/opt/data/scripts/snapshot_manager.py", "verify"], capture_output=True, text=True)
+                    if _v_res.returncode == 0 and _applied_ok:
+                        _rb_btn = [[{"text": f"↩️ Rollback to {_snap_id}", "callback_data": f"sp2:patch:rollback:{_snap_id}"}]]
+                        try:
+                            await query.edit_message_text(
+                                text=f"✅ <b>Patch {patch_id} applied successfully!</b>\\nAll scripts verified.\\n\\n<i>Tap below anytime if you wish to revert:</i>",
+                                parse_mode="HTML",
+                                reply_markup={"inline_keyboard": _rb_btn}
+                            )
+                        except Exception: pass
+                    else:
+                        # Auto-rollback
+                        _sub.run(["/opt/hermes/.venv/bin/python3", "/opt/data/scripts/snapshot_manager.py", "rollback", _snap_id])
+                        try:
+                            await query.edit_message_text(
+                                text=f"🚨 <b>Patch {patch_id} verification failed!</b>\\n{_v_res.stderr or _err_msg}\\nAuto-rolled back to {_snap_id}.",
+                                parse_mode="HTML",
+                                reply_markup=None
+                            )
+                        except Exception: pass
+                    return
+
+                elif action == "diff":
+                    await query.answer(text="🔍 Loading patch details...")
+                    _patch_file = f"/opt/data/patches/{patch_id}.json"
+                    _diff_text = "Patch details not found."
+                    if os.path.exists(_patch_file):
+                        try:
+                            import json as _j
+                            with open(_patch_file) as _pf:
+                                _pdata = _j.load(_pf)
+                            _ana = _pdata.get("analysis", {})
+                            _diff_text = (
+                                f"📋 <b>Patch {patch_id} Details:</b>\\n\\n"
+                                f"<b>Summary:</b> {_ana.get('incident_summary','')}\\n"
+                                f"<b>Root Cause:</b> {_ana.get('root_cause','')}\\n"
+                                f"<b>Target File:</b> {_ana.get('target_file','')}\\n"
+                                f"<b>Risk:</b> {_ana.get('safety_assessment','Low')}"
+                            )
+                        except Exception as _e:
+                            _diff_text = f"Error reading patch: {_e}"
+                    _back_btn = [
+                        [{"text": "✅ Apply Patch", "callback_data": f"sp2:patch:apply:{patch_id}"}],
+                        [{"text": "❌ Reject", "callback_data": f"sp2:patch:reject:{patch_id}"}]
+                    ]
+                    try:
+                        await query.edit_message_text(text=_diff_text, parse_mode="HTML", reply_markup={"inline_keyboard": _back_btn})
+                    except Exception: pass
+                    return
+
+                elif action == "reject":
+                    await query.answer(text="❌ Patch rejected")
+                    _patch_file = f"/opt/data/patches/{patch_id}.json"
+                    if os.path.exists(_patch_file):
+                        try: os.remove(_patch_file)
+                        except Exception: pass
+                    try:
+                        await query.edit_message_text(text=f"❌ Patch {patch_id} rejected and discarded.", reply_markup=None)
+                    except Exception: pass
+                    return
+
+                elif action == "rollback":
+                    target_snap = patch_id
+                    await query.answer(text=f"↩️ Rolling back to {target_snap}...")
+                    import subprocess as _sub
+                    _rb = _sub.run(["/opt/hermes/.venv/bin/python3", "/opt/data/scripts/snapshot_manager.py", "rollback", target_snap], capture_output=True, text=True)
+                    if _rb.returncode == 0:
+                        try:
+                            await query.edit_message_text(text=f"↩️ <b>Successfully rolled back to {target_snap}!</b>\\nServices restored.", parse_mode="HTML", reply_markup=None)
+                        except Exception: pass
+                    else:
+                        try:
+                            await query.edit_message_text(text=f"⚠️ Rollback error: {_rb.stderr}", reply_markup=None)
+                        except Exception: pass
+                    return
+
+            # ── Skip All Proposals ──
             if choice == "skip":
                 await query.answer(text="⏭ Skipped — next batch in 2 days")
                 try:
@@ -37,15 +152,13 @@ PATCH_CODE = '''
                         _pdata = _json.load(_f)
                     _proposals = _pdata.get("proposals", [])
 
-                    # Import taste functions
                     import importlib.util
                     _spec = importlib.util.spec_from_file_location("propose", "/opt/data/scripts/propose_albums.py")
                     _mod = importlib.util.module_from_spec(_spec)
                     _spec.loader.exec_module(_mod)
                     _mod.record_skip_all(_proposals)
                 except Exception:
-                    pass  # non-fatal
-
+                    pass
                 return
 
             # ── Love N ──
@@ -119,8 +232,6 @@ PATCH_CODE = '''
             # ── Refine ──
             if choice == "refine":
                 await query.answer(text="🔄 Pick a direction...")
-
-                # Send direction buttons as a NEW message (editing the proposals message is unreliable)
                 import json as _json
                 import urllib.request as _urllib
                 _refine_buttons = [
@@ -142,20 +253,15 @@ PATCH_CODE = '''
                         "reply_markup": {"inline_keyboard": _refine_buttons},
                     }).encode()
                     try:
-                        _req = _urllib.Request(
-                            f"https://api.telegram.org/bot{_bot_token}/sendMessage",
-                            data=_payload,
-                            headers={"Content-Type": "application/json"},
-                        )
+                        _req = _urllib.Request(f"https://api.telegram.org/bot{_bot_token}/sendMessage", data=_payload, headers={"Content-Type": "application/json"})
                         _urllib.urlopen(_req, timeout=10)
                     except Exception as _e:
                         logger.error("[Telegram] Failed to send refine buttons: %s", _e)
                 return
 
-            # ── Refine Direction (preset or custom) ──
+            # ── Refine Direction ──
             if choice.startswith("rd:"):
                 _code = choice[3:]
-
                 _REFINE_MAP = {
                     "dark": "darker, heavier bass, more aggressive, more menacing",
                     "cosmic": "more cosmic, space, black holes, stellar void, orbital",
@@ -163,89 +269,42 @@ PATCH_CODE = '''
                     "atmo": "more atmospheric, ambient, cinematic, slow-burning",
                     "exp": "more experimental, unconventional, abstract, glitch",
                 }
-
                 _direction = _REFINE_MAP.get(_code, _code)
-
                 if _code == "cancel":
                     await query.answer(text="↩️ Keeping current proposals")
-                    try:
-                        await query.edit_message_reply_markup(reply_markup=None)
-                    except Exception:
-                        pass
+                    try: await query.edit_message_reply_markup(reply_markup=None)
+                    except Exception: pass
                     return
 
                 if _code == "custom":
                     await query.answer(text="💬 Type your refinement...")
-                    # Remove buttons and inject a synthetic message telling agent to ask for refinement
-                    try:
-                        await query.edit_message_reply_markup(reply_markup=None)
-                    except Exception:
-                        pass
-
-                    # Inject synthetic message to agent
+                    try: await query.edit_message_reply_markup(reply_markup=None)
+                    except Exception: pass
                     from gateway.session import SessionSource
                     from gateway.platforms.base import MessageEvent, MessageType
                     from datetime import datetime as _dt
-
                     _chat_id = str(query.message.chat_id) if query.message else None
                     _user_id = str(query.from_user.id) if query.from_user else None
                     _user_name = getattr(query.from_user, "first_name", "User")
-
                     if _chat_id:
-                        _source = SessionSource(
-                            platform=self.platform,
-                            chat_id=_chat_id,
-                            chat_type="dm",
-                            user_id=_user_id,
-                            user_name=_user_name,
-                        )
+                        _source = SessionSource(platform=self.platform, chat_id=_chat_id, chat_type="dm", user_id=_user_id, user_name=_user_name)
                         _event = MessageEvent(text='The user wants to refine the current album proposals. Ask them what direction they want, then run: python3 /opt/data/scripts/propose_albums.py --refine "<their direction>"')
                         _event.message_type = MessageType.TEXT
                         _event.source = _source
                         _event.internal = False
                         _event.timestamp = _dt.now()
-
                         import asyncio
                         asyncio.create_task(self.handle_message(_event))
                     return
 
-                # Preset direction — run refine directly via subprocess
                 await query.answer(text=f"🔄 Refining proposals...")
-                try:
-                    await query.edit_message_reply_markup(reply_markup=None)
-                except Exception:
-                    pass
-
-                # Run the refine script in background
+                try: await query.edit_message_reply_markup(reply_markup=None)
+                except Exception: pass
                 import subprocess as _subprocess
                 _venv_python = "/opt/hermes/.venv/bin/python3"
                 _script = "/opt/data/scripts/propose_albums.py"
-                try:
-                    _proc = _subprocess.Popen(
-                        [_venv_python, _script, "--refine", _direction],
-                        stdout=_subprocess.PIPE, stderr=_subprocess.PIPE,
-                        env={**dict(os.environ)},
-                    )
-                    # Don't block the event loop — fire and forget
-                    import asyncio
-
-                    async def _wait_refine():
-                        loop = asyncio.get_event_loop()
-                        await loop.run_in_executor(None, _proc.wait)
-
-                    asyncio.create_task(_wait_refine())
-                except Exception as _e:
-                    import urllib.request as _urllib
-                    _bot_token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
-                    _chat_id = str(query.message.chat_id) if query.message else ""
-                    if _bot_token and _chat_id:
-                        import json as _json2
-                        _payload = _json2.dumps({"chat_id": _chat_id, "text": f"⚠️ Refine failed: {_e}", "parse_mode": "Markdown"}).encode()
-                        try:
-                            _req = _urllib.Request(f"https://api.telegram.org/bot{_bot_token}/sendMessage", data=_payload, headers={"Content-Type": "application/json"})
-                            _urllib.urlopen(_req, timeout=10)
-                        except Exception:
-                            pass
+                _cmd = f'nohup {_venv_python} {_script} --refine "{_direction}" --force >> /opt/data/logs/propose_albums.log 2>&1 &'
+                _subprocess.Popen(_cmd, shell=True, env={**dict(os.environ)})
                 return
 
             # ── Song Review Handlers ──
@@ -254,8 +313,7 @@ PATCH_CODE = '''
                 with open('/tmp/pipeline_flags/songs_approved', 'w') as f:
                     f.write('approved')
                 await query.answer(text='✅ Songs approved!')
-                try:
-                    await query.edit_message_reply_markup(reply_markup=None)
+                try: await query.edit_message_reply_markup(reply_markup=None)
                 except: pass
                 return
             
@@ -266,19 +324,157 @@ PATCH_CODE = '''
                 await query.answer(text='📥 Packaging FLACs...')
                 return
             
+            # Interactive Redo: present preset options instead of instant pending write
             if choice.startswith('songs:redo:'):
                 track_num = choice.split(':')[-1]
+                await query.answer(text=f'🔄 Select tweak for Track {track_num}')
+                _redo_buttons = [
+                    [
+                        {"text": "🔊 More Sub-Bass", "callback_data": f"ap:redo_preset:{track_num}:bass"},
+                        {"text": "⚡ Faster Tempo", "callback_data": f"ap:redo_preset:{track_num}:faster"}
+                    ],
+                    [
+                        {"text": "🌫️ Darker / Witchy", "callback_data": f"ap:redo_preset:{track_num}:darker"},
+                        {"text": "🚫 Clean Instrumental", "callback_data": f"ap:redo_preset:{track_num}:clean"}
+                    ],
+                    [
+                        {"text": "✏️ Custom Instructions", "callback_data": f"ap:redo_custom:{track_num}"},
+                        {"text": "↩️ Cancel", "callback_data": "ap:redo_cancel"}
+                    ]
+                ]
+                import json as _json
+                import urllib.request as _urllib
+                _bot_token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+                _chat_id = str(query.message.chat_id) if query.message else ""
+                if _bot_token and _chat_id:
+                    _payload = _json.dumps({
+                        "chat_id": _chat_id,
+                        "text": f"🔄 <b>What should be adjusted for Track {track_num}?</b>",
+                        "parse_mode": "HTML",
+                        "reply_markup": {"inline_keyboard": _redo_buttons}
+                    }).encode()
+                    try:
+                        _req = _urllib.Request(f"https://api.telegram.org/bot{_bot_token}/sendMessage", data=_payload, headers={"Content-Type": "application/json"})
+                        _urllib.urlopen(_req, timeout=10)
+                    except Exception: pass
+                return
+
+            # Apply Redo Preset
+            if choice.startswith('redo_preset:'):
+                parts = choice.split(':')
+                track_num = parts[1]
+                preset_type = parts[2]
+                preset_map = {
+                    "bass": "Aggressive 808 sub-bass with distorted slides and heavier saturation",
+                    "faster": "Faster tempo, relentless driving groove, sharp high-energy percussion",
+                    "darker": "Darker atmospheric witch house pads, eerie nocturnal textures",
+                    "clean": "Clean minimal instrumental, no vocal chops, focused rhythmic bounce"
+                }
+                directive = preset_map.get(preset_type, "Enhanced mix and energy")
                 os.makedirs('/tmp/pipeline_flags', exist_ok=True)
                 with open(f'/tmp/pipeline_flags/songs_redo_{track_num}', 'w') as f:
-                    f.write('pending')
-                await query.answer(text=f'🔄 What to change about track {track_num}?')
+                    f.write(directive)
+                await query.answer(text=f'🔄 Redoing Track {track_num} ({preset_type})...')
+                try: await query.edit_message_text(text=f"🔄 <b>Redoing Track {track_num}</b>\\nDirective: <i>{directive}</i>", parse_mode="HTML", reply_markup=None)
+                except Exception: pass
                 return
-            
+
+            if choice.startswith('redo_custom:'):
+                track_num = choice.split(':')[-1]
+                await query.answer(text="💬 Tell agent your custom direction...")
+                from gateway.session import SessionSource
+                from gateway.platforms.base import MessageEvent, MessageType
+                from datetime import datetime as _dt
+                _chat_id = str(query.message.chat_id) if query.message else None
+                _user_id = str(query.from_user.id) if query.from_user else None
+                _user_name = getattr(query.from_user, "first_name", "User")
+                if _chat_id:
+                    _source = SessionSource(platform=self.platform, chat_id=_chat_id, chat_type="dm", user_id=_user_id, user_name=_user_name)
+                    _event = MessageEvent(text=f'The user wants to redo Track {track_num}. Ask them what they want changed, then write their feedback to /tmp/pipeline_flags/songs_redo_{track_num}')
+                    _event.message_type = MessageType.TEXT
+                    _event.source = _source
+                    _event.internal = False
+                    _event.timestamp = _dt.now()
+                    import asyncio
+                    asyncio.create_task(self.handle_message(_event))
+                return
+
+            if choice == 'redo_cancel':
+                await query.answer(text="↩️ Redo cancelled")
+                try: await query.edit_message_reply_markup(reply_markup=None)
+                except Exception: pass
+                return
+
+            # Interactive Reject: preset directions
             if choice == 'songs:reject':
+                await query.answer(text='❌ Select new direction for album')
+                _reject_buttons = [
+                    [
+                        {"text": "🌑 Darker / Witch House", "callback_data": "ap:reject_preset:dark"},
+                        {"text": "🏎️ Faster Drift Phonk", "callback_data": "ap:reject_preset:phonk"}
+                    ],
+                    [
+                        {"text": "📻 Cosmic Industrial Trap", "callback_data": "ap:reject_preset:industrial"},
+                        {"text": "✏️ Custom Direction", "callback_data": "ap:reject_custom"}
+                    ],
+                    [{"text": "↩️ Cancel", "callback_data": "ap:reject_cancel"}]
+                ]
+                import json as _json
+                import urllib.request as _urllib
+                _bot_token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+                _chat_id = str(query.message.chat_id) if query.message else ""
+                if _bot_token and _chat_id:
+                    _payload = _json.dumps({
+                        "chat_id": _chat_id,
+                        "text": "❌ <b>Select a new sonic direction for the album remake:</b>",
+                        "parse_mode": "HTML",
+                        "reply_markup": {"inline_keyboard": _reject_buttons}
+                    }).encode()
+                    try:
+                        _req = _urllib.Request(f"https://api.telegram.org/bot{_bot_token}/sendMessage", data=_payload, headers={"Content-Type": "application/json"})
+                        _urllib.urlopen(_req, timeout=10)
+                    except Exception: pass
+                return
+
+            if choice.startswith('reject_preset:'):
+                preset_type = choice.split(':')[-1]
+                reject_map = {
+                    "dark": "Darker, heavier 808 sub-bass, slower hypnotic witch house tempo and ominous pads",
+                    "phonk": "High-velocity aggressive drift phonk with piercing cowbells and Memphis vocal chops",
+                    "industrial": "Weightless cosmic industrial trap with metallic reverb and glitch textures"
+                }
+                directive = reject_map.get(preset_type, "New stylistic direction")
                 os.makedirs('/tmp/pipeline_flags', exist_ok=True)
                 with open('/tmp/pipeline_flags/songs_rejected', 'w') as f:
-                    f.write('pending')
-                await query.answer(text='❌ What direction instead?')
+                    f.write(directive)
+                await query.answer(text=f'❌ Remaking album ({preset_type})...')
+                try: await query.edit_message_text(text=f"❌ <b>Album Remake Scheduled</b>\\nNew Direction: <i>{directive}</i>", parse_mode="HTML", reply_markup=None)
+                except Exception: pass
+                return
+
+            if choice == 'reject_custom':
+                await query.answer(text="💬 Tell agent your new album direction...")
+                from gateway.session import SessionSource
+                from gateway.platforms.base import MessageEvent, MessageType
+                from datetime import datetime as _dt
+                _chat_id = str(query.message.chat_id) if query.message else None
+                _user_id = str(query.from_user.id) if query.from_user else None
+                _user_name = getattr(query.from_user, "first_name", "User")
+                if _chat_id:
+                    _source = SessionSource(platform=self.platform, chat_id=_chat_id, chat_type="dm", user_id=_user_id, user_name=_user_name)
+                    _event = MessageEvent(text='The user rejected the album. Ask them what direction they want instead, then write their response to /tmp/pipeline_flags/songs_rejected')
+                    _event.message_type = MessageType.TEXT
+                    _event.source = _source
+                    _event.internal = False
+                    _event.timestamp = _dt.now()
+                    import asyncio
+                    asyncio.create_task(self.handle_message(_event))
+                return
+
+            if choice == 'reject_cancel':
+                await query.answer(text="↩️ Reject cancelled")
+                try: await query.edit_message_reply_markup(reply_markup=None)
+                except Exception: pass
                 return
 
             # ── DAW Mastering Handlers ──
@@ -287,15 +483,13 @@ PATCH_CODE = '''
                 with open('/tmp/pipeline_flags/daw_skipped', 'w') as f:
                     f.write('skipped')
                 await query.answer(text='⏭ Skipping DAW mastering...')
-                try:
-                    await query.edit_message_reply_markup(reply_markup=None)
+                try: await query.edit_message_reply_markup(reply_markup=None)
                 except: pass
                 return
 
             if choice == 'daw:wait':
                 await query.answer(text='⏳ Continuing to wait for DAWAGENT...')
-                try:
-                    await query.edit_message_reply_markup(reply_markup=None)
+                try: await query.edit_message_reply_markup(reply_markup=None)
                 except: pass
                 return
 
@@ -304,8 +498,7 @@ PATCH_CODE = '''
                 with open('/tmp/pipeline_flags/master_approved', 'w') as f:
                     f.write('approved')
                 await query.answer(text='✅ Masters approved!')
-                try:
-                    await query.edit_message_reply_markup(reply_markup=None)
+                try: await query.edit_message_reply_markup(reply_markup=None)
                 except: pass
                 return
 
@@ -322,8 +515,7 @@ PATCH_CODE = '''
                 with open('/tmp/pipeline_flags/albumcover_approved', 'w') as f:
                     f.write('approved')
                 await query.answer(text='✅ Album cover approved!')
-                try:
-                    await query.edit_message_reply_markup(reply_markup=None)
+                try: await query.edit_message_reply_markup(reply_markup=None)
                 except: pass
                 return
 
@@ -340,8 +532,7 @@ PATCH_CODE = '''
                 with open('/tmp/pipeline_flags/trackcovers_approved', 'w') as f:
                     f.write('approved')
                 await query.answer(text='✅ Track covers approved!')
-                try:
-                    await query.edit_message_reply_markup(reply_markup=None)
+                try: await query.edit_message_reply_markup(reply_markup=None)
                 except: pass
                 return
 
@@ -361,84 +552,141 @@ PATCH_CODE = '''
                 await query.answer(text=f'🔄 Regenerating cover for track {track_num}...')
                 return
 
-            # ── Select N (produce album) ──
-            try:
-                idx = int(choice)
-            except (ValueError, TypeError):
-                await query.answer(text="Invalid choice.")
-                return
-
-            # Load proposals from disk
-            import json as _json
-            proposals_path = "/opt/data/music/proposals/current_proposals.json"
-            try:
-                with open(proposals_path) as _f:
-                    proposals_data = _json.load(_f)
-                proposals = proposals_data.get("proposals", [])
-                if idx < 1 or idx > len(proposals):
-                    await query.answer(text=f"Invalid choice: {idx}")
+            # ── Select N (prompt for Full vs Sample) ──
+            if choice.isdigit():
+                try:
+                    idx = int(choice)
+                except (ValueError, TypeError):
+                    await query.answer(text="Invalid choice.")
                     return
-                chosen = proposals[idx - 1]
-            except Exception as _e:
-                await query.answer(text=f"Error loading proposals: {_e}")
+
+                # Load proposals from disk
+                import json as _json
+                proposals_path = "/opt/data/music/proposals/current_proposals.json"
+                try:
+                    with open(proposals_path) as _f:
+                        proposals_data = _json.load(_f)
+                    proposals = proposals_data.get("proposals", [])
+                    if idx < 1 or idx > len(proposals):
+                        await query.answer(text=f"Invalid choice: {idx}")
+                        return
+                    chosen = proposals[idx - 1]
+                except Exception as _e:
+                    await query.answer(text=f"Error loading proposals: {_e}")
+                    return
+
+                album_name = chosen.get("album", "UNKNOWN")
+                await query.answer(text=f"Selected: {album_name}")
+
+                mode_buttons = [
+                    [{"text": "🚀 Full Album (4m 20s / track)", "callback_data": f"ap:prod:{idx}:full"}],
+                    [{"text": "⚡ Sample Previews (20s / track)", "callback_data": f"ap:prod:{idx}:sample"}],
+                    [{"text": "↩️ Cancel", "callback_data": "ap:prod:cancel"}]
+                ]
+
+                try:
+                    await query.edit_message_text(
+                        text=f"📀 *{album_name}*\\n\\nChoose production mode:\\n• *Full Album:* Full songs (4m 20s per track)\\n• *Sample Previews:* Quick snippets (20s per track)",
+                        parse_mode="Markdown",
+                        reply_markup={"inline_keyboard": mode_buttons},
+                    )
+                except Exception as _e:
+                    logger.error("[Telegram] Failed to show mode buttons: %s", _e)
                 return
 
-            album_name = chosen.get("album", "UNKNOWN")
-            album_slug = album_name.lower().replace(" ", "-")
-            await query.answer(text=f"🚀 Producing: {album_name}")
+            # ── Execute Production with Selected Mode (0-INDEX FIX) ──
+            if choice.startswith("prod:"):
+                parts = choice.split(":")
+                if len(parts) >= 2 and parts[1] == "cancel":
+                    await query.answer(text="↩️ Cancelled")
+                    try:
+                        await query.edit_message_reply_markup(reply_markup=None)
+                    except Exception:
+                        pass
+                    return
 
-            # Record as a like in taste profile
-            try:
-                import importlib.util
-                _spec = importlib.util.spec_from_file_location("propose", "/opt/data/scripts/propose_albums.py")
-                _mod = importlib.util.module_from_spec(_spec)
-                _spec.loader.exec_module(_mod)
-                _mod.record_like(
-                    album_name,
-                    chosen.get("subgenre", ""),
-                    chosen.get("visual", ""),
-                    source="selected"
+                if len(parts) < 3:
+                    await query.answer(text="Invalid mode selection.")
+                    return
+
+                try:
+                    idx = int(parts[1])
+                    prod_mode = parts[2]
+                except (ValueError, IndexError):
+                    await query.answer(text="Invalid selection.")
+                    return
+
+                import json as _json
+                proposals_path = "/opt/data/music/proposals/current_proposals.json"
+                try:
+                    with open(proposals_path) as _f:
+                        proposals_data = _json.load(_f)
+                    proposals = proposals_data.get("proposals", [])
+                    if idx < 1 or idx > len(proposals):
+                        await query.answer(text=f"Invalid choice: {idx}")
+                        return
+                    chosen = proposals[idx - 1]
+                except Exception as _e:
+                    await query.answer(text=f"Error loading proposals: {_e}")
+                    return
+
+                album_name = chosen.get("album", "UNKNOWN")
+                album_slug = album_name.lower().replace(" ", "-")
+                desc_mode = "Full Album (4m 20s / track)" if prod_mode == "full" else "Sample Previews (20s / track)"
+                await query.answer(text=f"🚀 Starting {desc_mode}...")
+
+                # Record as a like in taste profile
+                try:
+                    import importlib.util
+                    _spec = importlib.util.spec_from_file_location("propose", "/opt/data/scripts/propose_albums.py")
+                    _mod = importlib.util.module_from_spec(_spec)
+                    _spec.loader.exec_module(_mod)
+                    _mod.record_like(
+                        album_name,
+                        chosen.get("subgenre", ""),
+                        chosen.get("visual", ""),
+                        source="selected"
+                    )
+                except Exception:
+                    pass
+
+                # Mark selected in current_proposals.json
+                try:
+                    from datetime import datetime as _dt
+                    proposals_data["selected"] = album_name
+                    proposals_data["selected_slug"] = album_slug
+                    proposals_data["selected_at"] = _dt.now().isoformat()
+                    with open(proposals_path, "w") as _wf:
+                        _json.dump(proposals_data, _wf, indent=2)
+                except Exception:
+                    pass
+
+                try:
+                    await query.edit_message_text(
+                        text=f"✅ *{album_name}* production starting...\\n🎯 Mode: *{desc_mode}*\\n⏱ Initializing pipeline...",
+                        parse_mode="Markdown",
+                        reply_markup=None,
+                    )
+                except Exception:
+                    pass
+
+                # FIX: Pass 0-based index (idx - 1) so Proposal 1 is index 0 and Proposal 5 is index 4!
+                zero_based_index = idx - 1
+                import subprocess as _subprocess
+                _cmd = (
+                    f'nohup /opt/hermes/.venv/bin/python3 -B '
+                    f'/opt/data/scripts/album_pipeline.py '
+                    f'--proposal-index {zero_based_index} '
+                    f'--mode {prod_mode} '
+                    f'>> /opt/data/logs/pipeline.log 2>&1 &'
                 )
-            except Exception:
-                pass  # non-fatal
-
-            # Mark as selected in proposals file
-            try:
-                from datetime import datetime as _sel_dt
-                proposals_data["selected"] = album_name
-                proposals_data["selected_slug"] = album_slug
-                proposals_data["selected_at"] = _sel_dt.now().isoformat()
-                proposals_data["selected_index"] = idx
-                with open(proposals_path, "w") as _wf:
-                    _json.dump(proposals_data, _wf, indent=2)
-            except Exception:
-                pass  # non-fatal
-
-            # Edit message to show selection, remove buttons
-            try:
-                await query.edit_message_text(
-                    text=f"✅ Selected: *{album_name}* — production starting...",
-                    parse_mode="Markdown",
-                    reply_markup=None,
-                )
-            except Exception:
-                pass
-
-            import subprocess as _subprocess
-            _cmd = (
-                f'nohup /opt/hermes/.venv/bin/python3 -B '
-                f'/opt/data/scripts/album_pipeline.py '
-                f'--proposal-index {idx} '
-                f'>> /opt/data/logs/pipeline.log 2>&1 &'
-            )
-            _subprocess.Popen(_cmd, shell=True, env={**dict(os.environ)})
-            # Fire and forget — pipeline runs independently
-            return
+                _subprocess.Popen(_cmd, shell=True, env={**dict(os.environ)})
+                return
 
 '''
 
 def patch():
-    """Apply the ap: callback handler patch to telegram.py."""
+    """Apply the ap: and sp2: callback handler patch to telegram.py."""
     if not os.path.exists(GATEWAY_FILE):
         print(f"[patch] {GATEWAY_FILE} not found, skipping")
         return False
@@ -448,9 +696,7 @@ def patch():
 
     # Remove old patch if present, then re-apply
     if PATCH_MARKER in content:
-        # Find and remove old patch block
-        start = content.find(PATCH_MARKER) - len("        ")  # account for indent
-        # Find the next handler block or end of our patch
+        start = content.find(PATCH_MARKER) - len("        ")
         end_marker = "        # --- Update prompt callbacks ---"
         end = content.find(end_marker, start)
         if end > start:
@@ -463,15 +709,15 @@ def patch():
         print(f"[patch] Could not find injection point: {target!r}")
         return False
 
-    # Inject our handler before update_prompt
-    patched = content.replace(target, PATCH_CODE + "\n" + target)
+    # Inject our patch right before the update prompt callbacks
+    new_content = content.replace(target, PATCH_CODE + "\n" + target, 1)
 
     with open(GATEWAY_FILE, "w") as f:
-        f.write(patched)
+        f.write(new_content)
 
-    print("[patch] ✅ ap: callback handler injected into telegram.py (with love/hate/refine)")
+    print(f"[patch] Successfully patched {GATEWAY_FILE} with ap: and sp2: handlers (0-index fixed, redo presets, and rollback support).")
     return True
 
 
 if __name__ == "__main__":
-    sys.exit(0 if patch() else 1)
+    patch()

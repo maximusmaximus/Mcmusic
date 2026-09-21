@@ -1,7 +1,7 @@
 ---
 name: artwork
-description: Full album cover art pipeline — background generation via Venice AI (grok-imagine-image-quality), upscale to 3000×3000, waveform banner extraction (1240×400), and Unicode title overlay. Covers gen_artwork.py, overlay-title.py, and gen_waveform_art.py.
-tags: [cover-art, artwork, venice, image-generation, upscale, waveform, pipeline]
+description: Full album/playlist cover art pipeline — background generation via Venice AI (grok-imagine-image-quality), upscale to 3000×3000, waveform banner extraction (1240×400), Unicode title overlay, and SoundCloud playlist cover workflows. Includes gen_artwork.py, overlay-title.py, and gen_waveform_art.py integration.
+tags: [cover-art, artwork, venice, image-generation, upscale, waveform, pipeline, soundcloud, playlist]
 ---
 
 # Artwork — Cover Generation Pipeline
@@ -22,15 +22,15 @@ PHASE 4:  Telegram preview (1500×1500 JPG)
 
 ### gen_artwork.py (single or batch)
 ```bash
-python3 /opt/data/skills/artwork/artwork/scripts/gen_artwork.py \
+python3 scripts/gen_artwork.py \
   --title "Track Title" --genre "dark trap" --bpm 140 --key Fm
 
-python3 /opt/data/skills/artwork/artwork/scripts/gen_artwork.py --batch
+python3 scripts/gen_artwork.py --batch
 ```
 
 ### Gen_artwork only
 ```bash
-python3 /opt/data/skills/artwork/artwork/scripts/gen_artwork.py \
+python3 scripts/gen_artwork.py \
   --title "Orbital Scrapline" \
   --genre "dark space trap / cosmic" \
   --bpm 120 --key Fm \
@@ -97,7 +97,7 @@ Run gen_artwork.py for each track. It will generate the background + upscale, th
 
 ```bash
 for title in "HULLSTATIC" "SALVAGE DRIFT" "COLDWELD"; do
-  python3 /opt/data/skills/artwork/artwork/scripts/gen_artwork.py \
+  python3 scripts/gen_artwork.py \
     --title "$title" \
     --genre "dark space trap / cosmic" \
     --bpm 120 --key Fm \
@@ -189,9 +189,29 @@ Use ffmpeg for all image pre-processing; reserve venv Python for scripts that ac
 | `{Title}.png` | `/opt/data/music/artwork/covers/` | Final cover with Unicode title overlay |
 | `{TITLE}_waveform.png` | `/opt/data/music/artwork/waveforms/` | Waveform banner 1240×400 |
 
-## Related Skills
+## References & Related Skills
+
+### Reference Files (in this skill)
+
+| File | Contents |
+|------|----------|
+| `references/cover-art-generation.md` | Full cover art pipeline reference — arguments, workflow, Visual DNA motifs, argument table, all known pitfalls (1500-char limit, SC upload size, upscale timeout, empty state recovery) |
+| `references/playlist-cover-redo.md` | Complete workflow for regenerating SoundCloud playlist covers based on individual track artwork |
+| `references/python3-pil-fix.md` | Fix for missing PIL in overlay step (VENV_PYTHON constant + code change) |
+| `references/stale-playlist-ids.md` | Detecting and resolving stale SC playlist IDs after cover re-upload |
+| `references/voidride-animal-motif-covers.md` | Animal/laser eye composition pattern for VØIDRIDE albums |
+| `references/waveform-from-upscaled.md` | ffmpeg resize workaround for 4K PNG → waveform source (Venice 413 avoidance) |
+
+### Scripts (in this skill)
+
+| Script | Purpose |
+|--------|---------|
+| `scripts/gen_artwork.py` | Main cover generation — builds prompts, calls Venice API, upscales, calls overlay-title.py and gen_waveform_art.py |
+
+### Related Skills
 
 - **cover-title-overlay** — text overlay script details, Unicode title rules, scene templates, album vs track positioning
 - **waveform-artwork** — waveform banner generation, SC published album workflow, detailed pitfall list
 - **covers-notext** — remove stray text from backgrounds via Venice AI inpainting
 - **unicode-track-titles** — stylize plain track titles with Unicode characters
+- **album-proposals** — uses this skill for Phase 3 (artwork) of the end-to-end album pipeline

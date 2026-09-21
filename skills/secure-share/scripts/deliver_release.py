@@ -8,13 +8,23 @@ import os
 import re
 
 def get_bot_token():
-    config_p = Path("D:/hermes-music/data/config.yaml")
-    if not config_p.exists():
-        return ""
-    for line in config_p.read_text(encoding="utf-8").splitlines():
-        if line.strip().startswith("bot_token:"):
-            return line.split(":", 1)[1].strip().strip('\"').strip('\x27')
-    return ""
+    for candidate in [
+        Path("D:/sp2/data/config.yaml"),
+        Path("D:/hermes-music/data/config.yaml"),
+        Path("D:/sp2/.env"),
+        Path("D:/hermes-music/.env")
+    ]:
+        if candidate.exists():
+            for line in candidate.read_text(encoding="utf-8").splitlines():
+                if "bot_token:" in line:
+                    token = line.split(":", 1)[1].strip().strip('\"').strip('\x27')
+                    if token:
+                        return token
+                elif "TELEGRAM_BOT_TOKEN=" in line:
+                    token = line.split("=", 1)[1].strip().strip('\"').strip('\x27')
+                    if token:
+                        return token
+    return os.environ.get("TELEGRAM_BOT_TOKEN", "")
 
 def main():
     parser = argparse.ArgumentParser(description="Package release and send to Telegram")
@@ -44,7 +54,6 @@ def main():
     ext_link = None
     for line in process.stdout.splitlines():
         if "[EXTERNAL LINK]" in line or "[PUBLIC URL]" in line or "trycloudflare.com" in line:
-            # find http...
             match = re.search(r'(https?://[^\s]+)', line)
             if match:
                 ext_link = match.group(1)

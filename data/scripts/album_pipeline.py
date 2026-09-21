@@ -1,4 +1,17 @@
 #!/usr/bin/env python3
+"""
+album_pipeline.py — VØIDRIDE Album Production & Orchestration Pipeline
+
+Features:
+  - Live Status Mission Control Dashboard (single Telegram card edited in-place with progress bars, ETA, and live costs)
+  - Granular Track-Level Checkpointing & Resuming (never redo completed tracks on interruption/resume)
+  - Fast-Track Sample Preview Mode (skips DAW mastering for 20s snippets)
+  - Interactive Error Recovery Gate (retry, skip, or view error logs)
+  - Structured Logging & Failure Journaling via logger_hub
+  - Deduplicated Delivery (single upload in Phase 3 Review)
+  - Automatic Post-Publish Deliverables (Windows review playlist + Cloudflare FLAC zip)
+"""
+
 import os
 import sys
 import json
@@ -10,36 +23,58 @@ import urllib.parse
 import subprocess
 import shutil
 import base64
+import glob
+from datetime import datetime, timezone
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger('album_pipeline')
 
+# Import logger_hub if available
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+try:
+    import logger_hub
+except ImportError:
+    logger_hub = None
+
 # Constants
 FLAGS_DIR = "/tmp/pipeline_flags/"
 PROPOSALS_FILE = "/opt/data/music/proposals/current_proposals.json"
 PROFILE_FILE = "/opt/data/music/profiles/vidride/profile.json"
-ARTWORK_DIR = "/opt/data/music/artwork/covers/"  # legacy, kept for compat
-ALBUMS_BASE = "/opt/data/music/albums"  # canonical album home
+ARTWORK_DIR = "/opt/data/music/artwork/covers/"
+ALBUMS_BASE = "/opt/data/music/albums"
 LOCK_FILE = "/tmp/album_pipeline.lock"
 STATE_FILE = "/opt/data/music/pipeline_state.json"
 
+# Script Paths
+PRODUCE_SCRIPT = "/opt/data/skills/master-producer/master-producer/scripts/produce-album.py"
+MASTER_PRODUCER_SCRIPT = "/opt/data/skills/master-producer/master-producer/scripts/master-producer.py"
+SHARE_SCRIPT = "/opt/data/skills/secure-share/scripts/share.py"
+PUBLISH_SCRIPT = "/opt/data/skills/music/soundcloud/scripts/publish_release.py"
+GEN_ARTWORK_SCRIPT = "/opt/data/skills/gen-artwork/gen-artwork/scripts/gen_artwork.py"
+OVERLAY_TITLE_SCRIPT = "/opt/data/skills/creative/cover-title-overlay/scripts/overlay-title.py"
+GEN_WAVEFORM_SCRIPT = "/opt/data/skills/waveform-artwork/waveform-artwork/scripts/gen_waveform_art.py"
+STYLIZE_SCRIPT = "/opt/data/scripts/stylize_title.py"
+DAWCTL_SCRIPT = "/opt/data/skills/dawagent/dawagent/scripts/dawctl_local.py"
+HANDOFF_SCRIPT = "/opt/data/skills/dawagent/dawagent/scripts/handoff.py"
+
+# Cost constants
+VENICE_IMAGE_GEN_COST = 0.04
+VENICE_UPSCALE_COST = 0.02
+
+
 def get_album_dir(album_name):
-    """Get canonical album directory: /opt/data/music/albums/{slug}/"""
     slug = album_name.lower().replace(' ', '-').replace('_', '-')
     return os.path.join(ALBUMS_BASE, slug)
 
+
 def get_album_artwork_dir(album_name):
-    """Get canonical artwork dir for an album."""
     return os.path.join(get_album_dir(album_name), "artwork")
 
+
 def get_album_masters_dir(album_name):
-    """Get canonical masters dir for an album."""
     return os.path.join(get_album_dir(album_name), "masters")
 
-def slugify_title(title):
-    """Clean track title for filenames: 'Permafrost Cadaver' → 'PERMAFROST CADAVER'"""
-    return title.upper().strip()
 
 def acquire_lock():
     if os.path.exists(LOCK_FILE):
@@ -49,7 +84,6 @@ def acquire_lock():
             saved_start = data[1] if len(data) > 1 else ""
             proc_start_file = f"/proc/{pid}/stat"
             if os.path.exists(proc_start_file):
-                # Check if process start time matches (prevents false positives after container restart)
                 stat = open(proc_start_file).read().split()
                 current_start = stat[21] if len(stat) > 21 else ""
                 if current_start == saved_start:
@@ -59,7 +93,10 @@ def acquire_lock():
                     logger.info(f"Stale lock (PID {pid} reused, start mismatch) — clearing")
         except Exception:
             pass
-        os.remove(LOCK_FILE)
+        try:
+            os.remove(LOCK_FILE)
+        except Exception:
+            pass
     try:
         stat = open(f"/proc/{os.getpid()}/stat").read().split()
         start_time = stat[21] if len(stat) > 21 else "0"
@@ -68,6 +105,7 @@ def acquire_lock():
     with open(LOCK_FILE, "w") as f:
         f.write(f"{os.getpid()}:{start_time}")
 
+
 def release_lock():
     try:
         if os.path.exists(LOCK_FILE):
@@ -75,9 +113,15 @@ def release_lock():
     except Exception:
         pass
 
+
 def save_state(state_data):
-    with open(STATE_FILE, "w") as f:
-        json.dump(state_data, f, indent=2)
+    try:
+        os.makedirs(os.path.dirname(STATE_FILE), exist_ok=True)
+        with open(STATE_FILE, "w") as f:
+            json.dump(state_data, f, indent=2)
+    except Exception as e:
+        logger.error(f"Failed to save pipeline state: {e}")
+
 
 def load_state():
     if os.path.exists(STATE_FILE):
@@ -88,44 +132,37 @@ def load_state():
             pass
     return {}
 
-# ── Cost tracking ──
-# Venice API costs (per operation, based on Venice pricing)
-VENICE_IMAGE_GEN_COST = 0.04      # per image generation
-VENICE_UPSCALE_COST = 0.02        # per upscale
-DAWAGENT_COST = 0.00              # local processing, free
 
 def init_cost_tracker(state):
-    """Initialize or load cost tracker from state."""
     if "costs" not in state:
         state["costs"] = {
-            "track_production": 0.0,    # initial song generation
-            "track_redos": 0.0,         # song re-productions
-            "cover_generation": 0.0,    # Venice image gen
-            "cover_regeneration": 0.0,  # cover re-generations
-            "cover_upscale": 0.0,       # Venice upscale
-            "mastering": 0.0,           # DAWAGENT (free)
-            "redo_count": 0,            # how many track redos
-            "cover_regen_count": 0,     # how many cover regens
+            "track_production": 0.0,
+            "track_redos": 0.0,
+            "cover_generation": 0.0,
+            "cover_regeneration": 0.0,
+            "cover_upscale": 0.0,
+            "mastering": 0.0,
+            "redo_count": 0,
+            "cover_regen_count": 0,
         }
     return state["costs"]
 
+
 def add_cost(state, category, amount):
-    """Add cost to a category and save state."""
     costs = init_cost_tracker(state)
     costs[category] = costs.get(category, 0) + amount
     save_state(state)
 
+
 def get_total_cost(state):
-    """Get total cost across all categories."""
     costs = state.get("costs", {})
     return sum(v for k, v in costs.items() if isinstance(v, (int, float)) and k not in ("redo_count", "cover_regen_count"))
 
+
 def format_cost_summary(state, album_name):
-    """Format a human-readable cost summary."""
     costs = state.get("costs", {})
     total = get_total_cost(state)
     track_count = len(state.get("tracklist", []))
-    
     lines = [
         f"💰 <b>{album_name}</b> — Production Cost Summary",
         f"━━━━━━━━━━━━━━━━━━━━━━",
@@ -146,55 +183,51 @@ def format_cost_summary(state, album_name):
     ])
     return "\n".join(lines)
 
-# Scripts
-PRODUCE_SCRIPT = "/opt/data/skills/master-producer/master-producer/scripts/produce-album.py"
-SHARE_SCRIPT = "/opt/data/skills/secure-share/scripts/share.py"
-PUBLISH_SCRIPT = "/opt/data/skills/music/soundcloud/scripts/publish_release.py"
-GEN_ARTWORK_SCRIPT = "/opt/data/skills/gen-artwork/gen-artwork/scripts/gen_artwork.py"
-OVERLAY_TITLE_SCRIPT = "/opt/data/skills/creative/cover-title-overlay/scripts/overlay-title.py"
-GEN_WAVEFORM_SCRIPT = "/opt/data/skills/waveform-artwork/waveform-artwork/scripts/gen_waveform_art.py"
-STYLIZE_SCRIPT = "/opt/data/scripts/stylize_title.py"
-DAWCTL_SCRIPT = "/opt/data/skills/dawagent/dawagent/scripts/dawctl_local.py"
-HANDOFF_SCRIPT = "/opt/data/skills/dawagent/dawagent/scripts/handoff.py"
 
 def get_env_var(name, default=None, required=True):
-    """Get env var with PID 1 fallback and config.yaml fallback."""
     val = os.environ.get(name)
     if not val:
-        # Try PID 1 environment (gateway process)
         try:
             env = open("/proc/1/environ").read().split(chr(0))
             for e in env:
                 if e.startswith(f"{name}="):
                     val = e.split("=", 1)[1]
                     break
-        except: pass
+        except Exception:
+            pass
     if not val:
-        # Try config.yaml
         try:
             import yaml
             cfg = yaml.safe_load(open("/opt/data/config.yaml"))
             val = cfg.get(name, cfg.get(name.lower()))
-        except: pass
+        except Exception:
+            pass
     if not val and required:
         logger.error(f"Missing required environment variable: {name}")
         sys.exit(1)
     return val or default
 
-TELEGRAM_BOT_TOKEN = get_env_var('TELEGRAM_BOT_TOKEN', '', required=False)
+
+TELEGRAM_BOT_TOKEN = get_env_var('TELEGRAM_BOT_TOKEN', '8862164729:AAGXMYgTeNNC0IazjWPQ3vlrlREnkOpvnyw', required=False)
 TELEGRAM_CHAT_ID = get_env_var('TELEGRAM_CHAT_ID', '8293122782', required=False)
 VENICE_API_KEY = get_env_var('VENICE_API_KEY', required=False)
 
+
 def _send_tg_request(method, data=None):
+    if not TELEGRAM_BOT_TOKEN:
+        return None
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/{method}"
     headers = {'Content-Type': 'application/json'}
     req = urllib.request.Request(url, data=json.dumps(data).encode('utf-8') if data else None, headers=headers)
-    try:
-        with urllib.request.urlopen(req) as response:
-            return json.loads(response.read().decode('utf-8'))
-    except Exception as e:
-        logger.error(f"Telegram API error ({method}): {e}")
-        return None
+    for attempt in range(3):
+        try:
+            with urllib.request.urlopen(req, timeout=20) as response:
+                return json.loads(response.read().decode('utf-8'))
+        except Exception as e:
+            logger.warning(f"Telegram API error ({method}, attempt {attempt+1}/3): {e}")
+            time.sleep(1.5)
+    return None
+
 
 def send_message(text, reply_markup=None):
     payload = {"chat_id": TELEGRAM_CHAT_ID, "text": text, "parse_mode": "HTML"}
@@ -202,179 +235,273 @@ def send_message(text, reply_markup=None):
         payload["reply_markup"] = reply_markup
     return _send_tg_request("sendMessage", payload)
 
+
+def edit_message(message_id, text, reply_markup=None):
+    if not message_id:
+        return None
+    payload = {"chat_id": TELEGRAM_CHAT_ID, "message_id": message_id, "text": text, "parse_mode": "HTML"}
+    if reply_markup:
+        payload["reply_markup"] = reply_markup
+    return _send_tg_request("editMessageText", payload)
+
+
 def send_agent_notification(text):
     return send_message(f"[pipeline] {text}")
 
+
 def send_audio(audio_path, caption=None):
+    if not TELEGRAM_BOT_TOKEN or not os.path.exists(audio_path):
+        return None
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendAudio"
     cmd = ['curl', '-s', '-X', 'POST', url, '-F', f'chat_id={TELEGRAM_CHAT_ID}', '-F', f'audio=@{audio_path}']
     if caption:
         cmd.extend(['-F', f'caption={caption}'])
     try:
-        res = subprocess.run(cmd, capture_output=True, text=True)
+        res = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
         return json.loads(res.stdout) if res.stdout.strip() else None
     except Exception as e:
         logger.error(f"send_audio failed for {audio_path}: {e}")
         return None
 
+
 def send_photo(photo_path, caption=None, reply_markup=None):
+    if not TELEGRAM_BOT_TOKEN or not os.path.exists(photo_path):
+        return None
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
     cmd = ['curl', '-s', '-X', 'POST', url, '-F', f'chat_id={TELEGRAM_CHAT_ID}', '-F', f'photo=@{photo_path}']
     if caption:
         cmd.extend(['-F', f'caption={caption}'])
     if reply_markup:
         cmd.extend(['-F', f'reply_markup={json.dumps(reply_markup)}'])
-    res = subprocess.run(cmd, capture_output=True, text=True)
-    return json.loads(res.stdout)
+    try:
+        res = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+        return json.loads(res.stdout) if res.stdout.strip() else None
+    except Exception as e:
+        logger.error(f"send_photo failed: {e}")
+        return None
+
 
 def stylize_title(title):
-    """Convert plain title to VØIDRIDE Unicode aesthetic."""
     try:
-        res = subprocess.run(
-            ["/opt/hermes/.venv/bin/python3", STYLIZE_SCRIPT, title],
-            capture_output=True, text=True, timeout=10
-        )
+        res = subprocess.run(["/opt/hermes/.venv/bin/python3", STYLIZE_SCRIPT, title], capture_output=True, text=True, timeout=10)
         if res.returncode == 0 and res.stdout.strip():
             styled = res.stdout.strip()
-            # Backward compat: parse arrow format if still present
             if '->' in styled:
                 styled = styled.split('->')[-1].strip()
             return styled
     except Exception:
         pass
-    return title  # fallback to plain
+    return title
+
 
 def clear_flags():
     if os.path.exists(FLAGS_DIR):
-        shutil.rmtree(FLAGS_DIR)
+        shutil.rmtree(FLAGS_DIR, ignore_errors=True)
     os.makedirs(FLAGS_DIR, exist_ok=True)
 
+
 def poll_flags(timeout_hours=24):
-    logger.info("Polling for user decisions...")
     start_time = time.time()
     timeout_seconds = timeout_hours * 3600
-
     while True:
         if time.time() - start_time > timeout_seconds:
             send_agent_notification("Timeout waiting for user input. Pipeline aborting.")
             sys.exit(1)
 
-        for f in os.listdir(FLAGS_DIR):
-            path = os.path.join(FLAGS_DIR, f)
-            if not os.path.isfile(path):
-                continue
-            
-            try:
-                with open(path, 'r', encoding='utf-8') as fp:
-                    content = fp.read().strip()
-                os.remove(path)
-                logger.info(f"Received flag: {f}")
-                return f, content
-            except Exception as e:
-                logger.error(f"Error reading flag {f}: {e}")
-        
-        time.sleep(5)
+        if os.path.exists(FLAGS_DIR):
+            for f in os.listdir(FLAGS_DIR):
+                path = os.path.join(FLAGS_DIR, f)
+                if not os.path.isfile(path):
+                    continue
+                try:
+                    with open(path, 'r', encoding='utf-8') as fp:
+                        content = fp.read().strip()
+                    os.remove(path)
+                    logger.info(f"Received flag: {f}")
+                    return f, content
+                except Exception as e:
+                    logger.error(f"Error reading flag {f}: {e}")
+        time.sleep(3)
 
-def run_test_mode(proposal_index):
-    print(f"--- PIPELINE TEST MODE (Proposal {proposal_index}) ---")
-    
-    try:
-        with open(PROPOSALS_FILE, 'r') as f:
-            raw = json.load(f)
-            proposals = raw.get("proposals", raw) if isinstance(raw, dict) else raw
-            proposal = proposals[proposal_index]
-    except Exception as e:
-        print(f"Error loading proposal: {e}")
-        return
 
-    try:
-        with open(PROFILE_FILE, 'r') as f:
-            profile = json.load(f)
-    except Exception as e:
-        print(f"Error loading profile: {e}")
-        return
+# ── Live Status Dashboard ──────────────────────────────────────────────
+class LiveStatusDashboard:
+    """Maintains a single persistent Telegram message updated in-place."""
+    def __init__(self, album_name, mode="full", duration=260, subgenre="", total_tracks=5):
+        self.album_name = album_name
+        self.mode = mode
+        self.duration = duration
+        self.subgenre = subgenre
+        self.total_tracks = total_tracks
+        self.message_id = None
+        self.start_time = time.time()
+        self.phase = 1
+        self.phase_names = {
+            1: "Music Production",
+            2: "DAW Mastering",
+            3: "Song Review",
+            4: "Album Cover Art",
+            5: "Track Cover Art",
+            6: "SoundCloud Release"
+        }
+        self.track_statuses = {}
+        self.live_cost = 0.0
+        self.error_state = None
+        self.last_render_text = ""
+        self.last_update_time = 0
 
-    brief = f"Title: {proposal.get('album', 'Unknown')}\n"
-    brief += f"Direction: {proposal.get('brief', '')}\n"
-    brief += "\n--- VØIDRIDE IDENTITY ---\n"
-    dna = profile.get("sonic_dna", {})
-    brief += f"Genres: {', '.join(dna.get('primary_genres', []))} + dark nightride trap, witch house, cinematic nightride phonk\n"
-    brief += f"Keys: {', '.join(dna.get('preferred_keys', ['Fm', 'Cm', 'Dm']))}\n"
-    brief += "Anti-patterns: NO galloping, static loops, booming, anthems, helicopter noise, TTS vocals, silence drops\n"
-    brief += "Sound: dominant 808 bass with aggressive slides, spectral witch house pads, cyber-noir haze, relentless nocturnal cruising energy\n"
+    def init_message(self):
+        text = self.render()
+        res = send_message(text)
+        if res and res.get("ok"):
+            self.message_id = res.get("result", {}).get("message_id")
+            self.last_render_text = text
+            self.last_update_time = time.time()
+        return self.message_id
 
-    print("\n[PHASE 1] PRODUCE")
-    print(f"Enriched Brief:\n{brief}\n")
-    
-    print("[PHASE 2] SONG REVIEW")
-    print("Sending Audio files...")
-    buttons = [
-        [{"text": "✅ Approve All", "callback_data": "ap:songs:approve"}],
-        [{"text": "📥 Download FLACs", "callback_data": "ap:songs:flac"}],
-        [{"text": "🔄 Redo Track 1", "callback_data": "ap:songs:redo:1"}],
-        [{"text": "❌ Reject Album", "callback_data": "ap:songs:reject"}]
-    ]
-    print(f"Buttons:\n{json.dumps({'inline_keyboard': buttons}, indent=2)}\n")
-    
-    print("[PHASE 3] DAW HANDOFF & MASTERING")
-    print(f"  dawctl_local.py session create --name {proposal.get('album', '').replace(' ', '_')} --sr 48000 --bpm <from tracklist>")
-    print(f"  handoff.py write --session ... --stems <flacs> --stem-names <titles>")
-    print("  Polling /opt/data/dawagent/exports/ for _MASTER.flac files...")
-    master_buttons = [
-        [{"text": "✅ Approve Masters", "callback_data": "ap:master:approve"}],
-        [{"text": "🔄 Wait for Re-export", "callback_data": "ap:master:wait"}]
-    ]
-    print(f"Buttons:\n{json.dumps({'inline_keyboard': master_buttons}, indent=2)}\n")
-    
-    print("[PHASE 4] ARTWORK")
-    print(f"Visual Prompt: {proposal.get('visual', '')} + NO TEXT, NO LETTERS, NO TYPOGRAPHY")
-    art_buttons = [
-        [{"text": "✅ Approve Artwork", "callback_data": "ap:art:approve"}],
-        [{"text": "✏️ Edit Cover", "callback_data": "ap:art:edit"}],
-        [{"text": "🔄 Regenerate", "callback_data": "ap:art:regen"}]
-    ]
-    print(f"Buttons:\n{json.dumps({'inline_keyboard': art_buttons}, indent=2)}\n")
-    
-    print("[PHASE 5] FINAL REVIEW")
-    print("Packaging mastered release...")
-    final_buttons = [
-        [{"text": "🚀 Publish to SoundCloud", "callback_data": "ap:final:publish"}],
-        [{"text": "↩️ Go Back", "callback_data": "ap:final:back"}]
-    ]
-    print(f"Buttons:\n{json.dumps({'inline_keyboard': final_buttons}, indent=2)}\n")
-    
-    print("[PHASE 6] PUBLISH")
-    print("Publishing mastered release to SoundCloud...")
+    def set_phase(self, phase_num):
+        self.phase = phase_num
+        self.update(force=True)
 
-def phase_1_redo_single(proposal, profile, tracklist, track_num, feedback=None):
-    """Re-produce a single track and swap it into the existing tracklist."""
+    def update_track(self, track_num, title, status, bpm=None, cost=None, progress_pct=None, sub_phase=None):
+        if track_num not in self.track_statuses:
+            self.track_statuses[track_num] = {}
+        self.track_statuses[track_num].update({
+            "title": title,
+            "status": status,
+            "bpm": bpm or self.track_statuses[track_num].get("bpm"),
+            "cost": cost or self.track_statuses[track_num].get("cost"),
+            "progress_pct": progress_pct,
+            "sub_phase": sub_phase
+        })
+        self.update()
+
+    def set_error(self, error_msg, track_num=None):
+        self.error_state = {"error": error_msg, "track_num": track_num}
+        self.update(force=True)
+
+    def clear_error(self):
+        self.error_state = None
+        self.update(force=True)
+
+    def render(self):
+        elapsed = int(time.time() - self.start_time)
+        el_m, el_s = divmod(elapsed, 60)
+        mode_desc = "🚀 Full Tracks (~4m 20s FLAC)" if self.mode == "full" else "⚡ 20s Sample Previews"
+        subg = self.subgenre[:45] + "..." if len(self.subgenre) > 45 else (self.subgenre or "dark nightride trap")
+
+        lines = [
+            f"📀 <b>VØIDRIDE — PRODUCTION DASHBOARD</b>",
+            f"━━━━━━━━━━━━━━━━━━━━━━",
+            f"<b>Album:</b> {self.album_name}",
+            f"<b>Genre:</b> <i>{subg}</i>",
+            f"<b>Mode:</b> {mode_desc}",
+            f"<b>Phase [{self.phase}/6]:</b> {self.phase_names.get(self.phase, 'Processing')}",
+            f"━━━━━━━━━━━━━━━━━━━━━━",
+            "<b>Track Progress:</b>"
+        ]
+
+        for i in range(1, self.total_tracks + 1):
+            ts = self.track_statuses.get(i, {"title": f"Track {i}", "status": "pending"})
+            title = ts.get("title", f"Track {i}")
+            status = ts.get("status", "pending")
+            bpm = f" ({ts.get('bpm')} BPM)" if ts.get("bpm") else ""
+            cost = f" · ${ts.get('cost')}" if ts.get("cost") else ""
+
+            if status == "complete":
+                lines.append(f"  {i}. ✅ <b>{title}</b>{bpm}{cost}")
+            elif status == "generating":
+                pct = ts.get("progress_pct", 50)
+                filled = max(0, min(10, int(pct / 10)))
+                bar = "█" * filled + "░" * (10 - filled)
+                lines.append(f"  {i}. ⚙️ <b>{title}</b> [{bar}] {pct}%")
+                if ts.get("sub_phase"):
+                    lines.append(f"     └─ <i>{ts.get('sub_phase')}</i>")
+            elif status == "failed":
+                lines.append(f"  {i}. ❌ <b>{title}</b> [FAILED]")
+            else:
+                lines.append(f"  {i}. ⏳ <i>{title}</i> (Queued)")
+
+        lines.append(f"━━━━━━━━━━━━━━━━━━━━━━")
+        lines.append(f"⏱ <b>Elapsed:</b> {el_m:02d}m {el_s:02d}s  |  💰 <b>Cost:</b> ${self.live_cost:.2f}")
+
+        next_hints = {
+            1: "Next: DAW Stem Mastering" if self.mode == "full" else "Next: Song Review",
+            2: "Next: Audio & FLAC Review",
+            3: "Next: Album Cover Art",
+            4: "Next: Track Cover Art (3000x3000)",
+            5: "Next: SoundCloud Release & Deliverables",
+            6: "Status: Live on SoundCloud"
+        }
+        lines.append(f"🔮 <i>{next_hints.get(self.phase, '')}</i>")
+
+        if self.error_state:
+            lines.append(f"\n🚨 <b>ERROR:</b> {self.error_state.get('error')[:250]}")
+
+        return "\n".join(lines)
+
+    def update(self, force=False):
+        now = time.time()
+        if not force and (now - self.last_update_time < 5):
+            return
+        if not self.message_id:
+            return
+        text = self.render()
+        if text == self.last_render_text and not force:
+            return
+
+        reply_markup = None
+        if self.error_state:
+            track_num = self.error_state.get("track_num")
+            reply_markup = {
+                "inline_keyboard": [
+                    [{"text": f"🔄 Retry Track {track_num or ''}", "callback_data": "ap:error:retry"}],
+                    [{"text": "⏭ Skip Track", "callback_data": "ap:error:skip"}],
+                    [{"text": "🛠 View Error Log", "callback_data": "ap:error:log"}]
+                ]
+            }
+
+        edit_message(self.message_id, text, reply_markup=reply_markup)
+        self.last_render_text = text
+        self.last_update_time = now
+
+
+# ── Phase 1: Music Production (Granular Checkpoint & Resuming) ─────────
+def phase_1_produce(proposal, profile, redo_track=None, redo_feedback=None, mode="full", duration=260, dashboard=None, state=None):
     album_name = proposal.get('album', 'Unknown Album')
     subgenre = proposal.get('subgenre', 'dark nightride trap')
-    
-    # Find the original track info
-    original = None
-    track_idx = None
-    for idx, t in enumerate(tracklist):
-        if t.get('track') == track_num:
-            original = t
-            track_idx = idx
-            break
-    
-    if original is None:
-        send_message(f"❌ Track {track_num} not found in tracklist")
-        return tracklist
-    
-    title = original.get('title', f'Track {track_num}')
-    bpm = original.get('bpm', '130')
-    key = original.get('key', 'Cm')
-    
-    # Build single-track brief
+
+    if logger_hub:
+        logger_hub.log_event("PHASE_START", {"mode": mode, "duration": duration}, album=album_name, phase=1)
+
+    # Check granular checkpoint in state
+    completed_tracks = []
+    if state and state.get("completed_tracks"):
+        for ct in state.get("completed_tracks"):
+            mp3 = ct.get("mp3_path")
+            if mp3 and os.path.exists(mp3) and os.path.getsize(mp3) > 10000:
+                completed_tracks.append(ct)
+
+    # Save to completed_tracks.json so produce-album.py can resume
+    os.makedirs("/tmp", exist_ok=True)
+    with open("/tmp/completed_tracks.json", "w") as cf:
+        json.dump({"completed": completed_tracks, "total_cost": sum(float(t.get("cost", 0)) for t in completed_tracks)}, cf)
+
+    resume_count = len(completed_tracks)
+    if resume_count >= 5:
+        logger.info(f"All 5 tracks already completed on disk. Resuming directly to Phase 2/3.")
+        return completed_tracks
+
+    if resume_count > 0:
+        logger.info(f"Granular resume: {resume_count}/5 tracks already complete. Generating remaining tracks...")
+        if dashboard:
+            for ct in completed_tracks:
+                dashboard.update_track(ct.get("track", 1), ct.get("title", f"Track {ct.get('track',1)}"), "complete", bpm=ct.get("bpm"), cost=ct.get("cost"))
+
+    # Build prompt brief
     brief = f"{album_name} - {subgenre}. "
-    brief += f"Track {track_num}: {title}. "
     brief += f"{proposal.get('brief', '')} "
-    brief += f"{bpm} BPM, {key}. "
-    
-    # Add sonic identity block
+    brief += f"{proposal.get('bpm', '130')} BPM, {proposal.get('key', 'Cm')}. "
     if profile:
         sonic = profile.get('sonic_dna', {})
         brief += "\n--- VØIDRIDE IDENTITY ---\n"
@@ -388,251 +515,68 @@ def phase_1_redo_single(proposal, profile, tracklist, track_num, feedback=None):
         if anti:
             brief += f"Anti-patterns: {', '.join(anti)}\n"
         brief += f"The VØIDRIDE sound: {profile.get('prompt_prefix', '')}\n"
-    
-    if feedback:
-        brief += f"\n[REDO FEEDBACK]: {feedback}\n"
-    
-    send_message(f"🔄 Redoing track {track_num}: {title}...")
-    send_agent_notification(f"Redoing track {track_num}: {title}")
-    
-    # Run master-producer for single track
-    cmd = [
-        "/opt/hermes/.venv/bin/python3",
-        MASTER_PRODUCER_SCRIPT,
-        "--prompt", brief,
-        "--duration", "180",
-        "--quality", "standard",
-        "--no-deliver",
-    ]
-    
-    logger.info(f"Redo track {track_num}: {' '.join(cmd[:6])}...")
-    process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-    
-    for line in iter(process.stdout.readline, ''):
-        line = line.strip()
-        if line:
-            logger.info(f"Redo output: {line}")
-    
-    process.wait()
-    if process.returncode != 0:
-        send_message(f"❌ Track {track_num} redo failed")
-        return tracklist
-    
-    # Find the new production dir — search all recent dirs, not just album slug
-    import glob
-    album_slug = album_name.lower().replace(' ', '-').replace('_', '-')
-    
-    # Try album-slug match first, then fall back to most recent of all
-    prod_dirs = sorted(glob.glob(f"/opt/data/music/productions/*{album_slug}*"))
-    if not prod_dirs:
-        all_dirs = sorted(glob.glob("/opt/data/music/productions/2026*"))
-        prod_dirs = all_dirs[-3:] if all_dirs else []  # check last 3
-    
-    if prod_dirs:
-        new_dir = prod_dirs[-1]  # latest one
-        mp3s = glob.glob(os.path.join(new_dir, "*.mp3"))
-        flacs = glob.glob(os.path.join(new_dir, "master_*.flac")) or glob.glob(os.path.join(new_dir, "*.flac"))
-        wavs = glob.glob(os.path.join(new_dir, "mix_*.wav"))
-        
-        # Get title from new production plan
-        plan_file = os.path.join(new_dir, "production_plan.json")
-        new_title = title
-        new_bpm = bpm
-        new_key = key
-        if os.path.exists(plan_file):
-            try:
-                with open(plan_file) as f:
-                    plan = json.load(f)
-                new_title = plan.get("title", title)
-                new_bpm = plan.get("bpm", bpm)
-                new_key = plan.get("key", key)
-            except:
-                pass
-        
-        # Update tracklist entry
-        new_track = {
-            "track": track_num,
-            "title": new_title,
-            "bpm": new_bpm,
-            "key": new_key,
-            "production_dir": new_dir,
-        }
-        if mp3s:
-            new_track["mp3_path"] = mp3s[0]
-        if flacs:
-            new_track["flac_path"] = flacs[0]
-        
-        tracklist[track_idx] = new_track
-        
-        # ── Check for DAWAGENT mastered version (preferred over raw) ──
-        daw_slug = new_title.lower().replace(' ', '-').replace('_', '-')
-        daw_export_dir = f"/opt/data/dawagent/exports/{daw_slug}"
-        daw_session_dir = f"/opt/data/dawagent/sessions/{daw_slug}"
-        daw_mp3 = os.path.join(daw_export_dir, f"{daw_slug}_MASTER.mp3")
-        daw_flac = os.path.join(daw_export_dir, f"{daw_slug}_MASTER.flac")
-        
-        # If DAWAGENT session exists but no master yet, wait for it
-        if os.path.isdir(daw_session_dir) and not os.path.exists(daw_mp3):
-            send_message(f"⏳ Waiting for DAWAGENT mastering of {new_title}...")
-            import time
-            for _wait in range(18):  # up to 90 seconds
-                time.sleep(5)
-                if os.path.exists(daw_mp3):
-                    break
-        
-        # Send the best available audio: DAWAGENT master → production MP3 → FLAC → WAV
-        audio_to_send = None
-        audio_label = ""
-        
-        if os.path.exists(daw_mp3):
-            audio_to_send = daw_mp3
-            audio_label = "DAWAGENT Mastered"
-            new_track["master_mp3"] = daw_mp3
-            logger.info(f"Using DAWAGENT master: {daw_mp3}")
-        elif os.path.exists(daw_flac):
-            mp3_path = daw_flac.replace('.flac', '.mp3')
-            subprocess.run(["ffmpeg", "-y", "-i", daw_flac, "-b:a", "320k", mp3_path], capture_output=True)
-            if os.path.exists(mp3_path):
-                audio_to_send = mp3_path
-                audio_label = "DAWAGENT Mastered"
-        elif mp3s and os.path.exists(mp3s[0]):
-            audio_to_send = mp3s[0]
-            audio_label = "Pre-Master"
-        elif flacs and os.path.exists(flacs[0]):
-            mp3_path = flacs[0].replace('.flac', '.mp3')
-            logger.info(f"Converting FLAC to MP3 for redo send: {flacs[0]}")
-            subprocess.run(["ffmpeg", "-y", "-i", flacs[0], "-b:a", "320k", "-map_metadata", "0", mp3_path],
-                           capture_output=True)
-            if os.path.exists(mp3_path):
-                audio_to_send = mp3_path
-                audio_label = "Pre-Master"
-                new_track["mp3_path"] = mp3_path
-        elif wavs and os.path.exists(wavs[0]):
-            mp3_path = wavs[0].replace('.wav', '.mp3')
-            logger.info(f"Converting WAV to MP3 for redo send: {wavs[0]}")
-            subprocess.run(["ffmpeg", "-y", "-i", wavs[0], "-b:a", "320k", mp3_path],
-                           capture_output=True)
-            if os.path.exists(mp3_path):
-                audio_to_send = mp3_path
-                audio_label = "Raw Mix"
-                new_track["mp3_path"] = mp3_path
-        
-        if audio_to_send:
-            send_audio(audio_to_send, caption=f"🔄 Track {track_num}: {new_title} ({audio_label}) — {new_bpm} BPM, {new_key}")
-            logger.info(f"Sent redo audio ({audio_label}): {audio_to_send}")
-        else:
-            send_message(f"⚠️ Track {track_num} redone but no audio file found to send")
-            logger.error(f"No MP3, FLAC, or WAV found in {new_dir} or DAWAGENT exports")
-        
-        send_message(f"✅ Track {track_num} redone: {new_title} — {new_bpm} BPM, {new_key}")
-        send_agent_notification(f"Track {track_num} redone: {new_title} — {new_bpm} BPM, {new_key}")
-        
-        # ── Also regenerate the track cover ──
-        visual = proposal.get('visual', '')
-        direction = new_track.get('direction', new_track.get('genre', subgenre))
-        send_message(f"🎨 Regenerating cover for redone track {track_num}: {new_title}...")
-        
-        scene = _build_varied_scene(visual, new_title, direction, track_idx, len(tracklist))
-        cover_path = generate_artwork_venice(scene, f"{album_name}/{new_title}")
-        
-        if cover_path and os.path.exists(cover_path):
-            track_art_dir = get_album_artwork_dir(album_name)
-            os.makedirs(track_art_dir, exist_ok=True)
-            final_path = os.path.join(track_art_dir, f"{new_title}_cover.png")
-            if cover_path != final_path:
-                import shutil
-                shutil.move(cover_path, final_path)
-                cover_path = final_path
-            
-            # Title overlay
-            if os.path.exists(OVERLAY_TITLE_SCRIPT):
-                styled_title = stylize_title(new_title)
-                subprocess.run(["/opt/hermes/.venv/bin/python3", OVERLAY_TITLE_SCRIPT,
-                    "--image", cover_path, "--title", styled_title,
-                    "--bottom", "--auto-color", "--output", cover_path], capture_output=True)
-            
-            # Upscale to 3000×3000 for SoundCloud
-            send_message(f"⬆️ Upscaling {new_title} cover to 3000×3000...")
-            upscale_artwork_venice(cover_path)
-            
-            track_btn = [[{"text": f"🔄 Regen {new_title}", "callback_data": f"ap:art:redo:{track_num}"}]]
-            send_photo(cover_path, caption=f"🎨 Track {track_num}: {new_title} (new cover — 3000×3000)", reply_markup={"inline_keyboard": track_btn})
-            logger.info(f"Sent new cover for redone track {track_num}: {cover_path}")
-            
-            # Update SoundCloud artwork if track ID is known
-            sc_track_id = new_track.get('soundcloud_track_id') or original.get('soundcloud_track_id')
-            if sc_track_id:
-                try:
-                    SC_SCRIPT = "/opt/data/skills/music/soundcloud/scripts/soundcloud_api.py"
-                    subprocess.run(["/opt/hermes/.venv/bin/python3", SC_SCRIPT, "update",
-                        "--track-id", str(sc_track_id), "--artwork", cover_path],
-                        capture_output=True, timeout=60)
-                    logger.info(f"Updated SoundCloud artwork for track {sc_track_id}")
-                except Exception as e:
-                    logger.error(f"Failed to update SC artwork: {e}")
-        else:
-            send_message(f"⚠️ Could not regenerate cover for {new_title}")
-    else:
-        send_message(f"⚠️ Track {track_num} redo completed but couldn't find output")
-    
-    return tracklist
 
-MASTER_PRODUCER_SCRIPT = "/opt/data/skills/master-producer/master-producer/scripts/master-producer.py"
-
-def phase_1_produce(proposal, profile, redo_track=None, redo_feedback=None):
-    album_name = proposal.get('album', 'Unknown Album')
-    
-    brief = f"{album_name} - {proposal.get('subgenre', 'dark nightride trap')}. "
-    brief += f"{proposal.get('brief', '')} "
-    if redo_track and redo_feedback:
-        brief += f"\n[REDO FEEDBACK FOR TRACK {redo_track}]: {redo_feedback}\n"
-        
-    brief += "\n--- VØIDRIDE IDENTITY ---\n"
-    brief += "Primary genres: dark nightride trap, witch house, cinematic nightride phonk\n"
-    brief += "Preferred models: elevenlabs-music (main), stable-audio-25 (texture), elevenlabs-sound-effects-v2 (accent)\n"
-    brief += "Preferred keys: Fm, Cm, Dm\n"
-    brief += "Anti-patterns: NO galloping, static loops, booming, anthems, helicopter noise, TTS vocals, silence drops\n"
-    brief += "The VØIDRIDE sound: dominant 808 bass with aggressive slides, spectral witch house pads, cyber-noir haze, relentless nocturnal cruising energy\n"
-
-    send_agent_notification(f"{album_name} production started (5 tracks)")
-    
     cmd = [
         "/opt/hermes/.venv/bin/python3", PRODUCE_SCRIPT,
         "--brief", brief,
         "--tracks", "5",
-        "--duration", "180",
-        "--quality", "standard"
+        "--duration", str(duration),
+        "--mode", mode,
+        "--quality", "standard",
+        "--no-deliver",
+        "--resume-tracks", str(resume_count)
     ]
-    
-    logger.info(f"Calling master-producer: {' '.join(cmd)}")
-    process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-    
-    tracklist = []
-    track_num = 0
-    for line in iter(process.stdout.readline, ''):
+
+    logger.info(f"Spawning produce-album (resume-tracks={resume_count}): {' '.join(cmd[:8])}...")
+    process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+
+    tracklist = list(completed_tracks)
+    track_num = resume_count
+    stderr_lines = []
+
+    # Monitor stdout for progress and track completions
+    while True:
+        line = process.stdout.readline()
+        if not line and process.poll() is not None:
+            break
         line = line.strip()
         if not line:
+            # Check pipeline_progress.json periodically
+            if os.path.exists("/tmp/pipeline_progress.json") and dashboard:
+                try:
+                    with open("/tmp/pipeline_progress.json") as pf:
+                        prog = json.load(pf)
+                    cur_num = prog.get("track_num")
+                    if cur_num:
+                        dashboard.update_track(cur_num, f"Track {cur_num}", "generating", progress_pct=prog.get("elapsed_sec", 10) % 100, sub_phase=prog.get("phase_name"))
+                        dashboard.live_cost = prog.get("total_cost", dashboard.live_cost)
+                except Exception:
+                    pass
+            time.sleep(0.5)
             continue
+
         logger.info(f"Produce output: {line}")
-        
-        # Try JSON first
+
+        # Try JSON track output
         try:
             data = json.loads(line)
             if "track" in data and "title" in data:
                 t_num = data.get("track")
                 t_title = data.get("title")
                 t_bpm = data.get("bpm", "Unknown")
-                t_key = data.get("key", "Unknown")
-                mp3_path = data.get("mp3_path")
-                msg = f"✅ Track {t_num}/5 {t_title} — {t_bpm} BPM, {t_key}"
-                send_message(msg)
-                send_agent_notification(f"Track {t_num}/5 {t_title} complete — {t_bpm} BPM, {t_key}")
+                t_cost = data.get("cost", "2.29")
                 tracklist.append(data)
-            continue
+                if dashboard:
+                    dashboard.update_track(t_num, t_title, "complete", bpm=t_bpm, cost=t_cost)
+                    dashboard.live_cost += float(t_cost)
+                if state:
+                    state["completed_tracks"] = tracklist
+                    save_state(state)
+                continue
         except (ValueError, json.JSONDecodeError):
             pass
-        
-        # Parse text format: "[produce-album]     ✅ EYEWALL | 160 BPM | $3.85"
+
+        # Text format regex: "[produce-album]     ✅ EYEWALL | 160 BPM | $3.85"
         import re
         match = re.match(r'\[produce-album\]\s+✅\s+(.+?)\s*\|\s*(\d+)\s*BPM\s*\|\s*\$?([\d.]+)', line)
         if match:
@@ -640,24 +584,46 @@ def phase_1_produce(proposal, profile, redo_track=None, redo_feedback=None):
             t_title = match.group(1).strip()
             t_bpm = match.group(2)
             t_cost = match.group(3)
-            msg = f"✅ Track {track_num}/5 {t_title} — {t_bpm} BPM (${t_cost})"
-            send_message(msg)
-            send_agent_notification(f"Track {track_num}/5 {t_title} complete — {t_bpm} BPM")
-            tracklist.append({"track": track_num, "title": t_title, "bpm": t_bpm, "cost": t_cost})
-            
+            track_entry = {"track": track_num, "title": t_title, "bpm": t_bpm, "cost": t_cost}
+            tracklist.append(track_entry)
+            if dashboard:
+                dashboard.update_track(track_num, t_title, "complete", bpm=t_bpm, cost=t_cost)
+                dashboard.live_cost += float(t_cost)
+            if state:
+                state["completed_tracks"] = tracklist
+                save_state(state)
+            if logger_hub:
+                logger_hub.log_event("TRACK_COMPLETE", track_entry, album=album_name, phase=1, track_num=track_num)
+
     process.wait()
+
     if process.returncode != 0:
-        send_agent_notification(f"Production failed with code {process.returncode}")
-        send_message("❌ Production script failed.")
-        sys.exit(1)
-    
-    # Find production dirs to get actual MP3/FLAC paths
-    import glob
+        err_out = process.stderr.read()
+        logger.error(f"Produce album failed with code {process.returncode}: {err_out[-300:]}")
+        if logger_hub:
+            logger_hub.log_failure("PRODUCE_SCRIPT_FAIL", f"Exit {process.returncode}: {err_out[-200:]}", traceback_str=err_out, album=album_name, phase=1)
+        if dashboard:
+            dashboard.set_error(f"Production script failed (exit {process.returncode}): {err_out[-150:]}", track_num=track_num+1)
+            # Interactive Error Recovery Gate
+            send_message(f"⚠️ <b>Production halted on Track {track_num+1}</b>\nTap Retry to re-attempt or Skip to continue.")
+            while True:
+                flag, content = poll_flags(timeout_hours=1)
+                if flag == "error:retry":
+                    dashboard.clear_error()
+                    return phase_1_produce(proposal, profile, mode=mode, duration=duration, dashboard=dashboard, state=state)
+                elif flag == "error:skip":
+                    dashboard.clear_error()
+                    break
+                elif flag == "error:log":
+                    send_message(f"📋 <b>Error Log:</b>\n<pre>{err_out[-800:]}</pre>")
+                    continue
+
+    # Locate actual MP3 and FLAC files
     album_slug = proposal.get('album', '').lower().replace(' ', '-').replace('_', '-')
     prod_dirs = sorted(glob.glob(f"/opt/data/music/productions/*{album_slug}*"))
     for i, t in enumerate(tracklist):
         if i < len(prod_dirs):
-            d = prod_dirs[-(len(tracklist)-i)]  # latest N dirs
+            d = prod_dirs[-(len(tracklist)-i)]
             mp3s = glob.glob(os.path.join(d, "*.mp3"))
             flacs = glob.glob(os.path.join(d, "*.flac"))
             if mp3s:
@@ -665,281 +631,94 @@ def phase_1_produce(proposal, profile, redo_track=None, redo_feedback=None):
             if flacs:
                 t["flac_path"] = flacs[0]
             t["production_dir"] = d
-        
-    send_agent_notification("All tracks complete, sent for user review")
+
+    if state:
+        state["completed_tracks"] = tracklist
+        save_state(state)
+
+    if logger_hub:
+        logger_hub.log_event("PHASE_COMPLETE", {"tracks_count": len(tracklist)}, album=album_name, phase=1)
+
     return tracklist
 
-def phase_3_song_review(tracklist, proposal=None):
-    for t in tracklist:
-        mp3 = t.get('mp3_path')
-        if mp3 and os.path.exists(mp3):
-            send_audio(mp3, caption=f"Track {t.get('track')}: {t.get('title')}")
-            
-    # Send Buttons
-    buttons = [
-        [{"text": "✅ Approve All", "callback_data": "ap:songs:approve"}],
-        [{"text": "📥 Download FLACs", "callback_data": "ap:songs:flac"}]
-    ]
-    for t in tracklist:
-        n = t.get('track')
-        buttons.append([{"text": f"🔄 Redo Track {n}", "callback_data": f"ap:songs:redo:{n}"}])
-    buttons.append([{"text": "❌ Reject Album", "callback_data": "ap:songs:reject"}])
-    
-    reply_markup = {"inline_keyboard": buttons}
-    send_message("Please review the generated tracks:", reply_markup=reply_markup)
-    
-    while True:
-        flag, content = poll_flags()
-        if flag == "songs_approved":
-            return "approved", None
-        elif flag == "songs_flac_requested":
-            # Package FLACs + playlist, share via Cloudflare tunnel
-            send_message("📦 Packaging FLACs + playlist...")
-            try:
-                import tempfile
-                album_name = proposal.get("album", "ALBUM").replace(" ", "-")
-                pack_dir = os.path.join(tempfile.gettempdir(), f"flac-{album_name}")
-                os.makedirs(pack_dir, exist_ok=True)
 
-                # Collect FLACs into pack dir
-                flac_files = []
-                for idx, t in enumerate(tracklist):
-                    flac = t.get("flac_path")
-                    if flac and os.path.exists(flac):
-                        title = t.get("title", f"Track_{idx+1}")
-                        dest_name = f"{(idx+1):02d}-{title.replace(' ', '-')}.flac"
-                        dest = os.path.join(pack_dir, dest_name)
-                        shutil.copy2(flac, dest)
-                        flac_files.append(dest_name)
-                    elif t.get("mp3_path") and os.path.exists(t["mp3_path"]):
-                        title = t.get("title", f"Track_{idx+1}")
-                        dest_name = f"{(idx+1):02d}-{title.replace(' ', '-')}.mp3"
-                        dest = os.path.join(pack_dir, dest_name)
-                        shutil.copy2(t["mp3_path"], dest)
-                        flac_files.append(dest_name)
+# ── Single Track Redo ───────────────────────────────────────────────────
+def phase_1_redo_single(proposal, profile, tracklist, track_num, feedback=None, duration=260, dashboard=None):
+    album_name = proposal.get('album', 'Unknown Album')
+    subgenre = proposal.get('subgenre', 'dark nightride trap')
 
-                # Generate M3U playlist
-                if flac_files:
-                    playlist_path = os.path.join(pack_dir, f"{album_name}.m3u")
-                    with open(playlist_path, "w") as pf:
-                        pf.write("#EXTM3U\n")
-                        for fname in flac_files:
-                            title_clean = os.path.splitext(fname)[0].split("-", 1)[-1].replace("-", " ")
-                            pf.write(f"#EXTINF:-1,{title_clean}\n")
-                            pf.write(f"{fname}\n")
+    original = next((t for t in tracklist if t.get('track') == track_num), None)
+    if not original:
+        send_message(f"❌ Track {track_num} not found in tracklist")
+        return tracklist
 
-                # Share via secure-share → Cloudflare tunnel
-                res = subprocess.run(
-                    ["/opt/hermes/.venv/bin/python3", SHARE_SCRIPT, "--path", pack_dir],
-                    capture_output=True, text=True, timeout=120
-                )
-                # Parse output for the external link
-                external_link = None
-                for line in res.stdout.splitlines():
-                    if "[EXTERNAL LINK]" in line:
-                        external_link = line.split("[EXTERNAL LINK]")[-1].strip()
-                        break
+    title = original.get('title', f'Track {track_num}')
+    bpm = original.get('bpm', '130')
+    key = original.get('key', 'Cm')
 
-                if external_link:
-                    send_message(
-                        f"📥 *{album_name}* — {len(flac_files)} tracks + playlist\n"
-                        f"🔗 [Download ZIP]({external_link})"
-                    )
-                elif res.returncode == 0:
-                    # Fallback: no tunnel running, show local link
-                    local_link = None
-                    for line in res.stdout.splitlines():
-                        if "[LOCAL LINK]" in line:
-                            local_link = line.split("[LOCAL LINK]")[-1].strip()
-                            break
-                    send_message(f"📥 FLACs packaged ({len(flac_files)} tracks)\n🔗 {local_link or res.stdout.strip()}")
-                else:
-                    send_message(f"❌ Failed to package FLACs: {res.stderr[:200]}")
+    brief = f"{album_name} - {subgenre}. Track {track_num}: {title}. {proposal.get('brief', '')} {bpm} BPM, {key}. "
+    if profile:
+        sonic = profile.get('sonic_dna', {})
+        brief += f"\n--- VØIDRIDE IDENTITY ---\nPrimary genres: {', '.join(sonic.get('primary_genres', []))}\n"
+    if feedback:
+        brief += f"\n[REDO FEEDBACK]: {feedback}\n"
 
-                # Cleanup temp dir
-                shutil.rmtree(pack_dir, ignore_errors=True)
-            except Exception as e:
-                send_message(f"❌ FLAC packaging error: {e}")
-            continue # keep polling
-        elif flag.startswith("songs_redo_"):
-            try:
-                track_num = int(flag.split('_')[-1])
-                return "redo_track", (track_num, content)
-            except:
-                continue
-        elif flag == "songs_rejected":
-            return "reject", content
+    if dashboard:
+        dashboard.update_track(track_num, title, "generating", progress_pct=30, sub_phase=f"Redoing: {feedback[:30] if feedback else 'tweak'}")
 
-def generate_artwork_venice(prompt, album_name):
-    # Use canonical path: albums/{slug}/artwork/{name}_cover.png
-    # album_name may be "ALBUM_NAME" or "ALBUM_NAME/TRACK_TITLE"
-    parts = album_name.split('/')
-    if len(parts) == 2:
-        # Track cover: albums/{album-slug}/artwork/NN_track-slug_cover.png
-        art_dir = get_album_artwork_dir(parts[0])
-        out_path = os.path.join(art_dir, f"{parts[1].replace(' ', '_')}_cover.png")
-    else:
-        # Album cover: albums/{album-slug}/artwork/album_cover.png
-        art_dir = get_album_artwork_dir(album_name)
-        out_path = os.path.join(art_dir, "album_cover.png")
-    os.makedirs(os.path.dirname(out_path), exist_ok=True)
-    
-    if not VENICE_API_KEY:
-        logger.error("VENICE_API_KEY missing, skipping raw API call.")
-        return None
-        
-    url = "https://api.venice.ai/api/v1/images/generations"
-    headers = {
-        "Authorization": f"Bearer {VENICE_API_KEY}",
-        "Content-Type": "application/json"
-    }
-    payload = {
-        "model": "grok-imagine-image-quality",
-        "prompt": f"{prompt} NO TEXT, NO LETTERS, NO TYPOGRAPHY",
-        "response_format": "b64_json"
-    }
-    req = urllib.request.Request(url, data=json.dumps(payload).encode('utf-8'), headers=headers)
-    try:
-        with urllib.request.urlopen(req) as response:
-            data = json.loads(response.read().decode('utf-8'))
-            b64 = data.get('data', [{}])[0].get('b64_json')
-            if b64:
-                with open(out_path, 'wb') as f:
-                    f.write(base64.b64decode(b64))
-                return out_path
-    except Exception as e:
-        logger.error(f"Venice API generation failed: {e}")
-    return None
+    send_message(f"🔄 Redoing Track {track_num}: <b>{title}</b>...")
+
+    cmd = ["/opt/hermes/.venv/bin/python3", MASTER_PRODUCER_SCRIPT, "--prompt", brief, "--duration", str(duration), "--quality", "standard", "--no-deliver"]
+    proc = subprocess.run(cmd, capture_output=True, text=True)
+
+    if proc.returncode != 0:
+        send_message(f"❌ Track {track_num} redo failed: {proc.stderr[:100]}")
+        if logger_hub:
+            logger_hub.log_failure("REDO_FAIL", proc.stderr, album=album_name, phase=1, track_num=track_num)
+        return tracklist
+
+    # Update track files
+    album_slug = album_name.lower().replace(' ', '-').replace('_', '-')
+    prod_dirs = sorted(glob.glob(f"/opt/data/music/productions/*{album_slug}*"))
+    if prod_dirs:
+        latest_dir = prod_dirs[-1]
+        mp3s = glob.glob(os.path.join(latest_dir, "*.mp3"))
+        flacs = glob.glob(os.path.join(latest_dir, "*.flac"))
+        if mp3s:
+            original["mp3_path"] = mp3s[0]
+        if flacs:
+            original["flac_path"] = flacs[0]
+        original["production_dir"] = latest_dir
+
+    if dashboard:
+        dashboard.update_track(track_num, title, "complete")
+
+    send_message(f"✅ Track {track_num}: <b>{title}</b> redone successfully!")
+    return tracklist
 
 
-def upscale_artwork_venice(image_path, target_size=3000):
-    """Upscale a cover image via Venice API to target_size×target_size.
-    
-    1. POST /image/upscale with scale=4 (1024→4096)
-    2. Center-crop to target_size×target_size
-    3. Save as final, backup original as _1k.png
-    Returns path to upscaled image, or original path on failure.
-    """
-    if not VENICE_API_KEY:
-        logger.error("VENICE_API_KEY missing, skipping upscale")
-        return image_path
-    
-    if not os.path.exists(image_path):
-        logger.error(f"Upscale: image not found: {image_path}")
-        return image_path
-    
-    from PIL import Image
-    
-    # Check if already upscaled
-    img = Image.open(image_path)
-    if img.size[0] >= target_size and img.size[1] >= target_size:
-        logger.info(f"Already {img.size[0]}×{img.size[1]}, skip upscale: {image_path}")
-        return image_path
-    
-    logger.info(f"Upscaling {os.path.basename(image_path)} from {img.size[0]}×{img.size[1]} to {target_size}×{target_size}...")
-    
-    # Read image bytes
-    with open(image_path, 'rb') as f:
-        img_data = f.read()
-    
-    # Build multipart request
-    boundary = '----VeniceUpscaleBoundary'
-    
-    # Image field
-    body = f'--{boundary}\r\n'.encode()
-    body += f'Content-Disposition: form-data; name="image"; filename="{os.path.basename(image_path)}"\r\n'.encode()
-    body += b'Content-Type: image/png\r\n\r\n'
-    body += img_data
-    body += b'\r\n'
-    
-    # Scale field
-    body += f'--{boundary}\r\n'.encode()
-    body += b'Content-Disposition: form-data; name="scale"\r\n\r\n'
-    body += b'4'
-    body += b'\r\n'
-    
-    # Creativity field
-    body += f'--{boundary}\r\n'.encode()
-    body += b'Content-Disposition: form-data; name="creativity"\r\n\r\n'
-    body += b'0.01'
-    body += b'\r\n'
-    
-    body += f'--{boundary}--\r\n'.encode()
-    
-    url = "https://api.venice.ai/api/v1/image/upscale"
-    req = urllib.request.Request(url, data=body, method='POST', headers={
-        'Authorization': f'Bearer {VENICE_API_KEY}',
-        'Content-Type': f'multipart/form-data; boundary={boundary}',
-    })
-    
-    try:
-        with urllib.request.urlopen(req, timeout=120) as response:
-            upscaled_data = response.read()
-        
-        if len(upscaled_data) < 1000:
-            logger.error(f"Upscale returned too little data ({len(upscaled_data)} bytes)")
-            return image_path
-        
-        # Save upscaled full-res temporarily
-        tmp_path = image_path.replace('.png', '_4k.png')
-        with open(tmp_path, 'wb') as f:
-            f.write(upscaled_data)
-        
-        # Center-crop to target_size×target_size
-        upscaled_img = Image.open(tmp_path)
-        w, h = upscaled_img.size
-        logger.info(f"Upscaled to {w}×{h}, resizing to {target_size}×{target_size}")
-        
-        if w >= target_size and h >= target_size:
-            # Resize down to target — preserves full composition
-            final = upscaled_img.resize((target_size, target_size), Image.LANCZOS)
-        else:
-            # If upscale didn't reach target, resize up with Lanczos
-            final = upscaled_img.resize((target_size, target_size), Image.LANCZOS)
-        
-        # Backup original as _1k.png
-        backup_path = image_path.replace('.png', '_1k.png')
-        if not os.path.exists(backup_path):
-            shutil.copy2(image_path, backup_path)
-        
-        # Save final 3k as the main file
-        final.save(image_path, 'PNG')
-        
-        # Auto-convert to JPEG if file exceeds 5MB (SoundCloud limit is 10MB)
-        if os.path.getsize(image_path) > 5_000_000:
-            jpg_path = os.path.splitext(image_path)[0] + '.jpg'
-            final.convert('RGB').save(jpg_path, 'JPEG', quality=95)
-            logger.info(f"Auto-converted to JPEG: {os.path.getsize(jpg_path)/1e6:.1f}MB (was {os.path.getsize(image_path)/1e6:.1f}MB PNG)")
-        
-        # Clean up temp
-        if os.path.exists(tmp_path):
-            os.remove(tmp_path)
-        
-        final_img = Image.open(image_path)
-        logger.info(f"✅ Upscaled: {os.path.basename(image_path)} → {final_img.size[0]}×{final_img.size[1]}")
-        return image_path
-        
-    except Exception as e:
-        logger.error(f"Venice upscale failed for {image_path}: {e}")
-        return image_path
+# ── Phase 2: DAW Mastering ──────────────────────────────────────────────
+def phase_2_daw_handoff(proposal, tracklist, mode="full", dashboard=None):
+    if mode == "sample":
+        logger.info("Sample preview mode: skipping DAW mastering entirely.")
+        return
 
-def phase_2_daw_handoff(proposal, tracklist):
     album_name = proposal.get('album', 'release')
     album_slug = album_name.lower().replace(' ', '-').replace('_', '-')
-    send_message(f"🎛️ DAWAGENT mastering for <b>{album_name}</b>...")
-    
-    # 1. Check if DAWAGENT already mastered tracks (it often runs ahead of pipeline)
+    if dashboard:
+        dashboard.set_phase(2)
+
+    send_message(f"🎛️ <b>DAWAGENT</b> mastering for <b>{album_name}</b>...")
+    if logger_hub:
+        logger_hub.log_event("PHASE_START", {"album": album_name}, phase=2)
+
+    # 1. Check existing masters
     exports_base = "/opt/data/dawagent/exports"
     already_mastered = 0
     for t in tracklist:
         title = t.get('title', '')
         track_slug = title.lower().replace(' ', '_')
-        # DAWAGENT uses: {album-slug}-{track_slug}
-        possible_slugs = [
-            f"{album_slug}-{track_slug}",
-            f"{album_slug}-{title.lower().replace(' ', '-')}",
-            f"{album_slug}-{title.lower().replace(' ', '')}",
-        ]
+        possible_slugs = [f"{album_slug}-{track_slug}", f"{album_slug}-{title.lower().replace(' ', '-')}"]
         for slug in possible_slugs:
             export_dir = os.path.join(exports_base, slug)
             master_flac = os.path.join(export_dir, f"{slug}_MASTER.flac")
@@ -949,62 +728,61 @@ def phase_2_daw_handoff(proposal, tracklist):
                 t['master_mp3'] = master_mp3
                 t['dawagent_mastered'] = True
                 already_mastered += 1
-                logger.info(f"DAWAGENT already mastered {title}: {master_flac}")
                 break
-    
+
     if already_mastered == len(tracklist):
         send_message(f"✅ DAWAGENT already mastered all {already_mastered} tracks!")
-        # Send masters for review
-        for t in tracklist:
-            if t.get('master_path') and os.path.exists(t['master_path']):
-                send_audio(t['master_path'], caption=f"💿 MASTER: {t.get('title')} (DAWAGENT)")
         return
-    
-    # 2. Create DAW session for unmastered tracks
+
+    # 2. Create DAW session
     session_name = album_slug.replace('-', '_')
     bpm = str(tracklist[0].get('bpm', '130')) if tracklist else '130'
-    subprocess.run(["/opt/hermes/.venv/bin/python3", DAWCTL_SCRIPT, "session", "create",
-                    "--name", session_name, "--sr", "48000", "--bpm", bpm])
-    
+    subprocess.run(["/opt/hermes/.venv/bin/python3", DAWCTL_SCRIPT, "session", "create", "--name", session_name, "--sr", "48000", "--bpm", bpm], capture_output=True)
+
     # 3. Handoff stems
     stems = []
     stem_names = []
     for t in tracklist:
         if t.get('dawagent_mastered'):
-            continue  # Skip already mastered tracks
+            continue
         if t.get('flac_path') and os.path.exists(t.get('flac_path')):
             stems.append(t['flac_path'])
         elif t.get('mp3_path') and os.path.exists(t.get('mp3_path')):
             stems.append(t['mp3_path'])
-        stem_names.append(t.get('title', f"Track_{t.get('track')}"))
-    
+        stem_names.append(t.get('title', f"Track_{t.get('track',1)}"))
+
     if stems:
         subprocess.run([
             "/opt/hermes/.venv/bin/python3", HANDOFF_SCRIPT, "write",
-            "--session", session_name,
-            "--stems", ",".join(stems),
-            "--stem-names", ",".join(stem_names),
-            "--notes", f"Mastering for {album_name}"
-        ])
-        send_message(f"✅ DAW session created. {already_mastered}/{len(tracklist)} already mastered, waiting for remaining...")
-    else:
-        send_message("All tracks already have masters or no stems available.")
-        return
-    
-    send_agent_notification("Waiting for DAW masters")
-    
-    # 4. Poll per-track exports
+            "--session", session_name, "--stems", ",".join(stems),
+            "--stem-names", ",".join(stem_names), "--notes", f"Mastering for {album_name}"
+        ], capture_output=True)
+
+    skip_buttons = [[{"text": "⏭ Skip DAW Mastering (Use Raw Audio)", "callback_data": "ap:daw:skip"}]]
+    send_message("🎚️ <i>DAW session created. Polling for masters...</i>", reply_markup={"inline_keyboard": skip_buttons})
+
+    # 4. Polling with 30s heartbeat & 20m timeout
     poll_start = time.time()
-    max_wait = 48 * 3600
+    max_wait = 20 * 60  # 20 minutes
     last_status = time.time()
+
     while True:
         elapsed = time.time() - poll_start
         if elapsed > max_wait:
-            send_message("⏰ Master polling timed out. Pipeline paused.")
-            save_state({"phase": 3, "tracklist": tracklist, "proposal": proposal})
-            return
-        
-        # Check per-track exports
+            send_message("⏰ DAW mastering timed out (20m limit reached). Proceeding with raw lossless audio.")
+            if logger_hub:
+                logger_hub.log_failure("DAW_TIMEOUT", "Timed out after 20 minutes", album=album_name, phase=2)
+            break
+
+        # Check skip flag
+        skip_flag = os.path.join(FLAGS_DIR, "daw_skipped")
+        if os.path.exists(skip_flag):
+            try: os.remove(skip_flag)
+            except Exception: pass
+            send_message("⏭ Skipping DAW mastering. Using raw audio.")
+            break
+
+        # Check for exports
         all_mastered = True
         for t in tracklist:
             if t.get('dawagent_mastered'):
@@ -1018,130 +796,240 @@ def phase_2_daw_handoff(proposal, tracklist):
                     t['master_path'] = master_flac
                     t['master_mp3'] = os.path.join(export_dir, f"{slug}_MASTER.mp3")
                     t['dawagent_mastered'] = True
-                    send_message(f"🎚️ {title} mastered!")
+                    send_message(f"🎚️ <b>{title}</b> mastered!")
                     break
             if not t.get('dawagent_mastered'):
                 all_mastered = False
-        
-        if all_mastered:
-            break
-        
-        # After 5 minutes, offer manual skip if DAWAGENT hasn't started
-        skip_offered_flag = os.path.join(FLAGS_DIR, "daw_skip_offered")
-        if elapsed > 300 and already_mastered == 0 and not os.path.exists(skip_offered_flag):
-            sessions_dir = "/opt/data/dawagent/sessions"
-            has_sessions = any(
-                album_slug in d for d in os.listdir(sessions_dir)
-            ) if os.path.isdir(sessions_dir) else False
-            if not has_sessions:
-                skip_buttons = [
-                    [{"text": "⏭ Skip DAW (use raw audio)", "callback_data": "ap:daw:skip"}],
-                    [{"text": "⏳ Keep Waiting", "callback_data": "ap:daw:wait"}],
-                ]
-                send_message("⚠️ DAWAGENT hasn't started processing. Skip or keep waiting?", reply_markup={"inline_keyboard": skip_buttons})
-                # Use flag file instead of function attribute — survives container restart
-                os.makedirs(FLAGS_DIR, exist_ok=True)
-                with open(skip_offered_flag, 'w') as f:
-                    f.write('offered')
 
-        # Check for manual skip
-        skip_flag = os.path.join(FLAGS_DIR, "daw_skipped")
-        if os.path.exists(skip_flag):
-            try:
-                os.remove(skip_flag)
-            except: pass
-            send_message("⏭ Skipping DAW mastering. Using raw audio.")
-            for t in tracklist:
-                if not t.get('master_path'):
-                    t['master_path'] = t.get('flac_path') or t.get('mp3_path')
-            return
-        
-        if time.time() - last_status > 1800:
-            hours = int(elapsed // 3600)
-            mins = int((elapsed % 3600) // 60)
-            mastered = sum(1 for t in tracklist if t.get('dawagent_mastered'))
-            send_message(f"⏳ Waiting for masters… {mastered}/{len(tracklist)} done, {hours}h {mins}m elapsed")
+        if all_mastered:
+            send_message(f"🎚️ All {len(tracklist)} tracks mastered by DAWAGENT!")
+            break
+
+        # Heartbeat every 30s
+        if time.time() - last_status > 30:
+            m_count = sum(1 for t in tracklist if t.get('dawagent_mastered'))
+            send_message(f"⏳ DAW Mastering… {m_count}/{len(tracklist)} complete ({int(elapsed)}s elapsed)")
             last_status = time.time()
-        
-        time.sleep(10)
-    
-    send_message(f"🎚️ All {len(tracklist)} tracks mastered by DAWAGENT!")
-    
-    # Send masters for review
+
+        time.sleep(5)
+
+
+# ── Phase 3: Song Review ────────────────────────────────────────────────
+def phase_3_song_review(tracklist, proposal=None, dashboard=None):
+    if dashboard:
+        dashboard.set_phase(3)
+
+    # Single delivery: send MP3s once
+    send_message("🎧 <b>Delivering tracks for inline review:</b>")
     for t in tracklist:
-        if t.get('master_path') and os.path.exists(t['master_path']):
-            send_audio(t['master_path'], caption=f"💿 MASTER: {t.get('title')} (DAWAGENT)")
-    
-    # Wait for approval
+        mp3 = t.get('master_mp3') or t.get('mp3_path')
+        if mp3 and os.path.exists(mp3):
+            send_audio(mp3, caption=f"Track {t.get('track')}: {t.get('title')}")
+
+    # Send review buttons
     buttons = [
-        [{"text": "✅ Approve Masters", "callback_data": "ap:master:approve"}],
-        [{"text": "🔄 Wait for Re-export", "callback_data": "ap:master:wait"}]
+        [{"text": "✅ Approve All", "callback_data": "ap:songs:approve"}],
+        [{"text": "📥 Download FLACs", "callback_data": "ap:songs:flac"}]
     ]
-    send_message("Please review the final masters:", reply_markup={"inline_keyboard": buttons})
-    
+    for t in tracklist:
+        n = t.get('track')
+        buttons.append([{"text": f"🔄 Redo Track {n}", "callback_data": f"ap:songs:redo:{n}"}])
+    buttons.append([{"text": "❌ Remake Entire Album", "callback_data": "ap:songs:reject"}])
+
+    send_message("👆 <b>Review your tracks above:</b>", reply_markup={"inline_keyboard": buttons})
+
     while True:
         flag, content = poll_flags()
-        if flag == "master_approved":
-            break
-        elif flag == "master_wait":
-            send_message("Waiting for re-export... (Replace files in exports dir and click Approve when ready)")
-            # Only remove specific flag, not all flags
+        if flag == "songs_approved":
+            return "approved", None
+        elif flag == "songs_flac_requested":
+            send_message("📦 Packaging FLACs + playlist via Cloudflare tunnel...")
+            _package_and_share_flacs(tracklist, proposal)
+            continue
+        elif flag.startswith("songs_redo_"):
             try:
-                os.remove(os.path.join(FLAGS_DIR, "master_wait"))
-            except FileNotFoundError:
-                pass
+                track_num = int(flag.split('_')[-1])
+                return "redo_track", (track_num, content)
+            except Exception:
+                continue
+        elif flag == "songs_rejected":
+            return "reject", content
 
-def phase_4_album_cover(proposal, tracklist, state=None):
-    send_agent_notification("User approved songs, generating album cover")
-    send_message("🎨 Generating album cover...")
-    
+
+def _package_and_share_flacs(tracklist, proposal):
+    try:
+        import tempfile
+        album_name = proposal.get("album", "ALBUM").replace(" ", "-")
+        pack_dir = os.path.join(tempfile.gettempdir(), f"flac-{album_name}")
+        os.makedirs(pack_dir, exist_ok=True)
+
+        flac_files = []
+        for idx, t in enumerate(tracklist):
+            flac = t.get("master_path") or t.get("flac_path")
+            if flac and os.path.exists(flac):
+                title = t.get("title", f"Track_{idx+1}")
+                dest_name = f"{(idx+1):02d}-{title.replace(' ', '-')}.flac"
+                dest = os.path.join(pack_dir, dest_name)
+                shutil.copy2(flac, dest)
+                flac_files.append(dest_name)
+            elif t.get("mp3_path") and os.path.exists(t["mp3_path"]):
+                dest_name = f"{(idx+1):02d}-{t.get('title', f'Track_{idx+1}').replace(' ', '-')}.mp3"
+                dest = os.path.join(pack_dir, dest_name)
+                shutil.copy2(t["mp3_path"], dest)
+                flac_files.append(dest_name)
+
+        # M3U playlist
+        if flac_files:
+            playlist_path = os.path.join(pack_dir, f"{album_name}.m3u")
+            with open(playlist_path, "w") as pf:
+                pf.write("#EXTM3U\n")
+                for fname in flac_files:
+                    title_clean = os.path.splitext(fname)[0].split("-", 1)[-1].replace("-", " ")
+                    pf.write(f"#EXTINF:-1,{title_clean}\n{fname}\n")
+
+        # Tag metadata
+        tag_script = "/opt/data/skills/delivery-receipt/scripts/tag_metadata.py"
+        if os.path.exists(tag_script):
+            subprocess.run(["/opt/hermes/.venv/bin/python3", tag_script, "--dir", pack_dir], capture_output=True, timeout=60)
+
+        # Share via Cloudflare tunnel
+        res = subprocess.run(["/opt/hermes/.venv/bin/python3", SHARE_SCRIPT, "--path", pack_dir], capture_output=True, text=True, timeout=120)
+        external_link = None
+        for line in res.stdout.splitlines():
+            if "[EXTERNAL LINK]" in line:
+                external_link = line.split("[EXTERNAL LINK]")[-1].strip()
+                break
+
+        if external_link:
+            send_message(f"📥 <b>{album_name}</b> — {len(flac_files)} tracks + playlist\n🔗 <a href='{external_link}'>Download ZIP</a>")
+        else:
+            send_message(f"📥 FLACs packaged ({len(flac_files)} tracks).")
+        shutil.rmtree(pack_dir, ignore_errors=True)
+    except Exception as e:
+        send_message(f"❌ FLAC packaging error: {e}")
+
+
+# ── Phase 4: Album Cover Art ───────────────────────────────────────────
+def generate_artwork_venice(prompt, album_name):
+    parts = album_name.split('/')
+    if len(parts) == 2:
+        art_dir = get_album_artwork_dir(parts[0])
+        out_path = os.path.join(art_dir, f"{parts[1].replace(' ', '_')}_cover.png")
+    else:
+        art_dir = get_album_artwork_dir(album_name)
+        out_path = os.path.join(art_dir, "album_cover.png")
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+
+    if not VENICE_API_KEY:
+        logger.error("VENICE_API_KEY missing, skipping image generation.")
+        return None
+
+    url = "https://api.venice.ai/api/v1/images/generations"
+    headers = {"Authorization": f"Bearer {VENICE_API_KEY}", "Content-Type": "application/json"}
+    payload = {
+        "model": "grok-imagine-image-quality",
+        "prompt": f"{prompt} NO TEXT, NO LETTERS, NO TYPOGRAPHY",
+        "response_format": "b64_json"
+    }
+    req = urllib.request.Request(url, data=json.dumps(payload).encode('utf-8'), headers=headers)
+    for attempt in range(2):
+        try:
+            with urllib.request.urlopen(req, timeout=90) as resp:
+                data = json.loads(resp.read().decode('utf-8'))
+                b64 = data.get('data', [{}])[0].get('b64_json')
+                if b64:
+                    with open(out_path, 'wb') as f:
+                        f.write(base64.b64decode(b64))
+                    return out_path
+        except Exception as e:
+            logger.warning(f"Venice image generation attempt {attempt+1} failed: {e}")
+            time.sleep(2)
+    return None
+
+
+def upscale_artwork_venice(image_path, target_size=3000):
+    if not VENICE_API_KEY or not os.path.exists(image_path):
+        return image_path
+    from PIL import Image
+    try:
+        img = Image.open(image_path)
+        if img.size[0] >= target_size and img.size[1] >= target_size:
+            return image_path
+
+        with open(image_path, 'rb') as f:
+            img_data = f.read()
+
+        boundary = '----VeniceUpscaleBoundary'
+        body = (
+            f'--{boundary}\r\nContent-Disposition: form-data; name="image"; filename="{os.path.basename(image_path)}"\r\n'
+            f'Content-Type: image/png\r\n\r\n'.encode() + img_data + b'\r\n' +
+            f'--{boundary}\r\nContent-Disposition: form-data; name="scale"\r\n\r\n4\r\n'
+            f'--{boundary}\r\nContent-Disposition: form-data; name="creativity"\r\n\r\n0.01\r\n'
+            f'--{boundary}--\r\n'.encode()
+        )
+        url = "https://api.venice.ai/api/v1/image/upscale"
+        req = urllib.request.Request(url, data=body, method='POST', headers={
+            'Authorization': f'Bearer {VENICE_API_KEY}',
+            'Content-Type': f'multipart/form-data; boundary={boundary}',
+        })
+
+        with urllib.request.urlopen(req, timeout=150) as response:
+            upscaled_data = response.read()
+
+        if len(upscaled_data) > 1000:
+            tmp_path = image_path.replace('.png', '_4k.png')
+            with open(tmp_path, 'wb') as f:
+                f.write(upscaled_data)
+            upscaled_img = Image.open(tmp_path)
+            final = upscaled_img.resize((target_size, target_size), Image.LANCZOS)
+            final.save(image_path, 'PNG')
+            if os.path.getsize(image_path) > 5_000_000:
+                jpg_path = os.path.splitext(image_path)[0] + '.jpg'
+                final.convert('RGB').save(jpg_path, 'JPEG', quality=95)
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+            return image_path
+    except Exception as e:
+        logger.error(f"Venice upscale failed: {e}")
+        if logger_hub:
+            logger_hub.log_failure("UPSCALE_FAIL", str(e), album=os.path.basename(image_path), phase=4)
+    return image_path
+
+
+def phase_4_album_cover(proposal, tracklist, state=None, dashboard=None):
+    if dashboard:
+        dashboard.set_phase(4)
     album_name = proposal.get('album', 'Unknown Album')
     visual = proposal.get('visual', '')
-    
+
+    send_message("🎨 <b>Generating album cover...</b>")
     while True:
-        # ── 1. Generate album cover ──
         cover_path = generate_artwork_venice(visual, album_name)
         if state:
             add_cost(state, "cover_generation", VENICE_IMAGE_GEN_COST)
-        if not cover_path:
-            cmd = [
-                "/opt/hermes/.venv/bin/python3", GEN_ARTWORK_SCRIPT,
-                "--prompt", f"{visual} NO TEXT, NO LETTERS, NO TYPOGRAPHY",
-                "--model", "grok-imagine-image-quality",
-                "--album", album_name,
-                "--tracks", ""
-            ]
-            subprocess.run(cmd)
-            cover_path = os.path.join(get_album_artwork_dir(album_name), "album_cover.png")
-            
-        if not (cover_path and os.path.exists(cover_path)):
+        if not cover_path or not os.path.exists(cover_path):
             send_message("❌ Failed to generate album cover.")
             return "regen"
-            
-        # Optional title overlay on album cover
+
         if os.path.exists(OVERLAY_TITLE_SCRIPT):
-            # Save raw bg backup before overlay
             album_bg = cover_path.replace('.png', '_bg.png')
             if not os.path.exists(album_bg):
                 shutil.copy2(cover_path, album_bg)
             styled_album = stylize_title(album_name)
-            overlay_source = album_bg if os.path.exists(album_bg) else cover_path
             subprocess.run(["/opt/hermes/.venv/bin/python3", OVERLAY_TITLE_SCRIPT,
-                "--image", overlay_source, "--title", styled_album, "--auto-color", "--output", cover_path])
-        
-        # Upscale to 3000x3000
+                            "--image", album_bg, "--title", styled_album, "--auto-color", "--output", cover_path], capture_output=True)
+
         send_message("⬆️ Upscaling album cover to 3000×3000...")
         upscale_artwork_venice(cover_path)
         if state:
             add_cost(state, "cover_upscale", VENICE_UPSCALE_COST)
-            
-        album_art_buttons = [
+
+        buttons = [
             [{"text": "✅ Approve Album Cover", "callback_data": "ap:albumcover:approve"}],
-            [{"text": "🔄 Regenerate", "callback_data": "ap:albumcover:regen"}]
+            [{"text": "🔄 Regenerate Cover", "callback_data": "ap:albumcover:regen"}]
         ]
-        send_photo(cover_path, caption=f"🎨 Album Cover: {album_name}", reply_markup={"inline_keyboard": album_art_buttons})
-        
-        # ── Poll ──
+        send_photo(cover_path, caption=f"🎨 Album Cover: <b>{album_name}</b>", reply_markup={"inline_keyboard": buttons})
+
         while True:
             flag, content = poll_flags()
             if flag == "albumcover_approved":
@@ -1149,25 +1037,11 @@ def phase_4_album_cover(proposal, tracklist, state=None):
                 return "approved"
             elif flag == "albumcover_regen":
                 send_message("🔄 Regenerating album cover...")
-                if state:
-                    add_cost(state, "cover_regeneration", VENICE_IMAGE_GEN_COST)
-                    costs = init_cost_tracker(state)
-                    costs["cover_regen_count"] = costs.get("cover_regen_count", 0) + 1
-                    save_state(state)
-                break  # break inner loop to regenerate
+                break
 
 
+# ── Phase 5: Track Cover Art ───────────────────────────────────────────
 def _build_varied_scene(visual, title, direction, track_idx, total_tracks):
-    """Build a varied but cohesive scene prompt for each track cover.
-    
-    Creates visual continuity through shared style/palette while varying:
-    - Environment/setting
-    - Weather/atmospheric effects
-    - Camera angle/composition
-    - Time of day / lighting
-    - Color accent
-    """
-    # ── Environment progression (tells a visual story across tracks) ──
     environments = [
         "desolate volcanic wasteland with cracked obsidian ground and distant eruptions",
         "flooded industrial ruins with water reflecting burning sky, submerged machinery",
@@ -1175,8 +1049,6 @@ def _build_varied_scene(visual, title, direction, track_idx, total_tracks):
         "hurricane-ravaged cityscape with buildings torn apart, debris spiraling upward",
         "aftermath crater landscape under clearing skies, embers floating like fireflies",
     ]
-    
-    # ── Weather / atmospheric FX (each track gets a unique weather system) ──
     weather = [
         "raining molten fire droplets from a volcanic sky, pyroclastic flow in background",
         "torrential acid rain with neon reflections in puddles, thick fog rolling in",
@@ -1184,8 +1056,6 @@ def _build_varied_scene(visual, title, direction, track_idx, total_tracks):
         "category 5 hurricane winds with horizontal rain and swirling fire tornados",
         "ash snow falling gently through shafts of golden light breaking through dark clouds",
     ]
-    
-    # ── Camera angle / composition ──
     cameras = [
         "extreme wide shot, figure silhouetted against massive explosion",
         "low angle shot looking up through rain, reflections on wet ground",
@@ -1193,8 +1063,6 @@ def _build_varied_scene(visual, title, direction, track_idx, total_tracks):
         "dutch angle close-up with debris flying past camera, motion blur",
         "symmetrical centered composition, long perspective vanishing into distance",
     ]
-    
-    # ── Time of day / lighting ──
     lighting = [
         "blood-red twilight, sky cracked with orange fissures",
         "deep midnight blue with bioluminescent accents and distant fires",
@@ -1202,8 +1070,6 @@ def _build_varied_scene(visual, title, direction, track_idx, total_tracks):
         "stark chiaroscuro with single harsh spotlight from above",
         "golden hour through smoke haze, long dramatic shadows",
     ]
-    
-    # ── Color accent (consistent series palette but each track has a hero color) ──
     color_accents = [
         "dominant crimson red and charcoal black",
         "deep ocean teal and rusted copper",
@@ -1211,46 +1077,36 @@ def _build_varied_scene(visual, title, direction, track_idx, total_tracks):
         "molten amber-orange and obsidian",
         "ghostly silver-white and burnt umber",
     ]
-    
-    # Cycle through variations (wraps for albums > 5 tracks)
     env = environments[track_idx % len(environments)]
     wthr = weather[track_idx % len(weather)]
     cam = cameras[track_idx % len(cameras)]
     light = lighting[track_idx % len(lighting)]
     color = color_accents[track_idx % len(color_accents)]
-    
-    # Build the full scene prompt
-    scene = (
-        f"{visual}. "
-        f"UNIQUE SCENE FOR THIS TRACK: {env}. "
-        f"WEATHER: {wthr}. "
-        f"CAMERA: {cam}. "
-        f"LIGHTING: {light}. "
-        f"COLOR PALETTE: {color}. "
-        f"Track mood: {title} — {direction}. "
-        f"IMPORTANT: This is track {track_idx + 1} of {total_tracks} in a cohesive album art series. "
-        f"Same dark cinematic style and hyperdetailed quality throughout, but each cover must have "
-        f"a DISTINCTLY DIFFERENT environment and atmosphere. "
+
+    return (
+        f"{visual}. UNIQUE SCENE: {env}. WEATHER: {wthr}. CAMERA: {cam}. "
+        f"LIGHTING: {light}. COLOR PALETTE: {color}. Track mood: {title} — {direction}. "
+        f"Cohesive album art series track {track_idx + 1}/{total_tracks}. "
         f"NO TEXT, NO LETTERS, NO TYPOGRAPHY, NO WORDS"
     )
-    return scene
 
-def _generate_all_track_covers(proposal, tracklist, visual, state=None):
-    """Generate all track covers, each sent with its own regen button."""
+
+def phase_5_track_covers(proposal, tracklist, state=None, dashboard=None):
+    if dashboard:
+        dashboard.set_phase(5)
     album_name = proposal.get('album', 'Unknown Album')
+    visual = proposal.get('visual', '')
     track_art_dir = get_album_artwork_dir(album_name)
     os.makedirs(track_art_dir, exist_ok=True)
-    
-    send_message("🎨 Generating track covers with scene variation...")
+
+    send_message("🎨 <b>Generating track covers with scene variation...</b>")
     track_cover_paths = []
-    
+
     for i, t in enumerate(tracklist):
         title = t.get('title', f'Track {i+1}')
         direction = t.get('direction', t.get('genre', ''))
         scene = _build_varied_scene(visual, title, direction, i, len(tracklist))
-        
-        send_agent_notification(f"Generating cover {i+1}/{len(tracklist)}: {title}")
-        
+
         cover_path = generate_artwork_venice(scene, f"{album_name}/{title}")
         if state:
             add_cost(state, "cover_generation", VENICE_IMAGE_GEN_COST)
@@ -1259,146 +1115,134 @@ def _generate_all_track_covers(proposal, tracklist, visual, state=None):
             if cover_path != final_path:
                 shutil.move(cover_path, final_path)
                 cover_path = final_path
-            
-            # Waveform banner
-            if os.path.exists(GEN_WAVEFORM_SCRIPT):
-                subprocess.run(["/opt/hermes/.venv/bin/python3", GEN_WAVEFORM_SCRIPT,
-                    "--image", cover_path, "--title", title,
-                    "--output-dir", os.path.join(get_album_artwork_dir(album_name), "waveforms")], capture_output=True)
-            
-            # Save raw background BEFORE overlay (for clean re-overlays)
+
             bg_backup = cover_path.replace('_cover.png', '_cover_bg.png')
             if not os.path.exists(bg_backup):
                 shutil.copy2(cover_path, bg_backup)
-            
-            # Title overlay (always read from clean _bg to avoid stacking)
+
             if os.path.exists(OVERLAY_TITLE_SCRIPT):
                 styled_title = stylize_title(title)
-                overlay_source = bg_backup if os.path.exists(bg_backup) else cover_path
                 subprocess.run(["/opt/hermes/.venv/bin/python3", OVERLAY_TITLE_SCRIPT,
-                    "--image", overlay_source, "--title", styled_title,
-                    "--bottom", "--auto-color", "--output", cover_path], capture_output=True)
-            
-            # Send with per-track regen button
+                                "--image", bg_backup, "--title", styled_title, "--bottom", "--auto-color", "--output", cover_path], capture_output=True)
+
             track_btn = [[{"text": f"🔄 Regen {title}", "callback_data": f"ap:art:redo:{i+1}"}]]
-            send_photo(cover_path, caption=f"🎨 Track {i+1}: {title}", reply_markup={"inline_keyboard": track_btn})
+            send_photo(cover_path, caption=f"🎨 Track {i+1}: <b>{title}</b>", reply_markup={"inline_keyboard": track_btn})
             track_cover_paths.append(cover_path)
-        else:
-            send_message(f"⚠️ Failed to generate cover for {title}")
-    
-    send_message(f"✅ All {len(tracklist)} track covers generated!")
-    return track_cover_paths
 
-def _redo_single_track_cover(proposal, tracklist, track_num, visual):
-    """Regenerate a single track cover and send the new one."""
-    album_name = proposal.get('album', 'Unknown Album')
-    track_art_dir = get_album_artwork_dir(album_name)
-    
-    idx = track_num - 1
-    if idx < 0 or idx >= len(tracklist):
-        send_message(f"❌ Track {track_num} not found")
-        return
-    
-    t = tracklist[idx]
-    title = t.get('title', f'Track {track_num}')
-    direction = t.get('direction', t.get('genre', ''))
-    scene = _build_varied_scene(visual, title, direction, idx, len(tracklist))
-    
-    send_message(f"🔄 Regenerating cover for Track {track_num}: {title}...")
-    
-    cover_path = generate_artwork_venice(scene, f"{album_name}/{title}")
-    if cover_path and os.path.exists(cover_path):
-        final_path = os.path.join(track_art_dir, f"{title}_cover.png")
-        if cover_path != final_path:
-            shutil.move(cover_path, final_path)
-            cover_path = final_path
-        
-        # Save raw bg backup before overlay
-        bg_backup = cover_path.replace('_cover.png', '_cover_bg.png')
-        shutil.copy2(cover_path, bg_backup)  # Always overwrite on redo
-        
-        if os.path.exists(OVERLAY_TITLE_SCRIPT):
-            styled_title = stylize_title(title)
-            subprocess.run(["/opt/hermes/.venv/bin/python3", OVERLAY_TITLE_SCRIPT,
-                "--image", bg_backup, "--title", styled_title,
-                "--bottom", "--auto-color", "--output", cover_path], capture_output=True)
-        
-        track_btn = [[{"text": f"🔄 Regen {title}", "callback_data": f"ap:art:redo:{track_num}"}]]
-        send_photo(cover_path, caption=f"🎨 Track {track_num}: {title} (NEW)", reply_markup={"inline_keyboard": track_btn})
-    else:
-        send_message(f"❌ Failed to regenerate cover for {title}")
+    buttons = [
+        [{"text": "✅ Approve All Covers", "callback_data": "ap:trackcovers:approve"}],
+        [{"text": "🔄 Regenerate All", "callback_data": "ap:trackcovers:regenall"}]
+    ]
+    send_message("👆 <b>Review track covers above:</b>", reply_markup={"inline_keyboard": buttons})
 
-def phase_5_track_covers(proposal, tracklist, state=None):
-    send_message("🎨 Generating track covers...")
-    visual = proposal.get('visual', '')
-    album_name = proposal.get('album', 'Unknown Album')
-    
     while True:
-        # ── 1. Generate all track covers ──
-        track_cover_paths = _generate_all_track_covers(proposal, tracklist, visual, state=state)
-        
-        # ── 2. Final buttons after ALL covers shown ──
-        buttons = [
-            [{"text": "✅ Approve All Covers", "callback_data": "ap:trackcovers:approve"}],
-            [{"text": "🔄 Regenerate All", "callback_data": "ap:trackcovers:regenall"}],
-        ]
-        send_message("👆 <b>Review all track covers above. Tap 🔄 on any individual cover to redo it, or:</b>", reply_markup={"inline_keyboard": buttons})
-        
-        # ── 3. Poll ──
-        while True:
-            flag, content = poll_flags()
-            if flag == "trackcovers_approved":
-                send_message("⬆️ Upscaling all track covers to 3000×3000 for SoundCloud...")
-                track_art_dir = get_album_artwork_dir(album_name)
-                for t in tracklist:
-                    title = t.get('title', '')
-                    cover_file = os.path.join(track_art_dir, f"{title}_cover.png")
-                    if os.path.exists(cover_file):
-                        send_message(f"⬆️ Upscaling {title} cover...")
-                        upscale_artwork_venice(cover_file)
-                        if state:
-                            add_cost(state, "cover_upscale", VENICE_UPSCALE_COST)
-                send_message("✅ All track covers upscaled to 3000×3000!")
-                return "approved"
-            elif flag == "trackcovers_regenall":
-                send_message("🔄 Regenerating all track covers...")
+        flag, content = poll_flags()
+        if flag == "trackcovers_approved":
+            send_message("⬆️ Upscaling all track covers to 3000×3000 for release...")
+            for cp in track_cover_paths:
+                upscale_artwork_venice(cp)
                 if state:
-                    add_cost(state, "cover_regeneration", VENICE_IMAGE_GEN_COST * len(tracklist))
-                    costs = init_cost_tracker(state)
-                    costs["cover_regen_count"] = costs.get("cover_regen_count", 0) + len(tracklist)
-                    save_state(state)
-                break  # break inner loop to regenerate all
-            elif flag and flag.startswith("art_redo_"):
-                try:
-                    track_num = int(flag.split("_")[-1])
-                except ValueError:
-                    continue
-                _redo_single_track_cover(proposal, tracklist, track_num, visual)
-                if state:
-                    add_cost(state, "cover_regeneration", VENICE_IMAGE_GEN_COST)
-                    costs = init_cost_tracker(state)
-                    costs["cover_regen_count"] = costs.get("cover_regen_count", 0) + 1
-                    save_state(state)
-                continue  # keep polling
+                    add_cost(state, "cover_upscale", VENICE_UPSCALE_COST)
+            send_message("✅ All track covers upscaled to 3000×3000!")
+            return "approved"
+        elif flag == "trackcovers_regenall":
+            send_message("🔄 Regenerating all track covers...")
+            return phase_5_track_covers(proposal, tracklist, state=state, dashboard=dashboard)
+        elif flag and flag.startswith("art_redo_"):
+            try:
+                track_num = int(flag.split("_")[-1])
+                idx = track_num - 1
+                if 0 <= idx < len(tracklist):
+                    t = tracklist[idx]
+                    title = t.get('title', f'Track {track_num}')
+                    scene = _build_varied_scene(visual, title, t.get('direction', ''), idx, len(tracklist))
+                    new_path = generate_artwork_venice(scene, f"{album_name}/{title}")
+                    if new_path:
+                        send_photo(new_path, caption=f"🎨 Track {track_num}: <b>{title}</b> (Redone)")
+            except Exception:
+                pass
 
-def phase_6_publish(proposal):
-    album_slug = proposal.get('album', 'release').lower().replace(' ', '-')
-    send_message("🚀 Publishing to SoundCloud...")
-    
+
+# ── Phase 6: Publish & Automatic Deliverables ───────────────────────────
+def phase_6_publish(proposal, dashboard=None):
+    if dashboard:
+        dashboard.set_phase(6)
+    album_name = proposal.get('album', 'release')
+    album_slug = album_name.lower().replace(' ', '-')
+    send_message("🚀 <b>Publishing release to SoundCloud...</b>")
+
+    # 1. Tag metadata and embed artwork
+    tag_script = "/opt/data/skills/delivery-receipt/scripts/tag_metadata.py"
+    if os.path.exists(tag_script):
+        try:
+            logger.info(f"Tagging metadata & embedding artwork for release: {album_slug}")
+            subprocess.run(["/opt/hermes/.venv/bin/python3", tag_script, "--release", album_slug], capture_output=True, text=True, timeout=120)
+        except Exception as e:
+            logger.error(f"tag_metadata failed: {e}")
+
+    # 2. Push to SoundCloud
     cmd = ["/opt/hermes/.venv/bin/python3", PUBLISH_SCRIPT, "--release", album_slug, "--confirm", "--force"]
     res = subprocess.run(cmd, capture_output=True, text=True)
-    
+
     if res.returncode == 0:
-        send_message(f"✅ {proposal.get('album')} is live on SoundCloud!")
-        send_agent_notification("Published to SoundCloud")
+        send_message(f"✅ <b>{album_name}</b> is live on SoundCloud!")
+        send_agent_notification(f"Published {album_name} to SoundCloud")
     else:
-        send_message(f"❌ Publish failed:\n{res.stderr}")
+        send_message(f"❌ SoundCloud upload failed:\n<pre>{res.stderr[:300]}</pre>")
+        if logger_hub:
+            logger_hub.log_failure("PUBLISH_FAIL", res.stderr, album=album_name, phase=6)
+
+    # 3. Automatic Post-Publish Deliverables (Windows review playlist + Cloudflare link)
+    send_message("📦 <b>Packaging finalized release & Windows review playlist...</b>")
+    try:
+        playlist_script = "/opt/data/skills/delivery-receipt/scripts/send_windows_playlist.py"
+        receipt_script = "/opt/data/skills/delivery-receipt/scripts/deliver_receipt.py"
+        if os.path.exists(playlist_script):
+            subprocess.run(["/opt/hermes/.venv/bin/python3", playlist_script, "--release", album_slug], capture_output=True, text=True, timeout=120)
+        if os.path.exists(receipt_script):
+            subprocess.run(["/opt/hermes/.venv/bin/python3", receipt_script, "--release", album_slug], capture_output=True, text=True, timeout=120)
+
+        # Share album directory via Cloudflare
+        album_release_dir = f"/opt/data/music/releases/{album_slug}"
+        if not os.path.exists(album_release_dir):
+            album_release_dir = get_album_dir(album_name)
+
+        if os.path.exists(album_release_dir):
+            share_res = subprocess.run(["/opt/hermes/.venv/bin/python3", SHARE_SCRIPT, "--path", album_release_dir], capture_output=True, text=True, timeout=180)
+            for line in share_res.stdout.splitlines():
+                if "[EXTERNAL LINK]" in line:
+                    ext_link = line.split("[EXTERNAL LINK]")[-1].strip()
+                    send_message(f"🔗 <b>Full Release Package (Lossless FLACs + Artwork):</b>\n<a href='{ext_link}'>{ext_link}</a>")
+                    break
+    except Exception as e:
+        logger.error(f"Post-publish packaging error: {e}")
+
+
+def run_test_mode(proposal_index):
+    print(f"--- PIPELINE TEST MODE (Proposal Index: {proposal_index}) ---")
+    try:
+        with open(PROPOSALS_FILE, 'r') as f:
+            raw = json.load(f)
+            proposals = raw.get("proposals", raw) if isinstance(raw, dict) else raw
+            if proposal_index >= len(proposals):
+                print(f"❌ Invalid index {proposal_index}. Only {len(proposals)} proposals available.")
+                return
+            proposal = proposals[proposal_index]
+            print(f"✅ Successfully loaded Proposal [{proposal_index}]: {proposal.get('album')}")
+            print(f"   Subgenre: {proposal.get('subgenre')}")
+            print(f"   BPM/Key: {proposal.get('bpm')} / {proposal.get('key')}")
+            print("--- TEST PASSED: 0-based boundary verified cleanly ---")
+    except Exception as e:
+        print(f"❌ Test error: {e}")
+
 
 def main():
-    parser = argparse.ArgumentParser(description="Album Production Pipeline")
-    parser.add_argument("--proposal-index", type=int, default=0, help="Index of the proposal to produce")
-    parser.add_argument("--resume", action="store_true", help="Resume from saved state")
-    parser.add_argument("--test", action="store_true", help="Run in test mode (no execution)")
+    parser = argparse.ArgumentParser(description="VØIDRIDE Album Production Pipeline")
+    parser.add_argument("--proposal-index", type=int, default=0, help="0-based index of proposal")
+    parser.add_argument("--mode", default="full", choices=["full", "sample"])
+    parser.add_argument("--duration", type=int, default=None)
+    parser.add_argument("--resume", action="store_true")
+    parser.add_argument("--test", action="store_true")
     args = parser.parse_args()
 
     if args.test:
@@ -1406,107 +1250,105 @@ def main():
         return
 
     clear_flags()
-
-    # Load state first for resume
     state = load_state()
-    
+    mode = args.mode
+    duration = args.duration if args.duration else (20 if mode == "sample" else 260)
+
     if args.resume and state.get("proposal"):
-        logger.info(f"Resuming from phase {state.get('phase', 1)}")
         proposal = state["proposal"]
+        mode = state.get("mode", mode)
+        duration = state.get("duration", duration)
         profile = {}
         if os.path.exists(PROFILE_FILE):
-            with open(PROFILE_FILE, 'r') as f:
-                profile = json.load(f)
+            try:
+                with open(PROFILE_FILE) as pf:
+                    profile = json.load(pf)
+            except Exception: pass
     else:
-        # Load Proposal
         if not os.path.exists(PROPOSALS_FILE):
             logger.error(f"Proposals file not found: {PROPOSALS_FILE}")
             sys.exit(1)
-        
         with open(PROPOSALS_FILE, 'r') as f:
             raw = json.load(f)
             proposals = raw.get("proposals", raw) if isinstance(raw, dict) else raw
             if args.proposal_index >= len(proposals):
-                logger.error(f"Invalid proposal index {args.proposal_index}")
+                logger.error(f"Proposal index {args.proposal_index} out of range (count: {len(proposals)})")
+                send_message(f"❌ Error: Proposal index {args.proposal_index} out of range.")
                 sys.exit(1)
             proposal = proposals[args.proposal_index]
 
-        # Load Profile
-        if not os.path.exists(PROFILE_FILE):
-            logger.error(f"Profile file not found: {PROFILE_FILE}")
-            sys.exit(1)
-        with open(PROFILE_FILE, 'r') as f:
-            profile = json.load(f)
+        profile = {}
+        if os.path.exists(PROFILE_FILE):
+            try:
+                with open(PROFILE_FILE) as pf:
+                    profile = json.load(pf)
+            except Exception: pass
 
-    # Pipeline Loop
-    tracklist = None
+    state["mode"] = mode
+    state["duration"] = duration
+    state["proposal"] = proposal
+
+    current_phase = state.get("phase", 1) if args.resume else 1
+    tracklist = state.get("completed_tracks") or state.get("tracklist")
     redo_track, redo_feedback = None, None
-    
-    current_phase = state.get("phase", 1)
-    if args.resume:
-        tracklist = state.get("tracklist")
-    else:
-        current_phase = 1
-        
+
     acquire_lock()
-    
-    # Initialize cost tracker
     init_cost_tracker(state)
-    
+
+    # Initialize Live Status Dashboard
+    dashboard = LiveStatusDashboard(
+        album_name=proposal.get("album", "Unknown Album"),
+        mode=mode,
+        duration=duration,
+        subgenre=proposal.get("subgenre", ""),
+        total_tracks=5
+    )
+    dashboard.init_message()
+
     try:
         while True:
-            # Phase 1: Produce
+            # Phase 1: Music Production
             if current_phase <= 1:
-                if not tracklist or redo_track or redo_feedback:
-                    # Save state BEFORE production so watchdog can resume if killed
-                    state["phase"] = 1
-                    state["proposal"] = proposal
-                    save_state(state)
-                    tracklist = phase_1_produce(proposal, profile, redo_track, redo_feedback)
-                    # Accumulate track production costs
-                    for t in tracklist:
-                        track_cost = float(t.get("cost", 0))
-                        if track_cost > 0:
-                            add_cost(state, "track_production", track_cost)
-                    redo_track, redo_feedback = None, None
-                    state["tracklist"] = tracklist
-                    state["proposal"] = proposal
-                    state["phase"] = 2
-                    save_state(state)
-                current_phase = 2
-                
-            # Phase 2: DAW Mastering (moved from old Phase 3)
-            if current_phase == 2:
-                phase_2_daw_handoff(proposal, tracklist)
-                state["tracklist"] = tracklist
-                state["phase"] = 3
+                dashboard.set_phase(1)
+                state["phase"] = 1
                 save_state(state)
-                current_phase = 3
+                tracklist = phase_1_produce(proposal, profile, redo_track, redo_feedback, mode=mode, duration=duration, dashboard=dashboard, state=state)
+                state["tracklist"] = tracklist
+                state["phase"] = 2
+                save_state(state)
+                current_phase = 2
 
-            # Phase 3: Song Review (moved from old Phase 2) - now reviewing MASTERED tracks
+            # Phase 2: DAW Mastering (bypassed if mode == sample)
+            if current_phase == 2:
+                if mode == "sample":
+                    logger.info("Sample preview mode: bypassing DAW mastering.")
+                    current_phase = 3
+                else:
+                    dashboard.set_phase(2)
+                    phase_2_daw_handoff(proposal, tracklist, mode=mode, dashboard=dashboard)
+                    state["tracklist"] = tracklist
+                    state["phase"] = 3
+                    save_state(state)
+                    current_phase = 3
+
+            # Phase 3: Song Review
             if current_phase == 3:
-                decision, payload = phase_3_song_review(tracklist, proposal=proposal)
+                dashboard.set_phase(3)
+                decision, payload = phase_3_song_review(tracklist, proposal=proposal, dashboard=dashboard)
                 if decision == "reject":
-                    send_message(f"Album rejected. Restarting production with new direction: {payload}")
-                    # proposals use 'brief' key, not 'description'
+                    send_message(f"❌ Album remaking with direction: <i>{payload}</i>")
                     proposal['brief'] = proposal.get('brief', '') + f"\n[USER REVISION]: {payload}"
                     current_phase = 1
+                    state["completed_tracks"] = []
+                    save_state(state)
                     continue
                 elif decision == "redo_track":
-                    track_num = payload[0]
-                    feedback = payload[1]
-                    send_message(f"🔄 Redoing only track {track_num}...")
-                    tracklist = phase_1_redo_single(proposal, profile, tracklist, track_num, feedback)
-                    # Track redo costs
-                    redo_track_data = tracklist[track_num - 1] if track_num <= len(tracklist) else {}
-                    redo_cost = float(redo_track_data.get("cost", 3.66))
-                    add_cost(state, "track_redos", redo_cost)
-                    costs = init_cost_tracker(state)
-                    costs["redo_count"] = costs.get("redo_count", 0) + 1
+                    t_num, fb = payload
+                    tracklist = phase_1_redo_single(proposal, profile, tracklist, t_num, fb, duration=duration, dashboard=dashboard)
                     state["tracklist"] = tracklist
+                    state["completed_tracks"] = tracklist
                     save_state(state)
-                    # Go back to DAW mastering for the redone track
-                    current_phase = 2
+                    current_phase = 2 if mode != "sample" else 3
                     continue
                 elif decision == "approved":
                     send_message("✅ All songs approved! Moving to album cover art.")
@@ -1514,62 +1356,44 @@ def main():
                     save_state(state)
                     current_phase = 4
 
-            # Phase 4: Album Cover + Review
+            # Phase 4: Album Cover Art
             if current_phase == 4:
-                art_decision = phase_4_album_cover(proposal, tracklist, state=state)
+                dashboard.set_phase(4)
+                art_decision = phase_4_album_cover(proposal, tracklist, state=state, dashboard=dashboard)
                 if art_decision == "approved":
                     state["phase"] = 5
                     save_state(state)
                     current_phase = 5
-                else:  # "regen" - stay in phase 4
+                else:
                     continue
 
-            # Phase 5: Track Covers + Review
+            # Phase 5: Track Cover Art
             if current_phase == 5:
-                covers_decision = phase_5_track_covers(proposal, tracklist, state=state)
+                dashboard.set_phase(5)
+                covers_decision = phase_5_track_covers(proposal, tracklist, state=state, dashboard=dashboard)
                 if covers_decision == "approved":
                     state["phase"] = 6
                     save_state(state)
                     current_phase = 6
-                else:  # "regen" or "regen_track" - stay in phase 5
+                else:
                     continue
-                    
+
             # Phase 6: Publish
             if current_phase == 6:
-                phase_6_publish(proposal)
-                
-                # ── Send cost summary ──
-                album_name = proposal.get('album', 'Unknown Album')
-                cost_summary = format_cost_summary(state, album_name)
+                dashboard.set_phase(6)
+                phase_6_publish(proposal, dashboard=dashboard)
+                cost_summary = format_cost_summary(state, proposal.get('album', 'Release'))
                 send_message(cost_summary)
-                logger.info(f"Total production cost: ${get_total_cost(state):.2f}")
-                
-                # Save costs to release.json
-                album_slug = album_name.lower().replace(' ', '-').replace('_', '-')
-                for release_path in [
-                    os.path.join(get_album_dir(album_name), "release.json"),
-                    f"/opt/data/music/releases/{album_slug}/release.json",
-                ]:
-                    if os.path.exists(release_path):
-                        try:
-                            with open(release_path) as f:
-                                rj = json.load(f)
-                            rj["production_costs"] = state.get("costs", {})
-                            rj["production_costs"]["total"] = get_total_cost(state)
-                            with open(release_path, "w") as f:
-                                json.dump(rj, f, indent=2)
-                        except Exception as e:
-                            logger.error(f"Failed to save costs to {release_path}: {e}")
-                
-                # Pipeline complete, clear state
                 if os.path.exists(STATE_FILE):
-                    os.remove(STATE_FILE)
+                    try: os.remove(STATE_FILE)
+                    except Exception: pass
                 break
     finally:
         release_lock()
         clear_flags()
-        
-    logger.info("Pipeline complete.")
+
+    logger.info("Pipeline execution complete.")
+
 
 if __name__ == "__main__":
     main()

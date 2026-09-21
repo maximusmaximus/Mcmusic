@@ -1,36 +1,24 @@
 services:
-  hermes-music:
-    build:
-      context: .
-      dockerfile: Containerfile
-    container_name: hermes-music
+  sp2:
+    image: localhost/hermes-music_hermes-music:latest
+    container_name: sp2
     ports:
-      - "18802:8642"
-      - "18803:8644"
+      - "18812:8642"
+      - "18813:8644"
     volumes:
       - ./data:/opt/data
       - /mnt/d/music:/opt/data/music
-      - dawagent-sessions:/opt/data/dawagent/sessions
-      - dawagent-exports:/opt/data/dawagent/exports
     env_file:
       - ./.env
     entrypoint: ["/opt/data/scripts/entrypoint-wrapper.sh"]
-    depends_on:
-      - dawagent
 
   dawagent:
-    build:
-      context: ./dawagent
-      dockerfile: Containerfile
-    container_name: dawagent
+    image: localhost/hermes-music_dawagent:latest
+    container_name: dawagent-sp2
     volumes:
-      - dawagent-sessions:/opt/dawagent/sessions
-      - dawagent-exports:/opt/dawagent/exports
+      - ./data/dawagent/sessions:/opt/dawagent/sessions
+      - ./data/dawagent/exports:/opt/dawagent/exports
       - /mnt/d/music:/opt/dawagent/imports:ro
     environment:
       - JACK_NO_AUDIO_RESERVATION=1
       - DISPLAY=:99
-
-volumes:
-  dawagent-sessions:
-  dawagent-exports:
