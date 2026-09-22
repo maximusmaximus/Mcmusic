@@ -43,6 +43,7 @@ PROPOSALS_FILE = "/opt/data/music/proposals/current_proposals.json"
 PROFILE_FILE = "/opt/data/music/profiles/vidride/profile.json"
 ARTWORK_DIR = "/opt/data/music/artwork/covers/"
 ALBUMS_BASE = "/opt/data/music/albums"
+RELEASES_BASE = "/opt/data/music/releases"
 LOCK_FILE = "/tmp/album_pipeline.lock"
 STATE_FILE = "/opt/data/music/pipeline_state.json"
 
@@ -1133,22 +1134,140 @@ def phase_5_track_covers(proposal, tracklist, state=None, dashboard=None):
                 pass
 
 
+def assemble_release(proposal, tracklist, album_slug):
+    """
+    Assemble canonical release directory at /opt/data/music/releases/{album_slug}
+    - Copies master FLAC files (no MP3 duplicates)
+    - Exactly ONE cover per track + ONE album cover in covers/
+    - Writes release.json, tracks_meta.json, and m3u8 playlist
+    - Embeds artwork and tags directly into FLAC masters via tag_metadata.py
+    """
+    release_dir = os.path.join(RELEASES_BASE, album_slug)
+    covers_dir = os.path.join(release_dir, "covers")
+    os.makedirs(covers_dir, exist_ok=True)
+
+    # 1. FLAC files
+    flac_files = []
+    tracks_meta = []
+    tracks = []
+
+    for idx, t in enumerate(tracklist, 1):
+        title = t.get("title", f"Track {idx}")
+        clean_title = title.replace(" ", "_")
+        prefix = f"{idx:02d}_{clean_title}_MASTER"
+        pdir = t.get("production_dir")
+
+        dest_flac = os.path.join(release_dir, f"{prefix}.flac")
+        if pdir and os.path.exists(pdir):
+            cands = glob.glob(os.path.join(pdir, "master_*.flac")) or glob.glob(os.path.join(pdir, "*.flac"))
+            if cands:
+                shutil.copy2(cands[0], dest_flac)
+                flac_files.append(os.path.basename(dest_flac))
+        elif os.path.exists(dest_flac):
+            flac_files.append(os.path.basename(dest_flac))
+
+        tracks.append(title)
+        tracks_meta.append({
+            "title": title,
+            "bpm": t.get("bpm", 120),
+            "key": t.get("key", "Cm"),
+            "genre": t.get("genre", proposal.get("subgenre", "Dark Nightride Trap"))
+        })
+
+    # 2. Cover art - exactly 1 image per song + 1 album cover (no extra loose files)
+    art_dir = get_album_artwork_dir(proposal.get("album", album_slug))
+    # Album cover
+    alb_cov = None
+    if os.path.exists(art_dir):
+        for ext in [".jpg", ".png"]:
+            c = os.path.join(art_dir, f"album_cover{ext}")
+            if os.path.exists(c):
+                alb_cov = c
+                break
+    if alb_cov:
+        ext = os.path.splitext(alb_cov)[1]
+        shutil.copy2(alb_cov, os.path.join(covers_dir, f"album_cover{ext}"))
+
+    for idx, t in enumerate(tracklist, 1):
+        title = t.get("title", f"Track {idx}")
+        clean_title = title.replace(" ", "_")
+        chosen = None
+        if os.path.exists(art_dir):
+            for ext in [".jpg", ".png"]:
+                cands = [
+                    os.path.join(art_dir, f"{title}_cover{ext}"),
+                    os.path.join(art_dir, f"{clean_title}_cover{ext}"),
+                    os.path.join(art_dir, f"{title}{ext}"),
+                    os.path.join(art_dir, f"{clean_title}{ext}"),
+                ]
+                for c in cands:
+                    if os.path.exists(c):
+                        chosen = c
+                        break
+                if chosen:
+                    break
+        if chosen:
+            ext = os.path.splitext(chosen)[1]
+            dest_cov = os.path.join(covers_dir, f"{idx:02d}_{clean_title}{ext}")
+            shutil.copy2(chosen, dest_cov)
+
+    # Clean any unwanted files from release_dir (ensure no MP3s and no loose images in root)
+    for f in os.listdir(release_dir):
+        fp = os.path.join(release_dir, f)
+        if os.path.isfile(fp):
+            if f.endswith(".mp3") or f.endswith(".jpg") or f.endswith(".png"):
+                try: os.remove(fp)
+                except Exception: pass
+
+    # 3. Write release.json & tracks_meta.json
+    release_manifest = {
+        "album": proposal.get("album", album_slug.upper()).replace("-", " "),
+        "promoted_from": album_slug,
+        "promoted_at": datetime.now().isoformat(),
+        "track_count": len(flac_files),
+        "tracks": tracks,
+        "status": "release-ready",
+        "windows_path": f"D:\\music\\releases\\{album_slug}",
+        "source": "master-producer",
+        "genre": proposal.get("subgenre", "Dark Nightride Trap")
+    }
+    with open(os.path.join(release_dir, "release.json"), "w", encoding="utf-8") as f:
+        json.dump(release_manifest, f, indent=2)
+
+    with open(os.path.join(release_dir, "tracks_meta.json"), "w", encoding="utf-8") as f:
+        json.dump(tracks_meta, f, indent=2)
+
+    # 4. Write playlist
+    with open(os.path.join(release_dir, f"{album_slug}_playlist.m3u8"), "w", encoding="utf-8") as pf:
+        pf.write("#EXTM3U\n")
+        for idx, title in enumerate(tracks, 1):
+            clean_title = title.replace(" ", "_")
+            pf.write(f"#EXTINF:-1,VØIDRIDE - {title}\n")
+            pf.write(f"{idx:02d}_{clean_title}_MASTER.flac\n")
+
+    # 5. Tag metadata & embed artwork directly into FLACs
+    tag_script = "/opt/data/skills/delivery-receipt/scripts/tag_metadata.py"
+    if os.path.exists(tag_script):
+        try:
+            logger.info(f"Tagging metadata & embedding artwork into FLACs for release: {album_slug}")
+            subprocess.run(["/opt/hermes/.venv/bin/python3", tag_script, "--release", album_slug], capture_output=True, text=True, timeout=120)
+        except Exception as e:
+            logger.error(f"tag_metadata failed: {e}")
+
+    return release_dir
+
+
 # ── Phase 6: Publish & Automatic Deliverables ───────────────────────────
-def phase_6_publish(proposal, dashboard=None):
+def phase_6_publish(proposal, tracklist=None, dashboard=None):
     if dashboard:
         dashboard.set_phase(6)
     album_name = proposal.get('album', 'release')
     album_slug = album_name.lower().replace(' ', '-')
-    send_message("🚀 <b>Publishing release to SoundCloud...</b>")
+    
+    # 0. Canonical assembly: embed FLAC covers & keep 1 image per song + album cover
+    assemble_release(proposal, tracklist or [], album_slug)
 
-    # 1. Tag metadata and embed artwork
-    tag_script = "/opt/data/skills/delivery-receipt/scripts/tag_metadata.py"
-    if os.path.exists(tag_script):
-        try:
-            logger.info(f"Tagging metadata & embedding artwork for release: {album_slug}")
-            subprocess.run(["/opt/hermes/.venv/bin/python3", tag_script, "--release", album_slug], capture_output=True, text=True, timeout=120)
-        except Exception as e:
-            logger.error(f"tag_metadata failed: {e}")
+    send_message("🚀 <b>Publishing release to SoundCloud...</b>")
 
     # 2. Push to SoundCloud
     cmd = ["/opt/hermes/.venv/bin/python3", PUBLISH_SCRIPT, "--release", album_slug, "--confirm", "--force"]
@@ -1369,7 +1488,7 @@ def main():
             # Phase 6: Publish
             if current_phase == 6:
                 dashboard.set_phase(6)
-                phase_6_publish(proposal, dashboard=dashboard)
+                phase_6_publish(proposal, tracklist=tracklist, dashboard=dashboard)
                 cost_summary = format_cost_summary(state, proposal.get('album', 'Release'))
                 send_message(cost_summary)
                 if os.path.exists(STATE_FILE):
