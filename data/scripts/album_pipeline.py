@@ -1257,32 +1257,17 @@ def assemble_release(proposal, tracklist, album_slug):
     return release_dir
 
 
-# ── Phase 6: Publish & Automatic Deliverables ───────────────────────────
-def phase_6_publish(proposal, tracklist=None, dashboard=None):
+# ── Phase 6: Final Review Gate & Deliverables ───────────────────────────
+def phase_6_final_review(proposal, tracklist=None, state=None, dashboard=None):
     if dashboard:
         dashboard.set_phase(6)
     album_name = proposal.get('album', 'release')
     album_slug = album_name.lower().replace(' ', '-')
-    
-    # 0. Canonical assembly: embed FLAC covers & keep 1 image per song + album cover
+
+    # 1. Canonical assembly: embed FLAC covers & keep strictly 1 image per song + album cover
     assemble_release(proposal, tracklist or [], album_slug)
 
-    send_message("🚀 <b>Publishing release to SoundCloud...</b>")
-
-    # 2. Push to SoundCloud
-    cmd = ["/opt/hermes/.venv/bin/python3", PUBLISH_SCRIPT, "--release", album_slug, "--confirm", "--force"]
-    res = subprocess.run(cmd, capture_output=True, text=True)
-
-    if res.returncode == 0:
-        send_message(f"✅ <b>{album_name}</b> is live on SoundCloud!")
-        send_agent_notification(f"Published {album_name} to SoundCloud")
-    else:
-        send_message(f"❌ SoundCloud upload failed:\n<pre>{res.stderr[:300]}</pre>")
-        if logger_hub:
-            logger_hub.log_failure("PUBLISH_FAIL", res.stderr, album=album_name, phase=6)
-
-    # 3. Automatic Post-Publish Deliverables (Windows review playlist + Cloudflare link)
-    send_message("📦 <b>Packaging finalized release & Windows review playlist...</b>")
+    # 2. Generate Windows review playlist & receipt
     try:
         playlist_script = "/opt/data/skills/delivery-receipt/scripts/send_windows_playlist.py"
         receipt_script = "/opt/data/skills/delivery-receipt/scripts/deliver_receipt.py"
@@ -1290,21 +1275,70 @@ def phase_6_publish(proposal, tracklist=None, dashboard=None):
             subprocess.run(["/opt/hermes/.venv/bin/python3", playlist_script, "--release", album_slug], capture_output=True, text=True, timeout=120)
         if os.path.exists(receipt_script):
             subprocess.run(["/opt/hermes/.venv/bin/python3", receipt_script, "--release", album_slug], capture_output=True, text=True, timeout=120)
+    except Exception as e:
+        logger.error(f"Playlist/receipt generation error: {e}")
 
-        # Share album directory via Cloudflare
-        album_release_dir = f"/opt/data/music/releases/{album_slug}"
-        if not os.path.exists(album_release_dir):
-            album_release_dir = get_album_dir(album_name)
-
-        if os.path.exists(album_release_dir):
+    # 3. Share album directory via Cloudflare tunnel
+    album_release_dir = f"/opt/data/music/releases/{album_slug}"
+    ext_link = None
+    if os.path.exists(album_release_dir):
+        try:
             share_res = subprocess.run(["/opt/hermes/.venv/bin/python3", SHARE_SCRIPT, "--path", album_release_dir], capture_output=True, text=True, timeout=180)
             for line in share_res.stdout.splitlines():
                 if "[EXTERNAL LINK]" in line:
                     ext_link = line.split("[EXTERNAL LINK]")[-1].strip()
-                    send_message(f"🔗 <b>Full Release Package (Lossless FLACs + Artwork):</b>\n<a href='{ext_link}'>{ext_link}</a>")
                     break
-    except Exception as e:
-        logger.error(f"Post-publish packaging error: {e}")
+        except Exception as e:
+            logger.error(f"Packaging error: {e}")
+
+    # 4. Build prompt message with download link & interactive buttons
+    final_buttons = [
+        [{"text": "🚀 Publish to SoundCloud", "callback_data": "ap:final:publish"}],
+        [
+            {"text": "🎵 Edit Songs", "callback_data": "ap:final:edit_songs"},
+            {"text": "🎨 Edit Album Art", "callback_data": "ap:final:edit_album"}
+        ],
+        [
+            {"text": "🖼️ Edit Track Covers", "callback_data": "ap:final:edit_covers"},
+            {"text": "❌ Cancel", "callback_data": "ap:final:cancel"}
+        ]
+    ]
+
+    msg = (
+        f"📦 <b>{album_name} — Final Package Ready!</b>\n\n"
+        f"✨ Lossless 24-bit/48kHz FLAC studio masters (artwork embedded directly into files).\n"
+        f"🖼️ Exactly 1 cover per track + album cover.\n\n"
+    )
+    if ext_link:
+        msg += f"🔗 <b>Download Review Package:</b>\n<a href='{ext_link}'>{ext_link}</a>\n\n"
+    msg += "<b>Would you like to publish to SoundCloud, or make edits?</b>"
+
+    send_message(msg, reply_markup={"inline_keyboard": final_buttons})
+    logger.info("Sent final review package & publishing gate to Telegram. Polling for decisions...")
+
+    # 5. Poll for user decision
+    while True:
+        flag, content = poll_flags()
+        if flag == "final_publish":
+            logger.info("User confirmed publish. Pushing to SoundCloud...")
+            cmd = ["/opt/hermes/.venv/bin/python3", PUBLISH_SCRIPT, "--release", album_slug, "--confirm", "--force"]
+            res = subprocess.run(cmd, capture_output=True, text=True)
+            if res.returncode == 0:
+                send_message(f"✅ <b>{album_name}</b> is live on SoundCloud!")
+                send_agent_notification(f"Published {album_name} to SoundCloud")
+            else:
+                send_message(f"❌ SoundCloud upload failed:\n<pre>{res.stderr[:300]}</pre>")
+                if logger_hub:
+                    logger_hub.log_failure("PUBLISH_FAIL", res.stderr, album=album_name, phase=6)
+            return "published"
+        elif flag == "final_edit_songs":
+            return "edit_songs"
+        elif flag == "final_edit_album":
+            return "edit_album"
+        elif flag == "final_edit_covers":
+            return "edit_covers"
+        elif flag == "final_cancel":
+            return "cancelled"
 
 
 def run_test_mode(proposal_index):
@@ -1485,16 +1519,35 @@ def main():
                 else:
                     continue
 
-            # Phase 6: Publish
+            # Phase 6: Final Review & Publishing Gate
             if current_phase == 6:
                 dashboard.set_phase(6)
-                phase_6_publish(proposal, tracklist=tracklist, dashboard=dashboard)
-                cost_summary = format_cost_summary(state, proposal.get('album', 'Release'))
-                send_message(cost_summary)
-                if os.path.exists(STATE_FILE):
-                    try: os.remove(STATE_FILE)
-                    except Exception: pass
-                break
+                final_decision = phase_6_final_review(proposal, tracklist=tracklist, state=state, dashboard=dashboard)
+                if final_decision == "edit_songs":
+                    send_message("🎵 <b>Returning to Phase 3: Song Review...</b>")
+                    state["phase"] = 3
+                    save_state(state)
+                    current_phase = 3
+                    continue
+                elif final_decision == "edit_album":
+                    send_message("🎨 <b>Returning to Phase 4: Album Cover Art...</b>")
+                    state["phase"] = 4
+                    save_state(state)
+                    current_phase = 4
+                    continue
+                elif final_decision == "edit_covers":
+                    send_message("🖼️ <b>Returning to Phase 5: Track Cover Art...</b>")
+                    state["phase"] = 5
+                    save_state(state)
+                    current_phase = 5
+                    continue
+                else:  # "published" or "cancelled"
+                    cost_summary = format_cost_summary(state, proposal.get('album', 'Release'))
+                    send_message(cost_summary)
+                    if os.path.exists(STATE_FILE):
+                        try: os.remove(STATE_FILE)
+                        except Exception: pass
+                    break
     finally:
         release_lock()
         clear_flags()

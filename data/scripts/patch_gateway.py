@@ -567,6 +567,67 @@ PATCH_CODE = '''
                 await query.answer(text=f'🔄 Regenerating cover for track {track_num}...')
                 return
 
+            # ── Final Review & Publishing Gate Handlers ──
+            if choice == 'final:publish':
+                os.makedirs('/tmp/pipeline_flags', exist_ok=True)
+                with open('/tmp/pipeline_flags/final_publish', 'w') as f:
+                    f.write('publish')
+                await query.answer(text='🚀 Publishing to SoundCloud...')
+                try:
+                    await query.message.reply_text("🚀 <b>Publishing approved!</b> Uploading studio masters to SoundCloud...", parse_mode="HTML")
+                except Exception: pass
+                try: await query.edit_message_reply_markup(reply_markup=None)
+                except: pass
+                return
+
+            if choice == 'final:edit_songs':
+                os.makedirs('/tmp/pipeline_flags', exist_ok=True)
+                with open('/tmp/pipeline_flags/final_edit_songs', 'w') as f:
+                    f.write('edit_songs')
+                await query.answer(text='🎵 Returning to Song Review...')
+                try:
+                    await query.message.reply_text("🎵 <b>Returning to Phase 3: Song Review...</b>", parse_mode="HTML")
+                except Exception: pass
+                try: await query.edit_message_reply_markup(reply_markup=None)
+                except: pass
+                return
+
+            if choice == 'final:edit_album':
+                os.makedirs('/tmp/pipeline_flags', exist_ok=True)
+                with open('/tmp/pipeline_flags/final_edit_album', 'w') as f:
+                    f.write('edit_album')
+                await query.answer(text='🎨 Returning to Album Cover...')
+                try:
+                    await query.message.reply_text("🎨 <b>Returning to Phase 4: Album Cover Art...</b>", parse_mode="HTML")
+                except Exception: pass
+                try: await query.edit_message_reply_markup(reply_markup=None)
+                except: pass
+                return
+
+            if choice == 'final:edit_covers':
+                os.makedirs('/tmp/pipeline_flags', exist_ok=True)
+                with open('/tmp/pipeline_flags/final_edit_covers', 'w') as f:
+                    f.write('edit_covers')
+                await query.answer(text='🖼️ Returning to Track Covers...')
+                try:
+                    await query.message.reply_text("🖼️ <b>Returning to Phase 5: Track Cover Art...</b>", parse_mode="HTML")
+                except Exception: pass
+                try: await query.edit_message_reply_markup(reply_markup=None)
+                except: pass
+                return
+
+            if choice == 'final:cancel':
+                os.makedirs('/tmp/pipeline_flags', exist_ok=True)
+                with open('/tmp/pipeline_flags/final_cancel', 'w') as f:
+                    f.write('cancel')
+                await query.answer(text='❌ Cancelled')
+                try:
+                    await query.message.reply_text("❌ <b>Release finalized locally.</b> SoundCloud publishing skipped.", parse_mode="HTML")
+                except Exception: pass
+                try: await query.edit_message_reply_markup(reply_markup=None)
+                except: pass
+                return
+
             # ── Select N (prompt for Full vs Sample) ──
             if choice.isdigit():
                 try:
