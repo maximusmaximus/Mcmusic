@@ -284,15 +284,31 @@ def send_audio(audio_path, caption=None):
 def send_photo(photo_path, caption=None, reply_markup=None):
     if not TELEGRAM_BOT_TOKEN or not os.path.exists(photo_path):
         return None
+    actual_path = photo_path
+    jpg_candidate = os.path.splitext(photo_path)[0] + '.jpg'
+    if os.path.exists(jpg_candidate):
+        actual_path = jpg_candidate
+    elif os.path.exists(photo_path) and os.path.getsize(photo_path) > 9_000_000:
+        try:
+            from PIL import Image
+            im = Image.open(photo_path)
+            im.convert('RGB').save(jpg_candidate, 'JPEG', quality=94)
+            actual_path = jpg_candidate
+        except Exception:
+            pass
+
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
-    cmd = ['curl', '-s', '-X', 'POST', url, '-F', f'chat_id={TELEGRAM_CHAT_ID}', '-F', f'photo=@{photo_path}']
+    cmd = ['curl', '-s', '-X', 'POST', url, '-F', f'chat_id={TELEGRAM_CHAT_ID}', '-F', f'photo=@{actual_path}']
     if caption:
         cmd.extend(['-F', f'caption={caption}'])
     if reply_markup:
         cmd.extend(['-F', f'reply_markup={json.dumps(reply_markup)}'])
     try:
         res = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
-        return json.loads(res.stdout) if res.stdout.strip() else None
+        out = json.loads(res.stdout) if res.stdout.strip() else None
+        if out and not out.get('ok'):
+            logger.error(f"send_photo Telegram error: {out}")
+        return out
     except Exception as e:
         logger.error(f"send_photo failed: {e}")
         return None

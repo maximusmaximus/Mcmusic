@@ -313,6 +313,9 @@ PATCH_CODE = '''
                 with open('/tmp/pipeline_flags/songs_approved', 'w') as f:
                     f.write('approved')
                 await query.answer(text='✅ Songs approved!')
+                try:
+                    await query.message.reply_text("✅ <b>Songs approved!</b> Starting Phase 4: Album Cover Art generation...", parse_mode="HTML")
+                except Exception: pass
                 try: await query.edit_message_reply_markup(reply_markup=None)
                 except: pass
                 return
@@ -322,6 +325,9 @@ PATCH_CODE = '''
                 with open('/tmp/pipeline_flags/songs_flac_requested', 'w') as f:
                     f.write('requested')
                 await query.answer(text='📥 Packaging FLACs...')
+                try:
+                    await query.message.reply_text("📥 <b>Packaging 24-bit/48kHz FLAC studio masters...</b> Creating Cloudflare download link...", parse_mode="HTML")
+                except Exception: pass
                 return
             
             # Interactive Redo: present preset options instead of instant pending write
@@ -515,6 +521,9 @@ PATCH_CODE = '''
                 with open('/tmp/pipeline_flags/albumcover_approved', 'w') as f:
                     f.write('approved')
                 await query.answer(text='✅ Album cover approved!')
+                try:
+                    await query.message.reply_text("✅ <b>Album cover approved!</b> Moving to track cover art generation...", parse_mode="HTML")
+                except Exception: pass
                 try: await query.edit_message_reply_markup(reply_markup=None)
                 except: pass
                 return
@@ -524,6 +533,9 @@ PATCH_CODE = '''
                 with open('/tmp/pipeline_flags/albumcover_regen', 'w') as f:
                     f.write('regen')
                 await query.answer(text='🔄 Regenerating album cover...')
+                try:
+                    await query.message.reply_text("🔄 <b>Regenerating album cover...</b> Venice AI is creating a new visual variation...", parse_mode="HTML")
+                except Exception: pass
                 return
 
             # ── Track Covers Review Handlers ──
