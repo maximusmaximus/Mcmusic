@@ -264,6 +264,9 @@ def sc_create_playlist(title, track_ids, artwork=None, description="", label=DEF
         if result.get("success"):
             playlist_id = result.get("playlist_id")
             permalink = result.get("permalink_url") or result.get("permalink", "")
+            if not permalink and playlist_id:
+                slug = title.lower().replace(" ", "-")
+                permalink = f"https://soundcloud.com/ridethevoid/sets/{slug}"
             log(f"  ✓ Playlist created: {title} → {permalink}")
             return playlist_id, permalink
     except json.JSONDecodeError:
