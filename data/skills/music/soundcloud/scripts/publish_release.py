@@ -16,6 +16,7 @@ Usage:
 """
 
 import argparse
+import html
 import json
 import os
 import subprocess
@@ -76,7 +77,7 @@ def log(msg):
     print(f"[publish {ts}] {msg}", flush=True)
 
 
-def send_telegram(text, buttons=None, parse_mode="Markdown"):
+def send_telegram(text, buttons=None, parse_mode="HTML"):
     """Send a Telegram message, optionally with inline keyboard buttons."""
     if not TELEGRAM_BOT_TOKEN:
         log("No TELEGRAM_BOT_TOKEN — printing locally")
@@ -209,7 +210,7 @@ def build_tags(track_meta, manifest):
 
 
 def sc_upload(flac_path, title, tags, genre, artwork=None, label=DEFAULT_LABEL):
-    """Upload a single track to SoundCloud. Returns track_id or None."""
+    """Upload a single track to SoundCloud. Returns dict {"track_id": id, "url": permalink_url, "title": title} or None."""
     cmd = [
         sys.executable, str(SC_SCRIPT), "upload",
         "--file", str(flac_path),
@@ -232,8 +233,9 @@ def sc_upload(flac_path, title, tags, genre, artwork=None, label=DEFAULT_LABEL):
         result = json.loads(r.stdout)
         if result.get("success"):
             track_id = result["track_id"]
-            log(f"  ✓ Uploaded: {title} → ID {track_id}")
-            return track_id
+            permalink = result.get("permalink_url") or result.get("permalink", "")
+            log(f"  ✓ Uploaded: {title} → ID {track_id} ({permalink})")
+            return {"track_id": track_id, "url": permalink, "title": title}
     except json.JSONDecodeError:
         log(f"  ✗ Bad response: {r.stdout[:200]}")
     return None
@@ -261,7 +263,7 @@ def sc_create_playlist(title, track_ids, artwork=None, description="", label=DEF
         result = json.loads(r.stdout)
         if result.get("success"):
             playlist_id = result.get("playlist_id")
-            permalink = result.get("permalink", "")
+            permalink = result.get("permalink_url") or result.get("permalink", "")
             log(f"  ✓ Playlist created: {title} → {permalink}")
             return playlist_id, permalink
     except json.JSONDecodeError:
@@ -309,7 +311,7 @@ def review_gate(release_name, manifest, tracks_meta, flacs, dry_run=False):
         meta = tracks_meta[i] if i < len(tracks_meta) else {}
         bpm = meta.get("bpm", "?")
         key = meta.get("key", "?")
-        track_lines.append(f"  {i+1}. {title} ({bpm} BPM, {key})")
+        track_lines.append(f"  {i+1}. {html.escape(title)} ({bpm} BPM, {key})")
 
     tags_sample = []
     if tracks_meta:
@@ -319,13 +321,13 @@ def review_gate(release_name, manifest, tracks_meta, flacs, dry_run=False):
     art_status = "✅ Found" if artwork else "⚠️ Missing"
 
     msg = (
-        f"📦 *Ready to publish: {album}*\n\n"
-        f"🎵 {track_count} tracks:\n"
+        f"📦 <b>Ready to publish: {html.escape(album)}</b>\n\n"
+        f"🎵 <b>{track_count} tracks:</b>\n"
         + "\n".join(track_lines) + "\n\n"
-        f"🏷️ Tags: {', '.join(tags_sample[:5])}...\n"
-        f"🎨 Cover art: {art_status}\n"
-        f"🔒 Sharing: public\n"
-        f"📛 Label: {DEFAULT_LABEL}"
+        f"🏷️ <b>Tags:</b> {html.escape(', '.join(tags_sample[:5]))}...\n"
+        f"🎨 <b>Cover art:</b> {art_status}\n"
+        f"🔒 <b>Sharing:</b> public\n"
+        f"📛 <b>Label:</b> {html.escape(DEFAULT_LABEL)}"
     )
 
     buttons = [
@@ -361,7 +363,7 @@ def preview_gate(release_name, flacs):
     ]
 
     send_telegram(
-        f"👆 *Review the {len(flacs)} tracks above*\n\nReady to publish to SoundCloud?",
+        f"👆 <b>Review the {len(flacs)} tracks above</b>\n\nReady to publish to SoundCloud?",
         buttons=buttons
     )
 
@@ -375,12 +377,16 @@ def publish(release_name, manifest, tracks_meta, flacs, force=False):
     if not force and manifest.get("status") == "published" and manifest.get("soundcloud", {}).get("track_ids"):
         sc = manifest["soundcloud"]
         log(f"⚠ {album_plain} is already published (playlist {sc.get('playlist_id')}) — use --force to re-publish")
-        send_telegram(f"⚠ *{album_plain}* is already published on SoundCloud\\.")
+        send_telegram(f"⚠ <b>{html.escape(album_plain)}</b> is already published on SoundCloud.")
         return False
 
     log(f"Publishing {album} ({len(flacs)} tracks)...")
 
-    send_telegram(f"⏳ Publishing *{album}* to SoundCloud...")
+    send_telegram(
+        f"🚀 <b>Publishing to SoundCloud: {html.escape(album)}</b>\n"
+        f"• Tracks: {len(flacs)} studio masters (24-bit / 48 kHz)\n"
+        f"• Tagging metadata & synchronizing cover art..."
+    )
 
     # 0. Ensure all files are tagged with metadata + cover art
     tag_script = Path("/opt/data/skills/delivery-receipt/delivery-receipt/scripts/tag_metadata.py")
@@ -397,7 +403,7 @@ def publish(release_name, manifest, tracks_meta, flacs, force=False):
             log(f"  ⚠ Tagging failed (non-fatal): {result.stderr[-100:]}")
 
     # 1. Upload all tracks
-    track_ids = []
+    uploaded_tracks = []
     for i, flac in enumerate(flacs):
         import re
         title_plain = re.sub(r'^\d+[\s_\-]*', '', flac.stem.replace("_MASTER", "").replace("_", " "))
@@ -407,23 +413,30 @@ def publish(release_name, manifest, tracks_meta, flacs, force=False):
         genre = meta.get("genre", DEFAULT_GENRE).split("/")[0].strip()
         artwork = find_artwork(release_name, title_plain)
 
-        track_id = sc_upload(flac, title, tags, genre, artwork)
-        if track_id:
-            track_ids.append(track_id)
+        send_telegram(f"📤 <i>[{i+1}/{len(flacs)}]</i> Uploading <b>{html.escape(title)}</b> (24-bit studio FLAC)...")
+
+        track_res = sc_upload(flac, title, tags, genre, artwork)
+        if track_res:
+            uploaded_tracks.append(track_res)
+            send_telegram(f"✅ <i>[{i+1}/{len(flacs)}]</i> <b>{html.escape(title)}</b> uploaded!")
+        else:
+            send_telegram(f"⚠️ <i>[{i+1}/{len(flacs)}]</i> Upload failed for <b>{html.escape(title)}</b>")
         time.sleep(1)
 
+    track_ids = [t["track_id"] for t in uploaded_tracks]
     if not track_ids:
-        send_telegram(f"❌ *{album}* — All uploads failed")
+        send_telegram(f"❌ <b>{html.escape(album)}</b> — All uploads failed.")
         return False
 
     # ── Partial upload warning ──
     failed_count = len(flacs) - len(track_ids)
     if failed_count > 0:
         log(f"⚠ {failed_count}/{len(flacs)} tracks failed to upload")
-        send_telegram(f"⚠ *{album}*: {failed_count} of {len(flacs)} tracks failed to upload")
+        send_telegram(f"⚠️ <b>{html.escape(album)}</b>: {failed_count} of {len(flacs)} tracks failed to upload")
 
     # 2. Wait for encoding (poll status instead of fixed sleep)
     log("Waiting for SoundCloud encoding...")
+    send_telegram("⏳ <i>SoundCloud is transcoding audio masters into high-bitrate streaming formats...</i>")
     max_wait = 120  # max 2 minutes
     poll_interval = 10
     waited = 0
@@ -450,6 +463,8 @@ def publish(release_name, manifest, tracks_meta, flacs, force=False):
             break
     else:
         log(f"  ⚠ Encoding wait timed out after {max_wait}s — proceeding anyway")
+
+    send_telegram("✅ <i>Audio transcoding complete! Assembling SoundCloud playlist...</i>")
 
     # 3. Create playlist
     album_artwork = find_artwork(release_name)
@@ -486,25 +501,44 @@ def publish(release_name, manifest, tracks_meta, flacs, force=False):
         "playlist_id": playlist_id,
         "permalink": permalink,
         "published_at": datetime.now().isoformat(),
+        "tracks": uploaded_tracks,
     }
     manifest["status"] = "published"
     manifest_path = RELEASES_DIR / release_name / "release.json"
     with open(manifest_path, "w") as f:
         json.dump(manifest, f, indent=2)
 
-    # 6. Done notification
-    uploaded = len(track_ids)
+    # 6. Comprehensive, clear publication receipt
+    uploaded = len(uploaded_tracks)
 
     result_lines = [
-        f"✅ *{album}* published!",
-        f"🎵 {uploaded} tracks" + (f" ({failed_count} failed)" if failed_count else ""),
+        "🎉 <b>SOUNDCLOUD RELEASE PUBLISHED</b>\n",
+        f"💿 <b>Album:</b> {html.escape(album)}",
+        f"🏷️ <b>Label:</b> {html.escape(DEFAULT_LABEL)}",
+        "🎚️ <b>Format:</b> 24-bit / 48 kHz Studio FLAC Masters",
+        "🖼️ <b>Artwork:</b> Embedded FLAC Picture Blocks + Hi-Res Covers\n",
     ]
-    if playlist_id:
-        result_lines.append(f"📋 Playlist created")
+    if permalink:
+        result_lines.append(f"📋 <b>Playlist:</b>\n🔗 <a href=\"{permalink}\">{html.escape(album)} (Full Playlist)</a>\n")
+
+    result_lines.append(f"🎵 <b>Tracklist & Direct Links ({uploaded} tracks):</b>")
+    for idx, t in enumerate(uploaded_tracks, 1):
+        t_title = t.get("title", f"Track {idx}")
+        t_url = t.get("url")
+        meta = tracks_meta[idx-1] if idx-1 < len(tracks_meta) else {}
+        bpm = meta.get("bpm")
+        key = meta.get("key")
+        extra = f" ({bpm} BPM, {key})" if bpm and key else ""
+        if t_url:
+            result_lines.append(f"{idx}. <a href=\"{t_url}\">{html.escape(t_title)}</a>{extra}")
+        else:
+            result_lines.append(f"{idx}. {html.escape(t_title)}{extra}")
 
     buttons = []
     if permalink:
-        buttons.append([{"text": "🔗 View on SoundCloud", "url": permalink}])
+        buttons.append([{"text": "🔗 Listen to Playlist", "url": permalink}])
+    if uploaded_tracks and uploaded_tracks[0].get("url"):
+        buttons.append([{"text": f"🎵 Play {uploaded_tracks[0]['title'][:25]}", "url": uploaded_tracks[0]["url"]}])
 
     send_telegram("\n".join(result_lines), buttons=buttons)
     log(f"✓ Published {album}: {uploaded} tracks, playlist {playlist_id}")

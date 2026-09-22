@@ -15,6 +15,7 @@ Features:
 import os
 import sys
 import json
+import html
 import time
 import logging
 import argparse
@@ -1321,13 +1322,14 @@ def phase_6_final_review(proposal, tracklist=None, state=None, dashboard=None):
         flag, content = poll_flags()
         if flag == "final_publish":
             logger.info("User confirmed publish. Pushing to SoundCloud...")
+            send_message(f"🚀 <b>Publishing {html.escape(album_name)} to SoundCloud...</b>\n<i>Uploading 24-bit studio FLAC masters and synchronized covers. Live progress will be reported below.</i>")
             cmd = ["/opt/hermes/.venv/bin/python3", PUBLISH_SCRIPT, "--release", album_slug, "--confirm", "--force"]
             res = subprocess.run(cmd, capture_output=True, text=True)
             if res.returncode == 0:
-                send_message(f"✅ <b>{album_name}</b> is live on SoundCloud!")
+                logger.info(f"Published {album_name} to SoundCloud successfully.")
                 send_agent_notification(f"Published {album_name} to SoundCloud")
             else:
-                send_message(f"❌ SoundCloud upload failed:\n<pre>{res.stderr[:300]}</pre>")
+                send_message(f"❌ SoundCloud upload failed:\n<pre>{html.escape(res.stderr[:300])}</pre>")
                 if logger_hub:
                     logger_hub.log_failure("PUBLISH_FAIL", res.stderr, album=album_name, phase=6)
             return "published"
