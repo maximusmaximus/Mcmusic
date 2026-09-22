@@ -300,7 +300,7 @@ def send_photo(photo_path, caption=None, reply_markup=None):
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
     cmd = ['curl', '-s', '-X', 'POST', url, '-F', f'chat_id={TELEGRAM_CHAT_ID}', '-F', f'photo=@{actual_path}']
     if caption:
-        cmd.extend(['-F', f'caption={caption}'])
+        cmd.extend(['-F', f'caption={caption}', '-F', 'parse_mode=HTML'])
     if reply_markup:
         cmd.extend(['-F', f'reply_markup={json.dumps(reply_markup)}'])
     try:
@@ -1106,12 +1106,14 @@ def phase_5_track_covers(proposal, tracklist, state=None, dashboard=None):
     while True:
         flag, content = poll_flags()
         if flag == "trackcovers_approved":
-            send_message("⬆️ Upscaling all track covers to 3000×3000 for release...")
-            for cp in track_cover_paths:
+            send_message(f"⬆️ <b>Upscaling all {len(track_cover_paths)} track covers to 3000×3000...</b> (ETA ~15s per track)")
+            for i, cp in enumerate(track_cover_paths):
+                track_title = os.path.basename(cp).replace('_cover.png', '').replace('_cover.jpg', '')
+                send_message(f"⚙️ [{(i+1)}/{len(track_cover_paths)}] Upscaling <b>{track_title}</b> to 3000×3000...")
                 upscale_artwork_venice(cp)
                 if state:
                     add_cost(state, "cover_upscale", VENICE_UPSCALE_COST)
-            send_message("✅ All track covers upscaled to 3000×3000!")
+            send_message("✅ <b>All track covers upscaled to 3000×3000!</b> Packaging release and launching to SoundCloud...")
             return "approved"
         elif flag == "trackcovers_regenall":
             send_message("🔄 Regenerating all track covers...")
