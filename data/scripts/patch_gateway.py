@@ -544,6 +544,9 @@ PATCH_CODE = '''
                 with open('/tmp/pipeline_flags/trackcovers_approved', 'w') as f:
                     f.write('approved')
                 await query.answer(text='✅ Track covers approved!')
+                try:
+                    await query.message.reply_text("✅ <b>Track covers approved!</b> Upscaling to 3000×3000 and packaging release archive...", parse_mode="HTML")
+                except Exception: pass
                 try: await query.edit_message_reply_markup(reply_markup=None)
                 except: pass
                 return
