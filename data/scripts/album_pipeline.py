@@ -16,6 +16,7 @@ import os
 import sys
 import json
 import html
+import re
 import time
 import logging
 import argparse
@@ -25,6 +26,7 @@ import subprocess
 import shutil
 import base64
 import glob
+from pathlib import Path
 from datetime import datetime, timezone
 
 # Configure logging
@@ -734,6 +736,59 @@ def phase_1_redo_single(proposal, profile, tracklist, track_num, feedback=None, 
     return tracklist
 
 
+# ── Composer DAW Master Planning ─────────────────────────────────────────
+def build_composer_daw_plan(title, subgenre, bpm, key, stems):
+    """
+    Generate a genre-aware, composer-tailored DSP chain for DAWAGENT.
+    Customizes EQ curves, dynamics, and spatial enhancements per stem to add
+    maximum studio polish and punch to the final masters.
+    """
+    g = (subgenre or "").lower()
+    plan_parts = []
+
+    for s_name in stems:
+        s_lower = s_name.lower()
+        if "drum" in s_lower or "percussion" in s_lower:
+            if any(k in g for k in ["phonk", "drift", "hard"]):
+                plan_parts.append(
+                    f"{s_name}: LSP Gate (fast decay) + Calf 8-Band EQ (boost 52Hz sub, dip 280Hz boxiness, air boost 10kHz) + "
+                    f"LSP Compressor (4:1, fast attack 15ms, punch release) + Calf Saturation (tape drive 1.5)"
+                )
+            elif any(k in g for k in ["witch", "sacral", "gothic"]):
+                plan_parts.append(
+                    f"{s_name}: LSP Gate + Calf EQ (boost 48Hz, cut 400Hz) + LSP Compressor (glue) + Dragonfly Room (tight 0.8s)"
+                )
+            else:
+                plan_parts.append(
+                    f"{s_name}: LSP Gate + Calf EQ (punch) + LSP Compressor (punch) + x42 Stereo Tools (hat width)"
+                )
+        elif "bass" in s_lower or "808" in s_lower:
+            plan_parts.append(
+                f"{s_name}: Calf Bass Enhancer (odd harmonics) + Calf EQ (steep low-cut 28Hz, sub-focus 40-75Hz, mono sum < 90Hz) + "
+                f"LSP Limiter (-0.5dB ceiling)"
+            )
+        elif any(k in s_lower for k in ["lead", "melody", "synth"]):
+            plan_parts.append(
+                f"{s_name}: Calf 8-Band EQ (high-pass 120Hz, presence boost 3.2kHz) + LSP Compressor (smooth 2.5:1) + "
+                f"Dragonfly Hall Reverb (2.4s decay, 25% wet)"
+            )
+        elif any(k in s_lower for k in ["texture", "pad", "atmosphere", "accent", "sfx"]):
+            plan_parts.append(
+                f"{s_name}: x42 High-Pass Filter (cut < 220Hz) + Dragonfly Hall Reverb (cavernous 3.5s) + "
+                f"Calf Stereo Tools (140% stereo width)"
+            )
+        elif any(k in s_lower for k in ["no_drum", "instrument", "main"]):
+            plan_parts.append(
+                f"{s_name}: Calf 8-Band EQ (sculpt mids 1.5-4kHz) + LSP Compressor (musical glue 3:1) + Dragonfly Room"
+            )
+        else:
+            plan_parts.append(
+                f"{s_name}: Calf EQ (presence) + LSP Compressor + Calf Saturation"
+            )
+
+    return " | ".join(plan_parts) if plan_parts else "Master_Mix: Calf EQ (sub/air) + LSP Compressor (glue) + loudnorm"
+
+
 # ── Phase 2: DAW Mastering ──────────────────────────────────────────────
 def phase_2_daw_handoff(proposal, tracklist, mode="full", dashboard=None):
     if mode == "sample":
@@ -742,45 +797,140 @@ def phase_2_daw_handoff(proposal, tracklist, mode="full", dashboard=None):
 
     album_name = proposal.get('album', 'release')
     album_slug = album_name.lower().replace(' ', '-').replace('_', '-')
+    subgenre = proposal.get('subgenre', proposal.get('genre', 'Electronic'))
     if dashboard:
         dashboard.set_phase(2)
 
-    logger.info(f"Phase 2: Verifying masters for {album_name}...")
+    logger.info(f"Phase 2: Running per-track DAWAGENT mastering for {album_name}...")
     if logger_hub:
         logger_hub.log_event("PHASE_START", {"album": album_name}, phase=2)
 
-    # 1. Check existing dawagent exports if available
+    send_message(
+        f"🎛️ <b>Phase 2: DAWAGENT Studio Mastering</b>\n"
+        f"• Album: <b>{html.escape(album_name)}</b> ({len(tracklist)} tracks)\n"
+        f"• Processing: Discrete stem mixing, LSP dynamic processing, and 48kHz/32-bit mastering..."
+    )
+
     exports_base = "/opt/data/dawagent/exports"
-    for t in tracklist:
-        title = t.get('title', '')
-        track_slug = title.lower().replace(' ', '_')
-        possible_slugs = [f"{album_slug}-{track_slug}", f"{album_slug}-{title.lower().replace(' ', '-')}", album_slug]
-        for slug in possible_slugs:
-            export_dir = os.path.join(exports_base, slug)
-            master_flac = os.path.join(export_dir, f"{slug}_MASTER.flac")
-            master_mp3 = os.path.join(export_dir, f"{slug}_MASTER.mp3")
-            if os.path.exists(master_flac):
-                t['master_path'] = master_flac
-                t['master_mp3'] = master_mp3
-                t['dawagent_mastered'] = True
+    handoff_script = "/opt/data/skills/dawagent/dawagent/scripts/handoff.py"
+
+    for i, t in enumerate(tracklist, 1):
+        title = t.get('title', f"Track {i}")
+        title_plain = re.sub(r'^\d+[\s_\-]*', '', title).replace('_', ' ').strip()
+        track_slug = title_plain.lower().replace(' ', '_')
+        session_slug = f"{album_slug}-{track_slug}"
+        export_dir = os.path.join(exports_base, session_slug)
+        master_flac = os.path.join(export_dir, f"{session_slug}_MASTER.flac")
+        master_mp3 = os.path.join(export_dir, f"{session_slug}_MASTER.mp3")
+
+        # 1. Reuse existing export if already completed
+        if os.path.exists(master_flac) and os.path.getsize(master_flac) > 10000:
+            logger.info(f"[{i}/{len(tracklist)}] Reusing existing DAW master: {master_flac}")
+            t['master_path'] = master_flac
+            t['master_mp3'] = master_mp3
+            t['dawagent_mastered'] = True
+            continue
+
+        # 2. Collect stems or mix file for this track
+        prod_dir = t.get('production_dir') or ""
+        stems_to_use = []
+        stem_names = []
+
+        # Check for demucs stems
+        demucs_dirs = glob.glob(os.path.join(prod_dir, "stems", "demucs", "htdemucs", "*"))
+        if demucs_dirs and os.path.isdir(demucs_dirs[0]):
+            d_dir = demucs_dirs[0]
+            d_drums = os.path.join(d_dir, "drums.wav")
+            d_nodrums = os.path.join(d_dir, "no_drums.wav")
+            if os.path.exists(d_drums) and os.path.exists(d_nodrums):
+                stems_to_use = [d_drums, d_nodrums]
+                stem_names = ["Drums", "Instrumentation"]
+
+        # If no demucs stems, check for main/texture stems
+        if not stems_to_use:
+            raw_stems = sorted(glob.glob(os.path.join(prod_dir, "stems", "*.wav")) + glob.glob(os.path.join(prod_dir, "stems", "*.mp3")))
+            valid_stems = [s for s in raw_stems if not s.endswith("_fx.wav")]
+            if len(valid_stems) >= 2:
+                stems_to_use = valid_stems
+                stem_names = [Path(s).stem.replace('_', ' ').title() for s in valid_stems]
+
+        # Fallback to pre-mixed wav/flac if stems unavailable
+        if not stems_to_use:
+            mix_candidates = glob.glob(os.path.join(prod_dir, "mix_*.wav"))
+            if mix_candidates:
+                stems_to_use = [mix_candidates[0]]
+                stem_names = ["Master_Mix"]
+            elif t.get('flac_path') and os.path.exists(t['flac_path']):
+                stems_to_use = [t['flac_path']]
+                stem_names = ["Master_Mix"]
+
+        if not stems_to_use:
+            logger.warning(f"No audio files found to hand off for track {title}, keeping native master.")
+            t['master_path'] = t.get('flac_path') or t.get('mp3_path')
+            t['master_mp3'] = t.get('mp3_path')
+            t['dawagent_mastered'] = False
+            continue
+
+        # 3. Build Composer's tailored DSP processing plan
+        t_bpm = t.get('bpm', proposal.get('bpm', 120))
+        t_key = t.get('key', proposal.get('key', 'Cm'))
+        dsp_plan = build_composer_daw_plan(title_plain, subgenre, t_bpm, t_key, stem_names)
+
+        # 4. Dispatch handoff to DAWAGENT
+        logger.info(f"Submitting track [{i}/{len(tracklist)}] {title_plain} to DAWAGENT session: {session_slug}")
+        if dashboard:
+            dashboard.update_track(i, title_plain, "daw_mastering", sub_phase="DAW DSP")
+
+        send_message(
+            f"🎛️ <i>[{i}/{len(tracklist)}]</i> Routing <b>{html.escape(title_plain)}</b> into DAWAGENT...\n"
+            f"• Session: <code>{session_slug}</code> ({len(stems_to_use)} stems)\n"
+            f"• Composer DSP Plan: <i>{html.escape(dsp_plan[:90])}...</i>"
+        )
+
+        handoff_cmd = [
+            "/opt/hermes/.venv/bin/python3", handoff_script, "write",
+            "--session", session_slug,
+            "--bpm", str(t_bpm if str(t_bpm).isdigit() else 120),
+            "--stems", ",".join(stems_to_use),
+            "--stem-names", ",".join(stem_names),
+            "--plan", dsp_plan,
+            "--source", "album_pipeline",
+            "--notes", f"{album_name} Track {i}: {title_plain} ({subgenre}, {t_key})"
+        ]
+        h_res = subprocess.run(handoff_cmd, capture_output=True, text=True)
+        if h_res.returncode != 0:
+            logger.error(f"Handoff write failed for {title_plain}: {h_res.stderr[-200:]}")
+            t['master_path'] = t.get('flac_path') or t.get('mp3_path')
+            t['master_mp3'] = t.get('mp3_path')
+            continue
+
+        # 5. Wait for DAWAGENT auto_processor to finish this track (up to 90s)
+        logger.info(f"Waiting for DAWAGENT auto_processor on {session_slug}...")
+        poll_start = time.time()
+        max_poll = 90
+        daw_ok = False
+
+        while time.time() - poll_start < max_poll:
+            time.sleep(3)
+            if os.path.exists(master_flac) and os.path.getsize(master_flac) > 10000:
+                daw_ok = True
                 break
 
-    # 2. Check for manual skip flag
-    skip_flag = os.path.join(FLAGS_DIR, "daw_skipped")
-    if os.path.exists(skip_flag):
-        try: os.remove(skip_flag)
-        except Exception: pass
-        logger.info("DAW mastering skip flag detected.")
-
-    # 3. Ensure all tracks have high-fidelity lossless masters
-    for t in tracklist:
-        if not t.get('master_path') or not os.path.exists(t.get('master_path', '')):
+        if daw_ok:
+            logger.info(f"✓ DAWAGENT mastering complete for {title_plain}: {master_flac}")
+            t['master_path'] = master_flac
+            t['master_mp3'] = master_mp3 if os.path.exists(master_mp3) else t.get('mp3_path')
+            t['dawagent_mastered'] = True
+            send_message(f"✅ <i>[{i}/{len(tracklist)}]</i> <b>{html.escape(title_plain)}</b> mastered by DAWAGENT! (48kHz/32-bit studio master)")
+            if dashboard:
+                dashboard.update_track(i, title_plain, "complete")
+        else:
+            logger.warning(f"DAWAGENT timed out for {title_plain} ({max_poll}s), falling back to native master.")
             t['master_path'] = t.get('flac_path') or t.get('mp3_path')
-        if not t.get('master_mp3') or not os.path.exists(t.get('master_mp3', '')):
             t['master_mp3'] = t.get('mp3_path')
-        t['dawagent_mastered'] = True
+            send_message(f"⚠️ <i>[{i}/{len(tracklist)}]</i> DAWAGENT timed out for <b>{html.escape(title_plain)}</b> — safely kept native 24-bit/48kHz master.")
 
-    send_message(f"🎚️ <b>{album_name}</b> masters verified (48kHz/24-bit lossless studio masters ready).")
+    send_message(f"🎚️ <b>All {len(tracklist)} tracks mastered!</b> Ready for Song Review.")
     logger.info("Phase 2 complete: All track masters ready.")
 
 
@@ -1159,7 +1309,11 @@ def assemble_release(proposal, tracklist, album_slug):
         pdir = t.get("production_dir")
 
         dest_flac = os.path.join(release_dir, f"{prefix}.flac")
-        if pdir and os.path.exists(pdir):
+        master_src = t.get("master_path")
+        if master_src and os.path.exists(master_src):
+            shutil.copy2(master_src, dest_flac)
+            flac_files.append(os.path.basename(dest_flac))
+        elif pdir and os.path.exists(pdir):
             cands = glob.glob(os.path.join(pdir, "master_*.flac")) or glob.glob(os.path.join(pdir, "*.flac"))
             if cands:
                 shutil.copy2(cands[0], dest_flac)
