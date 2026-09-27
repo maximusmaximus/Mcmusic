@@ -45,6 +45,10 @@ data/*cache*.json
 data/*.lock
 data/*.tmp
 data/*.zip
+data/.*
+data/music/artwork/
+data/skills/.*
+data/test_*.png
 **/cloudflared
 **/cloudflared.exe
 
