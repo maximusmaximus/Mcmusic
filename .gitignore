@@ -1,5 +1,17 @@
 # Secrets & Credentials
-.env
+.env*
+!.env.example
+*.key
+*.pem
+*.cert
+*.crt
+*token*.json
+*credential*.json
+*credentials/
+id_rsa*
+id_ed25519*
+config.yaml
+**/config.yaml
 data/config.yaml
 data/.soundcloud_auth/
 data/auth.lock
@@ -58,3 +70,18 @@ Thumbs.db
 !data/skills/
 !data/music/profiles/
 !data/soul/
+
+# Re-apply critical exclusions inside tracked source directories
+data/**/__pycache__/
+data/**/*.pyc
+data/**/*.pyo
+data/**/.env*
+data/**/config.yaml
+data/**/*tokens.json
+data/**/*credentials.json
+data/**/*.key
+data/**/*.pem
+skills/**/__pycache__/
+skills/**/*.pyc
+skills/**/*.pyo
+

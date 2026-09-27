@@ -220,7 +220,7 @@ def get_env_var(name, default=None, required=True):
     return val or default
 
 
-TELEGRAM_BOT_TOKEN = get_env_var('TELEGRAM_BOT_TOKEN', '8862164729:AAGXMYgTeNNC0IazjWPQ3vlrlREnkOpvnyw', required=False)
+TELEGRAM_BOT_TOKEN = get_env_var('TELEGRAM_BOT_TOKEN', required=False)
 TELEGRAM_CHAT_ID = get_env_var('TELEGRAM_CHAT_ID', '8293122782', required=False)
 VENICE_API_KEY = get_env_var('VENICE_API_KEY', required=False)
 

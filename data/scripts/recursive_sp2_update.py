@@ -252,8 +252,15 @@ def analyze_weekly_failures(dry_run: bool = False) -> dict:
 
 
 def send_proposal_to_telegram(proposal: dict):
-    """Deliver the evolutionary update proposal to the user's Telegram with interactive review buttons."""
-    bot_token = os.environ.get("TELEGRAM_BOT_TOKEN", "8862164729:AAGXMYgTeNNC0IazjWPQ3vlrlREnkOpvnyw")
+    bot_token = os.environ.get("TELEGRAM_BOT_TOKEN")
+    if not bot_token and os.path.exists("/opt/data/config.yaml"):
+        try:
+            import yaml
+            with open("/opt/data/config.yaml") as f:
+                cfg = yaml.safe_load(f)
+                bot_token = cfg.get("TELEGRAM_BOT_TOKEN") or cfg.get("telegram_bot_token")
+        except Exception:
+            pass
     chat_id = os.environ.get("TELEGRAM_CHAT_ID", "8293122782")
 
     if not bot_token:

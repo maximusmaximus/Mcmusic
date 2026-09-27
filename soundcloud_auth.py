@@ -21,9 +21,9 @@ except ImportError:
     import urllib.request
     import urllib.error
 
-CLIENT_ID = "qDGpT3dys933ppKMK4ZYbLLFltFwmtNe"
-CLIENT_SECRET = "aQc0cStdahtmyOOnSLNhlEdkyjEzrZsv"
-REDIRECT_URI = "http://127.0.0.1:8080/callback"
+CLIENT_ID = os.environ.get("SOUNDCLOUD_CLIENT_ID", "")
+CLIENT_SECRET = os.environ.get("SOUNDCLOUD_CLIENT_SECRET", "")
+REDIRECT_URI = os.environ.get("SOUNDCLOUD_REDIRECT_URI", "http://127.0.0.1:8080/callback")
 TOKEN_FILE = "/mnt/d/hermes-music/data/home/.hermes/credentials/soundcloud_tokens.json"
 
 # Also save to the container-mapped path
@@ -79,6 +79,10 @@ class CallbackHandler(BaseHTTPRequestHandler):
 
 
 def main():
+    if not CLIENT_ID or not CLIENT_SECRET:
+        print("❌ Error: SOUNDCLOUD_CLIENT_ID and SOUNDCLOUD_CLIENT_SECRET environment variables must be set.")
+        sys.exit(1)
+
     code_verifier, code_challenge = generate_pkce()
 
     auth_params = {

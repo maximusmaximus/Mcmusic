@@ -7,8 +7,12 @@ import base64, json, os, sys, time
 from urllib.parse import urlparse, parse_qs, urlencode
 import urllib.request, urllib.error
 
-CLIENT_ID = "qDGpT3dys933ppKMK4ZYbLLFltFwmtNe"
-CLIENT_SECRET = "aQc0cStdahtmyOOnSLNhlEdkyjEzrZsv"
+CLIENT_ID = os.environ.get("SOUNDCLOUD_CLIENT_ID", "")
+CLIENT_SECRET = os.environ.get("SOUNDCLOUD_CLIENT_SECRET", "")
+
+if not CLIENT_ID or not CLIENT_SECRET:
+    print("Error: SOUNDCLOUD_CLIENT_ID and SOUNDCLOUD_CLIENT_SECRET must be set as environment variables.")
+    sys.exit(1)
 
 if len(sys.argv) < 3:
     print("Usage: python3 sc_exchange.py <code_verifier> <callback_url_or_code>")
