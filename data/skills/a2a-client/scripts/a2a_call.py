@@ -10,8 +10,18 @@ import sys
 import urllib.request
 import urllib.error
 
-DEFAULT_HOST = "http://100.125.60.37:8080"
-DEFAULT_TOKEN = "2u6GZL1hOE_3TPrByRzdndMsxwUGwJF3lYDbm6HEzME"
+import os
+
+DEFAULT_HOST = os.environ.get("A2A_HOST", "http://100.125.60.37:8080")
+DEFAULT_TOKEN = os.environ.get("A2A_AUTH_TOKEN", "")
+if not DEFAULT_TOKEN and os.path.exists("/opt/data/config.yaml"):
+    try:
+        import yaml
+        with open("/opt/data/config.yaml") as f:
+            cfg = yaml.safe_load(f) or {}
+            DEFAULT_TOKEN = cfg.get("A2A_AUTH_TOKEN", cfg.get("a2a_auth_token", ""))
+    except Exception:
+        pass
 
 
 class A2AClient:

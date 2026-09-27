@@ -13,7 +13,7 @@ Other Antigravity machines, remote agent nodes, and subagents on the Tailscale m
 - **REST Message Endpoint**: `http://planetaryexplorer.tail24df4e.ts.net:8080/a2a/v1/message`
 - **JSON-RPC 2.0 Endpoint**: `http://planetaryexplorer.tail24df4e.ts.net:8080/a2a/v1/rpc`
 - **Health Endpoint**: `http://planetaryexplorer.tail24df4e.ts.net:8080/health`
-- **Auth Scheme**: `Bearer 2u6GZL1hOE_3TPrByRzdndMsxwUGwJF3lYDbm6HEzME`
+- **Auth Scheme**: `Bearer $A2A_AUTH_TOKEN` (configured in environment or config.yaml)
 
 ## When to Direct Tasks to This Node
 Direct tasks to PlanetaryExplorer when:
@@ -31,7 +31,7 @@ python skills/a2a-client/scripts/a2a_call.py --message "Process audio task" --se
 ### 2. cURL / REST
 ```bash
 curl -X POST http://planetaryexplorer.tail24df4e.ts.net:8080/a2a/v1/message \
-  -H "Authorization: Bearer 2u6GZL1hOE_3TPrByRzdndMsxwUGwJF3lYDbm6HEzME" \
+  -H "Authorization: Bearer $A2A_AUTH_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"message": "Task description here", "sender": "agent-node"}'
 ```
@@ -39,7 +39,7 @@ curl -X POST http://planetaryexplorer.tail24df4e.ts.net:8080/a2a/v1/message \
 ### 3. JSON-RPC 2.0
 ```bash
 curl -X POST http://planetaryexplorer.tail24df4e.ts.net:8080/a2a/v1/rpc \
-  -H "Authorization: Bearer 2u6GZL1hOE_3TPrByRzdndMsxwUGwJF3lYDbm6HEzME" \
+  -H "Authorization: Bearer $A2A_AUTH_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc": "2.0", "id": 1, "method": "delegate", "params": {"task": "execute_workflow"}}'
 ```

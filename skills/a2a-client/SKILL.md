@@ -10,7 +10,7 @@ Delegates tasks and exchanges structured agent messages with the `PlanetaryExplo
 ## Node Specifications
 - **Host**: `planetaryexplorer.tail24df4e.ts.net` / `100.125.60.37`
 - **Port**: `8080`
-- **Bearer Token**: `2u6GZL1hOE_3TPrByRzdndMsxwUGwJF3lYDbm6HEzME`
+- **Bearer Token**: Set via environment variable `A2A_AUTH_TOKEN` or `config.yaml`
 
 ## Usage
 
