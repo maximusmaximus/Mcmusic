@@ -196,11 +196,13 @@ def main():
     parser.add_argument("--quality", default="quick", choices=["quick", "standard", "premium"])
     parser.add_argument("--target", default="streaming")
     parser.add_argument("--vocals-pct", type=int, default=0, help="Pct of tracks with vocals (0-100)")
+    parser.add_argument("--track-names", nargs="*", default=None, help="Pre-defined track names")
     args = parser.parse_args()
 
     _auto_detect_chat_id()
     profile, slug = load_active_profile()
     profile_name = profile.get("name", "VØIDRIDE") if profile else "VØIDRIDE"
+    track_names = [t.strip() for t in args.track_names] if args.track_names else []
 
     if args.mode in ["sample", "samples"]:
         is_sample = True
@@ -329,6 +331,11 @@ def main():
         progress_thread = threading.Thread(target=_update_progress, daemon=True)
         progress_thread.start()
 
+        # Determine track title if pre-defined
+        predefined_title = None
+        if i < len(track_names) and track_names[i] and not track_names[i].lower().startswith("track "):
+            predefined_title = track_names[i].strip().upper()
+
         # Use enriched brief that includes variation direction
         cmd = [sys.executable, PRODUCER,
                "--prompt", enriched_brief,
@@ -336,6 +343,9 @@ def main():
                "--quality", args.quality,
                "--target", args.target,
                "--director", "--no-deliver"]
+
+        if predefined_title:
+            cmd.extend(["--title", predefined_title])
 
         if is_sample:
             cmd.append("--preview")
@@ -368,16 +378,23 @@ def main():
                 plan_path = meta_path.replace("production_metadata.json", "production_plan.json") if meta_path else ""
                 prod_dir = os.path.dirname(meta_path) if meta_path else ""
 
-                info = {"title": f"Track {track_num}", "bpm": None, "key": None,
+                default_title = predefined_title or f"Track {track_num}"
+                info = {"title": default_title, "bpm": None, "key": None,
                         "genre": None, "has_vocals": has_vocals, "cost_usd": cost,
                         "direction": variation["direction"], "production_dir": prod_dir}
 
                 if plan_path and os.path.isfile(plan_path):
                     with open(plan_path) as f:
                         plan = json.load(f)
-                    info.update({"title": plan.get("title", info["title"]),
-                                 "bpm": plan.get("bpm"), "key": plan.get("key"),
+                    plan_title = plan.get("title")
+                    if plan_title and not plan_title.lower().startswith("track "):
+                        info["title"] = plan_title
+                    elif predefined_title:
+                        info["title"] = predefined_title
+                    info.update({"bpm": plan.get("bpm"), "key": plan.get("key"),
                                  "genre": plan.get("genre")})
+                elif predefined_title:
+                    info["title"] = predefined_title
 
                 completed.append(info)
                 # For full tracks, prefer FLAC; for samples, MP3 only
@@ -387,7 +404,8 @@ def main():
                 log(f"    ✅ {info['title']} | {info.get('bpm','')} BPM | ${cost:.2f}")
             except Exception as e:
                 log(f"    ✅ done (parse: {e})")
-                completed.append({"title": f"Track {track_num}", "direction": variation["direction"]})
+                default_fallback = predefined_title or f"Track {track_num}"
+                completed.append({"title": default_fallback, "direction": variation["direction"]})
         else:
             log(f"    ❌ failed")
             stderr_tail = (result.stderr or "").strip().split("\n")[-2:]
@@ -405,54 +423,93 @@ def main():
 
     # ─── POST-HOC NAMING ────────────────────────────────────────────────
     # Generate names for any tracks where K3 failed to provide one
-    unnamed = [t for t in completed if t.get("title", "").startswith("Track ")]
+    unnamed = [t for t in completed if t.get("title", "").lower().startswith("track ") or t.get("title") in ("?", "Unknown", "")]
     if unnamed:
         log(f"  Naming {len(unnamed)} unnamed tracks...")
+        # Check predefined track names first
+        still_unnamed = []
+        for t in unnamed:
+            t_num = t.get("number", 0)
+            t_idx = (t_num - 1) if t_num > 0 else completed.index(t)
+            if t_idx < len(track_names) and track_names[t_idx] and not track_names[t_idx].lower().startswith("track "):
+                t["title"] = track_names[t_idx].strip().upper()
+                log(f"    Named from proposal track list: {t['title']}")
+            else:
+                still_unnamed.append(t)
+        unnamed = still_unnamed
+
+    if unnamed:
         api_key = os.environ.get("VENICE_API_KEY", "")
         directions = [t.get("direction", "dark phonk") for t in unnamed]
         album_short = args.brief.split(" - ")[0] if " - " in args.brief else args.brief[:30]
-        try:
-            prompt = (
-                f"Generate {len(unnamed)} dark, evocative 1-3 word track names for a "
-                f"nightride phonk album called '{album_short}'. "
-                f"Track directions: {', '.join(f'{i+1}) {d}' for i, d in enumerate(directions))}. "
-                f"Return ONLY a JSON array of strings. Example: [\"MIDNIGHT PULSE\", \"GHOST WIRE\"]"
-            )
-            payload = json.dumps({
-                "model": "qwen-3-7-plus",
-                "messages": [{"role": "user", "content": prompt}],
-                "temperature": 0.9, "max_tokens": 200,
-            }).encode()
-            req = urllib.request.Request(
-                "https://api.venice.ai/api/v1/chat/completions",
-                data=payload,
-                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-            )
-            resp = urllib.request.urlopen(req, timeout=30)
-            raw = json.loads(resp.read())["choices"][0]["message"]["content"]
-            import re as _re
-            match = _re.search(r'\[.*\]', raw, _re.DOTALL)
-            if match:
-                names = json.loads(match.group())
-                for t, name in zip(unnamed, names):
-                    t["title"] = str(name).upper()
-                    log(f"    Named: {t['title']}")
-        except Exception as e:
-            log(f"    Venice naming failed ({e}), using fallback names")
-            # Fallback: generate from direction
-            FALLBACK_NAMES = {
-                "heavy instrumental opener": "IGNITION POINT",
-                "smooth groove": "VELVET UNDERTOW",
-                "different lead instrument": "CHROME SPECTRE",
-                "tempo shift banger": "REDLINE SHIFT",
-                "atmospheric closer": "DAWN EVAPORATE",
-                "subtle vocal texture": "PHANTOM WHISPER",
-                "experimental wildcard": "VOID FRACTURE",
-                "groove-driven": "NEON DRIFT",
-            }
-            for t in unnamed:
-                t["title"] = FALLBACK_NAMES.get(t.get("direction", ""), f"TRACK {t.get('number', '?')}")
-                log(f"    Fallback: {t['title']}")
+
+        FALLBACK_NAMES = {
+            "heavy instrumental opener": "IGNITION POINT",
+            "smooth groove": "VELVET UNDERTOW",
+            "different lead instrument": "CHROME SPECTRE",
+            "tempo shift banger": "REDLINE SHIFT",
+            "atmospheric closer": "DAWN EVAPORATE",
+            "subtle vocal texture": "PHANTOM WHISPER",
+            "experimental wildcard": "VOID FRACTURE",
+            "groove-driven": "NEON DRIFT",
+        }
+        CURATED_FALLBACKS = [
+            "MIDNIGHT RECKONING", "PHANTOM VOLTAGE", "SHADOW RUNNER",
+            "OBSIDIAN DRIFT", "STATIC VEIL", "NEON CATALYST",
+            "BLACK CHROME", "VOID SEQUENCE", "ECLIPSE DRIFT"
+        ]
+
+        names = []
+        if api_key:
+            try:
+                prompt = (
+                    f"Generate {len(unnamed)} dark, evocative 1-3 word track names for a "
+                    f"nightride phonk album called '{album_short}'. "
+                    f"Track directions: {', '.join(f'{i+1}) {d}' for i, d in enumerate(directions))}. "
+                    f"Return ONLY a JSON array of strings. Example: [\"MIDNIGHT PULSE\", \"GHOST WIRE\"]"
+                )
+                for model_cand in ["llama-3.3-70b", "deepseek-v4-flash"]:
+                    try:
+                        payload = json.dumps({
+                            "model": model_cand,
+                            "messages": [{"role": "user", "content": prompt}],
+                            "temperature": 0.8, "max_tokens": 200,
+                        }).encode()
+                        req = urllib.request.Request(
+                            "https://api.venice.ai/api/v1/chat/completions",
+                            data=payload,
+                            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                        )
+                        resp = urllib.request.urlopen(req, timeout=15)
+                        raw = json.loads(resp.read().decode())["choices"][0]["message"].get("content") or ""
+                        import re as _re
+                        match = _re.search(r'\[.*\]', raw, _re.DOTALL)
+                        if match:
+                            parsed_names = json.loads(match.group())
+                            if isinstance(parsed_names, list) and len(parsed_names) >= len(unnamed):
+                                valid = [str(n).strip().upper() for n in parsed_names if str(n).strip() and not str(n).lower().startswith("track ")]
+                                if len(valid) >= len(unnamed):
+                                    names = valid
+                                    break
+                    except Exception as me:
+                        log(f"    Model {model_cand} naming attempt failed: {me}")
+            except Exception as e:
+                log(f"    Venice naming failed ({e}), using fallback names")
+
+        for idx_u, t in enumerate(unnamed):
+            if idx_u < len(names) and names[idx_u] and not names[idx_u].lower().startswith("track "):
+                t["title"] = names[idx_u]
+                log(f"    Named via AI: {t['title']}")
+            else:
+                fallback = FALLBACK_NAMES.get(t.get("direction", ""))
+                existing_titles = [c.get("title") for c in completed if c.get("title")]
+                if not fallback or fallback in existing_titles:
+                    for cand in CURATED_FALLBACKS:
+                        if cand not in existing_titles:
+                            fallback = cand
+                            break
+                t["title"] = (fallback or f"PHANTOM SEQUENCE {idx_u+1}").upper()
+                log(f"    Fallback Name: {t['title']}")
 
         # Update track_files with new names
         new_files = []

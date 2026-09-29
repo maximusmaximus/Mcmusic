@@ -553,6 +553,7 @@ def phase_1_produce(proposal, profile, redo_track=None, redo_feedback=None, mode
             brief += f"Anti-patterns: {', '.join(anti)}\n"
         brief += f"The VØIDRIDE sound: {profile.get('prompt_prefix', '')}\n"
 
+    prop_tracks = proposal.get("tracks", [])
     cmd = [
         "/opt/hermes/.venv/bin/python3", PRODUCE_SCRIPT,
         "--brief", brief,
@@ -563,6 +564,8 @@ def phase_1_produce(proposal, profile, redo_track=None, redo_feedback=None, mode
         "--no-deliver",
         "--resume-tracks", str(resume_count)
     ]
+    if prop_tracks:
+        cmd.extend(["--track-names"] + [str(t) for t in prop_tracks])
 
     logger.info(f"Spawning produce-album (resume-tracks={resume_count}): {' '.join(cmd[:8])}...")
     process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
@@ -599,7 +602,11 @@ def phase_1_produce(proposal, profile, redo_track=None, redo_feedback=None, mode
             data = json.loads(line)
             if "track" in data and "title" in data:
                 t_num = data.get("track")
-                t_title = data.get("title")
+                t_title = str(data.get("title", "")).strip()
+                if not t_title or t_title.lower().startswith("track ") or t_title in ("?", "Unknown"):
+                    if prop_tracks and (t_num - 1) < len(prop_tracks):
+                        t_title = str(prop_tracks[t_num - 1]).strip().upper()
+                        data["title"] = t_title
                 t_bpm = data.get("bpm", "Unknown")
                 t_cost = data.get("cost", "2.29")
                 tracklist.append(data)
@@ -619,6 +626,9 @@ def phase_1_produce(proposal, profile, redo_track=None, redo_feedback=None, mode
         if match:
             track_num += 1
             t_title = match.group(1).strip()
+            if not t_title or t_title.lower().startswith("track ") or t_title in ("?", "Unknown"):
+                if prop_tracks and (track_num - 1) < len(prop_tracks):
+                    t_title = str(prop_tracks[track_num - 1]).strip().upper()
             t_bpm = match.group(2)
             if t_bpm in ("None", "?"):
                 t_bpm = proposal.get("bpm", "130")
@@ -1302,6 +1312,17 @@ def assemble_release(proposal, tracklist, album_slug):
     tracks_meta = []
     tracks = []
 
+    # Sanitize and guarantee clean, non-generic track titles
+    prop_tracks = proposal.get("tracks", [])
+    for idx, t in enumerate(tracklist):
+        t_title = str(t.get("title", "")).strip()
+        if not t_title or t_title.lower().startswith("track ") or t_title in ("?", "Unknown"):
+            if idx < len(prop_tracks) and prop_tracks[idx] and not str(prop_tracks[idx]).lower().startswith("track "):
+                t["title"] = str(prop_tracks[idx]).strip().upper()
+            else:
+                t["title"] = f"PHANTOM SEQUENCE {idx+1}"
+            logger.info(f"Sanitized generic track title {idx+1} -> {t['title']}")
+
     for idx, t in enumerate(tracklist, 1):
         title = t.get("title", f"Track {idx}")
         clean_title = title.replace(" ", "_")
@@ -1352,6 +1373,8 @@ def assemble_release(proposal, tracklist, album_slug):
                 cands = [
                     os.path.join(art_dir, f"{title}_cover{ext}"),
                     os.path.join(art_dir, f"{clean_title}_cover{ext}"),
+                    os.path.join(art_dir, f"Track {idx}_cover{ext}"),
+                    os.path.join(art_dir, f"Track_{idx}_cover{ext}"),
                     os.path.join(art_dir, f"{title}{ext}"),
                     os.path.join(art_dir, f"{clean_title}{ext}"),
                 ]
@@ -1365,6 +1388,17 @@ def assemble_release(proposal, tracklist, album_slug):
             ext = os.path.splitext(chosen)[1]
             dest_cov = os.path.join(covers_dir, f"{idx:02d}_{clean_title}{ext}")
             shutil.copy2(chosen, dest_cov)
+            if ("Track " in os.path.basename(chosen) or "Track_" in os.path.basename(chosen)) and os.path.exists(OVERLAY_TITLE_SCRIPT):
+                try:
+                    bg_cand = chosen.replace(f'_cover{ext}', f'_cover_bg{ext}')
+                    bg_img = bg_cand if os.path.exists(bg_cand) else dest_cov
+                    styled_title = stylize_title(title)
+                    subprocess.run([
+                        "/opt/hermes/.venv/bin/python3", OVERLAY_TITLE_SCRIPT,
+                        "--image", bg_img, "--title", styled_title, "--bottom", "--auto-color", "--output", dest_cov
+                    ], capture_output=True, timeout=30)
+                except Exception as oe:
+                    logger.warning(f"Re-overlay title error on {dest_cov}: {oe}")
 
     # Clean any unwanted files from release_dir (ensure no MP3s and no loose images in root)
     for f in os.listdir(release_dir):
