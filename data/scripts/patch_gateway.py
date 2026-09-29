@@ -483,6 +483,32 @@ PATCH_CODE = '''
                 except Exception: pass
                 return
 
+            # ── Error Recovery Handlers ──
+            if choice == 'error:retry':
+                os.makedirs('/tmp/pipeline_flags', exist_ok=True)
+                with open('/tmp/pipeline_flags/error:retry', 'w') as f:
+                    f.write('retry')
+                await query.answer(text='🔄 Retrying production...')
+                try: await query.edit_message_reply_markup(reply_markup=None)
+                except: pass
+                return
+
+            if choice == 'error:skip':
+                os.makedirs('/tmp/pipeline_flags', exist_ok=True)
+                with open('/tmp/pipeline_flags/error:skip', 'w') as f:
+                    f.write('skip')
+                await query.answer(text='⏭ Skipping error...')
+                try: await query.edit_message_reply_markup(reply_markup=None)
+                except: pass
+                return
+
+            if choice == 'error:log':
+                os.makedirs('/tmp/pipeline_flags', exist_ok=True)
+                with open('/tmp/pipeline_flags/error:log', 'w') as f:
+                    f.write('log')
+                await query.answer(text='📋 Displaying error log...')
+                return
+
             # ── DAW Mastering Handlers ──
             if choice == 'daw:skip':
                 os.makedirs('/tmp/pipeline_flags', exist_ok=True)
