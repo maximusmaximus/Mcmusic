@@ -493,10 +493,17 @@ def check_notifications():
                 except Exception as e:
                     log(f"  ⚠ Tagging error: {e}")
 
-                # ── GAP 7: Create VLC playlist with Windows FLAC paths ──
+                # Check if this session is part of a multi-track album
+                parts = session.split("-")
+                is_album_track = len(parts) >= 3
+                album_prefix = "-".join(parts[:2]) if is_album_track else session
+                album_label = " ".join(parts[:2]).upper() if is_album_track else session.upper()
+
+                # ── Playlist generation: only include playlist when providing ALL the tracks ──
                 try:
                     flacs = sorted(music_exports.glob("*.flac"))
-                    if flacs:
+                    if flacs and not is_album_track:
+                        # Only generate standalone playlist for true standalone single releases
                         playlist_path = music_exports / f"{session}_playlist.m3u8"
                         win_dir = f"D:\\music\\exports\\{session}"
                         with open(playlist_path, "w", encoding="utf-8") as pl:
@@ -505,9 +512,8 @@ def check_notifications():
                                 title = f.stem.replace("_MASTER", "").replace("_", " ")
                                 pl.write(f"#EXTINF:-1,{title}\n")
                                 pl.write(f"{win_dir}\\{f.name}\n")
-                        log(f"  ✓ Playlist created: {playlist_path}")
+                        log(f"  ✓ Single release playlist created: {playlist_path}")
 
-                        # Send playlist as document via Telegram
                         if TELEGRAM_BOT_TOKEN:
                             url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendDocument"
                             try:
@@ -523,10 +529,12 @@ def check_notifications():
                                     log(f"  ⚠ Playlist send failed")
                             except Exception as e:
                                 log(f"  ⚠ Playlist send error: {e}")
+                    elif is_album_track:
+                        log(f"  Track is part of album {album_prefix} — skipping per-track playlist (will send combined playlist when all tracks are ready)")
                 except Exception as e:
-                    log(f"  ⚠ Playlist creation error: {e}")
+                    log(f"  ⚠ Playlist check/creation error: {e}")
 
-                # Generate local FLAC copies + VLC playlist via delivery-receipt skill
+                # Generate local FLAC copies via delivery-receipt skill (without Telegram spam for per-track album sessions)
                 try:
                     deliver_script = os.path.join(
                         os.environ.get("HERMES_HOME", "/opt/data"),
@@ -535,13 +543,14 @@ def check_notifications():
                     )
                     if os.path.isfile(deliver_script):
                         import subprocess as _sp
-                        dr = _sp.run(
-                            [sys.executable, deliver_script,
-                             "--session", session, "--send-telegram"],
-                            capture_output=True, text=True, timeout=300,
-                        )
+                        deliver_cmd = [sys.executable, deliver_script, "--session", session]
+                        if is_album_track:
+                            deliver_cmd.append("--no-send")
+                        else:
+                            deliver_cmd.append("--send-telegram")
+                        dr = _sp.run(deliver_cmd, capture_output=True, text=True, timeout=300)
                         if dr.returncode == 0:
-                            log(f"  ✓ Delivery receipt + VLC playlist sent")
+                            log(f"  ✓ Delivery receipt processed locally{' and sent' if not is_album_track else ''}")
                         else:
                             log(f"  ⚠ Delivery receipt failed: {dr.stderr[-200:]}")
                     else:
@@ -551,7 +560,7 @@ def check_notifications():
 
                 # Mark as sent
                 sent_path.write_text(datetime.now().isoformat())
-                log(f"✓ Receipt + audio + playlist sent for {session}")
+                log(f"✓ Mastered audio processed for {session}")
 
                 # ── Combined album playlist: detect sibling sessions ──
                 try:

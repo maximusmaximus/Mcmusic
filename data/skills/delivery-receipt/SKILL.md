@@ -35,8 +35,8 @@ python3 /opt/data/skills/delivery-receipt/delivery-receipt/scripts/send_windows_
 ### After Production (auto or manual)
 1. **Copies FLAC masters** from Podman volume to `/opt/data/music/exports/<session>/` (→ `D:\music\exports\<session>\` on Windows)
 2. **Converts WAV → FLAC** if FLACs don't exist yet (48kHz/24-bit lossless)
-3. **Creates a VLC `.m3u8` playlist** with Windows-formatted paths
-4. **Sends via Telegram**: Receipt with local file links + playlist file
+3. **Creates a VLC `.m3u8` playlist** with Windows-formatted paths (for full releases or when all tracks are ready)
+4. **Sends via Telegram**: Receipt with local file links + playlist file (only when delivering all tracks together)
 
 ### File Recall (when user asks for past files)
 1. **Lists** all available export sessions
@@ -190,7 +190,7 @@ Telegram's `MEDIA:` auto-renders images as **photo bubbles** (compressed). For u
 - MP3 files send natively as audio bubbles — inline playback with waveform
 - FLAC masters (25-35MB from DAWAGENT) can be sent directly — fit under Telegram's 50MB limit
 - FLAC productions (unmastered, 40-70MB) may exceed the limit — send MP3 instead + provide local FLAC path
-- Always send the `.m3u8` VLC playlist **alongside** FLAC files so the user has both audio and a playback list
+- Only send the `.m3u8` VLC playlist when providing **ALL** the tracks of an album or release together (e.g., full album package or final delivery review). NEVER send per-track or single-track `.m3u8` playlists while individual tracks are being produced or mastered.
 - **DELIVER FILES CLEANLY**: Use `MEDIA:/path` entries without displaying the file path as text. The user prefers to receive files as native attachments, not as text links they have to tap. Each MEDIA: line should be accompanied by brief descriptive text (e.g. "Sending all 5 tracks"), not the raw path. If sending multiple files, group them under a single message instead of one file per message.
 
 ## ⚠️ Critical Rules

@@ -9,7 +9,7 @@ EXTRA_RULES = """7. **NEVER rename file extensions for Telegram** (.m3u8, .flac,
 8. **NEVER pass --two-stems=no to demucs** — that is an invalid flag. 4-stem separation is the default. Only use --two-stems when you specifically want 2-stem mode (e.g. --two-stems vocals).
 9. **NEVER pass "n": 1 or sizes > 1024x1024 to Venice image API** — both cause 400 errors. Venice generates 1 image by default. Generate at 1024x1024, then upscale via Venice /api/v1/image/upscale (scale=4, creativity=0.01, response=raw PNG). NEVER upscale locally with ffmpeg/PIL.
 10. **NEVER write ad-hoc scripts to /tmp** and debug them in chat. Use existing pipeline scripts (gen_artwork.py, publish_release.py, tag_metadata.py). If a script fails, read the error and fix it.
-11. **NEVER send FLAC files without also sending the .m3u8 VLC playlist**. Always create and send the playlist alongside the FLAC files. The playlist uses Windows paths (D:\\music\\exports\\).
+11. **Only include the .m3u8 VLC playlist when providing ALL the tracks** (e.g. the full album package or final delivery). NEVER send per-track or single-track playlists while individual tracks are being produced or mastered. The playlist must contain all tracks in the release and reference local Windows paths (D:\\music\\exports\\...).
 12. **Track titles on SoundCloud MUST be ALL CAPS** (e.g. "GHOST MOTHERBOARD" not "Ghost Motherboard").
 13. **NEVER make up album concepts ad-hoc**. When the user asks for album proposals, ALWAYS run: `python3 /opt/data/scripts/propose_albums.py --force` (or with `--seed-themes "theme here"` if the user specified a theme, or `--refine "direction"` to iterate). When a proposal is selected, `album_pipeline.py` handles production automatically — do NOT run produce-album.py or master-producer.py yourself.
 14. **ALWAYS generate waveform artwork after creating album covers**. Use the waveform-artwork skill: `/opt/hermes/.venv/bin/python3 /opt/data/skills/waveform-artwork/waveform-artwork/scripts/gen_waveform_art.py --playlist-id <ID> --output-dir /opt/data/music/artwork/waveforms`. NEVER use system `python3` — only the venv Python has Pillow. Save all waveforms to `/opt/data/music/artwork/waveforms/`.
@@ -30,9 +30,9 @@ FILE_DELIVERY_BLOCK = """
 ## 📁 FILE DELIVERY RULES
 - To send a file: output `MEDIA:/path/to/file.ext` — the gateway sends it as-is
 - The file extension in the MEDIA: path IS the extension the user receives
-- .m3u8 playlists: `MEDIA:/opt/data/music/exports/session_playlist.m3u8` — NEVER .bin
+- .m3u8 playlists: `MEDIA:/opt/data/music/exports/ALBUM_NAME_playlist.m3u8` — ONLY when delivering all tracks together, NEVER for individual tracks
 - .flac files: `MEDIA:/opt/data/music/exports/session/track_MASTER.flac`
-- ALWAYS send the .m3u8 playlist after sending FLACs
+- NEVER send single-track playlists — only include the playlist when providing ALL tracks in the collection
 - NEVER copy/rename files to .bin — there is NO reason to do this
 """
 

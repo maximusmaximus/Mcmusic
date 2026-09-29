@@ -284,10 +284,15 @@ def generate_receipt(session_name, send_telegram_flag=True):
         ok = send_telegram(receipt_text)
         log(f"Receipt text sent: {ok}")
 
-        # Send playlist file
-        time.sleep(1)
-        ok = send_document(str(playlist_path), f"🎶 {album_name} — VLC Playlist (.m3u8)\nOpen in VLC to play all tracks")
-        log(f"Playlist file sent: {ok}")
+        # Send playlist file only if NOT an individual track from a multi-track album
+        parts = session_name.split("-")
+        is_album_track = len(parts) >= 3
+        if not is_album_track:
+            time.sleep(1)
+            ok = send_document(str(playlist_path), f"🎶 {album_name} — VLC Playlist (.m3u8)\nOpen in VLC to play all tracks")
+            log(f"Playlist file sent: {ok}")
+        else:
+            log(f"Skipping single-track playlist send for album track {session_name} (playlists sent only when providing all tracks)")
 
     return receipt_json
 

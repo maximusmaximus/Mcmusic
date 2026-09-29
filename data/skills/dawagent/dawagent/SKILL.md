@@ -98,3 +98,17 @@ These are shared with the DAWAGENT engine container and @DAWAGENT_bot.
 1. Parse JSON output from dawctl_local.py — NEVER paste raw JSON to the user
 2. Use `terminal` tool (NOT `process`)
 3. After creating a session, tell the user what was built in plain language
+
+## Pitfalls
+
+### Session Already Exists (No Delete Command)
+`dawctl_local.py` has no `session delete` command — only `create`, `list`, and `info`. If you get `"Session X already exists."`, the session manager checks `os.path.exists(session_dir)` and raises before creating the Ardour XML.
+
+**Fix:** Remove the session directory manually, then recreate:
+```bash
+rm -rf /opt/data/dawagent/sessions/<session_name>
+python3 /opt/data/skills/dawagent/dawagent/scripts/dawctl_local.py \
+  session create --name "<session_name>" --sr 48000 --bpm <BPM>
+```
+
+Note: This also removes any Demucs stems stored in the session's `demucs/` subdirectory, so re-run Demucs separation after recreating the session.
