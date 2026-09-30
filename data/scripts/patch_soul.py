@@ -30,6 +30,7 @@ EXTRA_RULES = """7. **NEVER rename file extensions for Telegram** (.m3u8, .flac,
     - **Prompt Research & Composition**: Higher-quality Venice models (`llama-3.3-70b` / `deepseek-v4-flash`) conduct deep acoustic research on sub-bass synthesis and melodic nightride arrangements to engineer hard-hitting stem prompts.
     - **Recursive Taste Memory**: Strictly preserve and honor the user's recursive taste profile in `taste_profile.json` (incorporating upvoted loved themes and avoiding downvoted themes).
     - **Anti-Patterns**: NO four-on-the-floor, NO cheerful G-funk cliches, NO EDM festival drops, NO galloping beats, NO static loops, NO silence drops.
+20. **ALWAYS SEND TELEGRAM NOTIFICATION ON UPDATES & WORKFLOW CHANGES**: Every time system updates, profile adjustments, code fixes, or pipeline configurations are performed, ALWAYS send a concise status update notification directly to the user's Telegram chat using `/opt/data/scripts/send_agent_notification.py --title "..." --body "..."`. Keep updates simple, clear, and informative.
 """
 
 FILE_DELIVERY_BLOCK = """
@@ -68,7 +69,7 @@ if not content:
 
 changed = False
 
-if "VØIDRIDE ARTIST IDENTITY & RECURSIVE SOUND DNA" not in content:
+if "ALWAYS SEND TELEGRAM NOTIFICATION ON UPDATES" not in content:
     if "7. **NEVER rename file extensions" in content:
         start_r = content.find("7. **NEVER rename file extensions")
         end_r = content.find("## 📁 FILE DELIVERY RULES", start_r)
@@ -77,7 +78,7 @@ if "VØIDRIDE ARTIST IDENTITY & RECURSIVE SOUND DNA" not in content:
         if end_r != -1:
             content = content[:start_r] + EXTRA_RULES + "\n\n" + content[end_r:]
             changed = True
-            print("[patch_soul] Updated NEVER rules with Rule 19 (VOIDRIDE West Coast bass + melodic nightride)")
+            print("[patch_soul] Updated NEVER rules with Rule 20 (Mandatory Telegram update notifications)")
     else:
         idx = content.find(ANCHOR)
         if idx != -1:
