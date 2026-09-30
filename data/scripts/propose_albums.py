@@ -28,8 +28,8 @@ from pathlib import Path
 
 # ── Config ──
 VENICE_API_KEY = os.environ.get("VENICE_API_KEY", "")
-VENICE_MODEL = "claude-opus-5"
-FALLBACK_MODEL = "openai-gpt-55-pro"
+VENICE_MODEL = os.environ.get("PROPOSAL_MODEL", "claude-opus-5")
+FALLBACK_MODEL = os.environ.get("PROPOSAL_FALLBACK_MODEL", "llama-3.3-70b")
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "8293122782")
 RELEASES_DIR = Path("/opt/data/music/releases")
@@ -170,12 +170,19 @@ def build_sonic_identity_block():
     style = profile.get("style", {})
     if style.get("mood"):
         lines.append(f"  Mood: {style['mood']}")
+    if style.get("instruments"):
+        lines.append(f"  Core instruments & sound design: {style['instruments']}")
     if style.get("influences"):
         lines.append(f"  Influences: {style['influences']}")
 
+    if dna.get("sound_signature"):
+        lines.append(f"  Sound signature: {dna['sound_signature']}")
+    if dna.get("anti_patterns"):
+        lines.append(f"  Anti-patterns to AVOID: {', '.join(dna['anti_patterns'])}")
+
     prefix = profile.get("prompt_prefix", "")
     if prefix:
-        lines.append(f"  Sonic signature: \"{prefix[:300]}\"")
+        lines.append(f"  Sonic signature details: \"{prefix[:400]}\"")
 
     return "\n".join(lines) if len(lines) > 1 else ""
 
@@ -400,8 +407,8 @@ def repair_json(raw):
 
 def query_venice(catalog, cover_themes, theme=None, seed_themes=None):
     catalog_text = ""
-    for a in catalog:
-        catalog_text += f"- {a['album'].upper()}: {', '.join(a['tracks'][:8])}\n"
+    for a in catalog[-20:]:
+        catalog_text += f"- {a['album'].upper()}: {', '.join(a['tracks'][:5])}\n"
 
     theme_block = ""
     if theme:
@@ -434,8 +441,8 @@ def query_venice(catalog, cover_themes, theme=None, seed_themes=None):
     visual_block = build_visual_identity_block()
     visual_section = f"\n{visual_block}\n" if visual_block else ""
 
-    prompt = f"""You are a creative director for VØIDRIDE, a dark electronic music project.
-Genres: dark trap, witch house, nightride phonk, atmospheric electronic, industrial.
+    prompt = f"""You are the creative director for VØIDRIDE, an elite music project fusing heavy West Coast bass with melodic nightride vibes, dark trap, witch house, and cinematic nightride phonk.
+Genres: west coast bass, melodic nightride trap, dark west coast phonk, witch house, cinematic nightride phonk.
 {sonic_section}
 Existing catalog:
 {catalog_text}
@@ -443,13 +450,14 @@ Existing catalog:
 Visual themes: {', '.join(cover_themes[:15]) or 'dark cosmic noir cinematic'}
 {visual_section}{theme_block}{seed_block}{taste_section}{memory_section}
 Propose exactly 5 NEW album concepts. Each must:
-1. Build on the VØIDRIDE aesthetic (dark, cosmic, noir, cinematic) but explore new territory
-2. NOT repeat any existing album name or theme
-3. Have exactly 5 track titles (ALL CAPS, evocative, 2-3 words, VØIDRIDE style)
-4. Include BPM range, key signature, and specific subgenre
-5. Include a 1-line visual concept for cover art that fits the VØIDRIDE visual language
-6. Include a 50-word production brief that references specific sounds, instruments, and techniques
-7. VARY the BPM, key, and subgenre across proposals — not all 5 should be the same style
+1. Build on the VØIDRIDE sonic identity (heavy West Coast 808 sub-bass slides, punchy acoustic transient kicks, crisp snap snares with wide stereo throws, melancholic nightride synths, detuned sine plucks, nocturnal cruising atmosphere)
+2. RECURSIVE TASTE EVOLUTION: Strictly honor the user's taste profile above — expand upon the themes & subgenres the user LOVES and selected, while strictly avoiding disliked themes/subgenres
+3. NOT repeat any existing album name or theme from the catalog
+4. Have exactly 5 track titles (ALL CAPS, evocative, 2-3 words, VØIDRIDE style)
+5. Include BPM range (within 110-168 BPM), key signature (e.g. Fm, Cm, Dm, Em, Am), and specific subgenre
+6. Include a 1-line visual concept for cover art that fits the VØIDRIDE visual language (dark, cinematic, nocturnal cruising, neon noir, sci-fi)
+7. Include a 50-word production brief detailing specific sound design: heavy West Coast sub-bass glides, punchy transient kicks, crisp stereo snares, melodic synth leads, and nocturnal nightride atmosphere
+8. VARY the BPM, key, and subgenre across proposals — not all 5 should be the same style
 
 RESPOND IN THIS EXACT JSON FORMAT ONLY (no markdown fences, no explanation):
 [
@@ -458,13 +466,13 @@ RESPOND IN THIS EXACT JSON FORMAT ONLY (no markdown fences, no explanation):
     "tracks": ["TRACK 1", "TRACK 2", "TRACK 3", "TRACK 4", "TRACK 5"],
     "bpm": "130-145",
     "key": "Dm",
-    "subgenre": "industrial witch house",
-    "visual": "Abandoned subway station flooded with bioluminescent water, cracked tiles, fog",
-    "brief": "Dark industrial witch house EP. Heavy sub-bass 808s, distorted vocal chops, reversed reverb pads, metallic percussion, glitch transitions. 130-145 BPM, D minor, cinematic darkness."
+    "subgenre": "west coast bass / melodic nightride trap",
+    "visual": "Midnight cruise through rain-slicked boulevard, neon cyan reflections on obsidian hood, misty skyscrapers",
+    "brief": "Heavy West Coast bass meets melodic nightride trap. Crushing 808 sub-bass with aggressive pitch slides, punchy acoustic transient kicks, and crisp snap snares. Melancholic detuned analog brass leads and nocturnal sine plucks over atmospheric reverb swells. 136 BPM, D minor, menacing nightride bounce."
   }}
 ]"""
 
-    models = [VENICE_MODEL, VENICE_MODEL, FALLBACK_MODEL]
+    models = [VENICE_MODEL, "deepseek-v4-flash", FALLBACK_MODEL]
 
     for attempt in range(MAX_RETRIES):
         model = models[min(attempt, len(models) - 1)]
@@ -473,8 +481,8 @@ RESPOND IN THIS EXACT JSON FORMAT ONLY (no markdown fences, no explanation):
         payload = {
             "model": model,
             "messages": [{"role": "user", "content": prompt}],
-            "temperature": 0.9,
-            "max_tokens": 4000,
+            "temperature": 0.85,
+            "max_tokens": 3000,
             "venice_parameters": {"include_venice_system_prompt": False, "strip_thinking_response": True}
         }
 
@@ -486,7 +494,7 @@ RESPOND IN THIS EXACT JSON FORMAT ONLY (no markdown fences, no explanation):
         )
 
         try:
-            with urllib.request.urlopen(req, timeout=180) as resp:
+            with urllib.request.urlopen(req, timeout=90) as resp:
                 raw = resp.read()
                 if not raw:
                     log("  Venice API returned empty response")
@@ -523,7 +531,7 @@ RESPOND IN THIS EXACT JSON FORMAT ONLY (no markdown fences, no explanation):
 def query_venice_refine(existing_proposals, refinement, catalog, cover_themes):
     existing_text = json.dumps(existing_proposals, indent=2)
     catalog_text = ""
-    for a in catalog:
+    for a in catalog[-20:]:
         catalog_text += f"- {a['album'].upper()}: {', '.join(a['tracks'][:5])}\n"
 
     taste_block = build_taste_block()
@@ -538,7 +546,7 @@ def query_venice_refine(existing_proposals, refinement, catalog, cover_themes):
     visual_block = build_visual_identity_block()
     visual_section = f"\n{visual_block}\n" if visual_block else ""
 
-    prompt = f"""You are a creative director for VØIDRIDE, a dark electronic music project.
+    prompt = f"""You are the creative director for VØIDRIDE, an elite music project fusing heavy West Coast bass with melodic nightride vibes, dark trap, witch house, and cinematic nightride phonk.
 {sonic_section}
 
 Here are the current 5 album proposals:
@@ -552,7 +560,7 @@ The user wants these proposals REFINED with this feedback:
 
 Generate 5 REFINED album proposals that incorporate the user's feedback.
 Keep proposals the user would likely love, modify or replace ones that don't match.
-Maintain the VØIDRIDE aesthetic (dark, cosmic, noir, cinematic).
+Ensure all proposals maintain the VØIDRIDE aesthetic: heavy West Coast 808 sub-bass slides, punchy transient acoustic kicks, crisp snap snares, and melodic nocturnal nightride atmospheres.
 
 RESPOND IN THIS EXACT JSON FORMAT ONLY (no markdown fences, no explanation):
 [
@@ -561,21 +569,21 @@ RESPOND IN THIS EXACT JSON FORMAT ONLY (no markdown fences, no explanation):
     "tracks": ["TRACK 1", "TRACK 2", "TRACK 3", "TRACK 4", "TRACK 5"],
     "bpm": "130-145",
     "key": "Dm",
-    "subgenre": "industrial witch house",
-    "visual": "Dark visual concept description",
-    "brief": "50-word production brief."
+    "subgenre": "west coast bass / melodic nightride trap",
+    "visual": "Dark cinematic visual concept description",
+    "brief": "50-word production brief detailing heavy West Coast bass, sliding 808s, transient kicks, and melodic nightride synth hooks."
   }}
 ]"""
 
-    models = [VENICE_MODEL, FALLBACK_MODEL]
-    for attempt in range(2):
+    models = [VENICE_MODEL, "deepseek-v4-flash", FALLBACK_MODEL]
+    for attempt in range(len(models)):
         model = models[min(attempt, len(models) - 1)]
         log(f"  Refine attempt {attempt + 1}/2 (model: {model})")
         payload = {
             "model": model,
             "messages": [{"role": "user", "content": prompt}],
             "temperature": 0.85,
-            "max_tokens": 4000,
+            "max_tokens": 3000,
             "venice_parameters": {"include_venice_system_prompt": False, "strip_thinking_response": True}
         }
         data = json.dumps(payload).encode()
@@ -585,7 +593,7 @@ RESPOND IN THIS EXACT JSON FORMAT ONLY (no markdown fences, no explanation):
             headers={"Content-Type": "application/json", "Authorization": f"Bearer {VENICE_API_KEY}"}
         )
         try:
-            with urllib.request.urlopen(req, timeout=180) as resp:
+            with urllib.request.urlopen(req, timeout=90) as resp:
                 raw = resp.read()
                 if not raw:
                     continue

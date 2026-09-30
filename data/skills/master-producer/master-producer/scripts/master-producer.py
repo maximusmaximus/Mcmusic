@@ -752,9 +752,9 @@ OUTPUT VALID JSON (no markdown, no code fences):
     if lyrics:
         user_msg += f"\n\nLYRICS:\n{lyrics[:500]}"
 
-    director_model = os.environ.get("DIRECTOR_MODEL", "llama-3.3-70b")
+    director_model = os.environ.get("DIRECTOR_MODEL", "kimi-k3")
 
-    # Retry loop — sometimes returns empty on rapid successive calls
+    # Retry loop — K3 sometimes returns empty on rapid successive calls
     max_retries = 2
     for attempt in range(max_retries + 1):
         raw = ""
@@ -780,11 +780,10 @@ OUTPUT VALID JSON (no markdown, no code fences):
             )
             resp = urllib.request.urlopen(req, timeout=90)
             result = json.loads(resp.read().decode())
-            choice_msg = result["choices"][0]["message"]
-            raw = (choice_msg.get("content") or choice_msg.get("reasoning_content") or "").strip()
+            raw = result["choices"][0]["message"]["content"].strip()
 
             # ── Robust JSON extraction from thinking models ──────────
-            # Outputs reasoning text before JSON. We need to find the
+            # K3 outputs reasoning text before JSON. We need to find the
             # actual JSON object in the response, ignoring thinking noise.
 
             # 1) Strip <think>...</think> XML tags
@@ -800,7 +799,7 @@ OUTPUT VALID JSON (no markdown, no code fences):
                     raw = re.sub(r'\s*```', '', raw)
 
             if not raw:
-                raise json.JSONDecodeError("Empty response from Creative Director", "", 0)
+                raise json.JSONDecodeError("Empty response from K3", "", 0)
 
             # 3) Try direct parse first (cleanest case)
             try:
@@ -830,7 +829,7 @@ OUTPUT VALID JSON (no markdown, no code fences):
                             start_pos = None
 
                 if last_json is None:
-                    raise json.JSONDecodeError("No valid JSON object found in Creative Director response", raw[:200], 0)
+                    raise json.JSONDecodeError("No valid JSON object found in K3 response", raw[:200], 0)
                 plan = last_json
 
             # Validate prompts — reject lazy/placeholder outputs
@@ -839,7 +838,7 @@ OUTPUT VALID JSON (no markdown, no code fences):
                     p = stem_info.get("prompt", "")
                     if len(p) < 30 or p.strip() in ("...", "etc", "placeholder", ""):
                         raise json.JSONDecodeError(
-                            f"Creative Director wrote placeholder prompt for {stem_name}: '{p}' — rejecting plan",
+                            f"K3 wrote placeholder prompt for {stem_name}: '{p}' — rejecting plan",
                             "", 0
                         )
 
@@ -864,10 +863,10 @@ OUTPUT VALID JSON (no markdown, no code fences):
         except json.JSONDecodeError as e:
             if attempt < max_retries:
                 wait = 5 * (attempt + 1)  # 5s, 10s exponential backoff
-                log(f"  ⚠️ Creative Director attempt {attempt + 1} failed ({e}) — retrying in {wait}s...")
+                log(f"  ⚠️ K3 attempt {attempt + 1} failed ({e}) — retrying in {wait}s...")
                 # Try alternate model on last retry
-                if attempt == max_retries - 1:
-                    director_model = "deepseek-v4-flash" if director_model == "llama-3.3-70b" else "llama-3.3-70b"
+                if attempt == max_retries - 1 and director_model == "kimi-k3":
+                    director_model = "qwen-3-7-plus"
                     log(f"  🔄 Switching to fallback model: {director_model}")
                 time.sleep(wait)
                 continue
@@ -2506,8 +2505,6 @@ def main():
                         help="Path to a production_plan.json to replay (locks prompts/models from a preview)")
     parser.add_argument("--profile", default=None,
                         help="DJ profile name to load defaults from (auto-detects active if omitted)")
-    parser.add_argument("--title", default=None,
-                        help="Desired track title (locks/guarantees clean track naming)")
 
     args = parser.parse_args()
 
@@ -2949,40 +2946,25 @@ def main():
         qc_report["k3_issues"] = qc_verdict.get("issues", [])
         qc_report["k3_suggestions"] = qc_verdict.get("suggestions", [])
 
-    # Save production plan to session directory (guarantee production_plan.json always exists)
-    if not production_plan:
-        title = getattr(args, "title", None)
-        if not title or title.lower().startswith("track "):
-            first_words = re.sub(r'[^a-zA-Z0-9\s]', '', args.prompt).split()[:3]
-            title = " ".join(first_words).upper() if first_words else "UNTITLED SEQUENCE"
-        genre = (active_profile.get("style", {}).get("genres", "").split(",")[0] if active_profile else "Dark Nightride Trap")
-        production_plan = {
-            "title": title,
-            "genre": genre,
-            "bpm": next((s.get("analysis", {}).get("bpm") for s in generated_stems if s.get("role") == "main"), 130),
-            "key": next((s.get("analysis", {}).get("key") for s in generated_stems if s.get("role") == "main"), "Cm"),
-            "stems": {s.get("role", "main"): {"model": s.get("model"), "file": s.get("file")} for s in generated_stems}
+    # Save production plan to session directory
+    if production_plan:
+        plan_path = os.path.join(session_dir, "production_plan.json")
+        production_plan["qc"] = {
+            "lufs": qc_report.get("integrated_lufs"),
+            "true_peak_db": qc_report.get("true_peak_db"),
+            "bpm_actual": next(
+                (s.get("analysis", {}).get("bpm") for s in generated_stems if s.get("role") == "main"),
+                None,
+            ),
+            "key_actual": next(
+                (s.get("analysis", {}).get("key") for s in generated_stems if s.get("role") == "main"),
+                None,
+            ),
         }
-    elif getattr(args, "title", None) and (not production_plan.get("title") or production_plan.get("title", "").lower().startswith("track ")):
-        production_plan["title"] = args.title.strip().upper()
-
-    plan_path = os.path.join(session_dir, "production_plan.json")
-    production_plan["qc"] = {
-        "lufs": qc_report.get("integrated_lufs"),
-        "true_peak_db": qc_report.get("true_peak_db"),
-        "bpm_actual": next(
-            (s.get("analysis", {}).get("bpm") for s in generated_stems if s.get("role") == "main"),
-            None,
-        ),
-        "key_actual": next(
-            (s.get("analysis", {}).get("key") for s in generated_stems if s.get("role") == "main"),
-            None,
-        ),
-    }
-    production_plan["cost"] = cost_report
-    with open(plan_path, "w") as f:
-        json.dump(production_plan, f, indent=2)
-    log(f"  📋 Production plan: {plan_path}")
+        production_plan["cost"] = cost_report
+        with open(plan_path, "w") as f:
+            json.dump(production_plan, f, indent=2)
+        log(f"  📋 Production plan: {plan_path}")
 
     # Save production metadata for DJ profile reference
     metadata_path = save_production_metadata(

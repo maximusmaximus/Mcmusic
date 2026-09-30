@@ -548,6 +548,9 @@ def phase_1_produce(proposal, profile, redo_track=None, redo_feedback=None, mode
         brief += f"{models.get('texture', 'stable-audio-25')} (texture), "
         brief += f"{models.get('accent', 'elevenlabs-sound-effects-v2')} (accent)\n"
         brief += f"Preferred keys: {', '.join(sonic.get('preferred_keys', []))}\n"
+        sig = sonic.get('sound_signature', '')
+        if sig:
+            brief += f"Sound signature: {sig}\n"
         anti = sonic.get('anti_patterns', [])
         if anti:
             brief += f"Anti-patterns: {', '.join(anti)}\n"
@@ -709,6 +712,13 @@ def phase_1_redo_single(proposal, profile, tracklist, track_num, feedback=None, 
     if profile:
         sonic = profile.get('sonic_dna', {})
         brief += f"\n--- VØIDRIDE IDENTITY ---\nPrimary genres: {', '.join(sonic.get('primary_genres', []))}\n"
+        sig = sonic.get('sound_signature', '')
+        if sig:
+            brief += f"Sound signature: {sig}\n"
+        anti = sonic.get('anti_patterns', [])
+        if anti:
+            brief += f"Anti-patterns: {', '.join(anti)}\n"
+        brief += f"The VØIDRIDE sound: {profile.get('prompt_prefix', '')}\n"
     if feedback:
         brief += f"\n[REDO FEEDBACK]: {feedback}\n"
 

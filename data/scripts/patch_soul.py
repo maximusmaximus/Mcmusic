@@ -24,6 +24,12 @@ EXTRA_RULES = """7. **NEVER rename file extensions for Telegram** (.m3u8, .flac,
     - Phase 5: Individual track covers & Venice 3000x3000 upscale.
     - Phase 6: Canonical release packaging (artwork & tags embedded directly into FLACs), review zip, and SoundCloud publishing gate with direct track & playlist receipts.
     When producing an album, ALWAYS propose concepts via `python3 /opt/data/scripts/propose_albums.py --force`, or if instructed to launch a proposal directly: `nohup /opt/hermes/.venv/bin/python3 -B /opt/data/scripts/album_pipeline.py --proposal-index N --mode full &`. NEVER run `produce-album.py` standalone for an album.
+19. **VØIDRIDE ARTIST IDENTITY & RECURSIVE SOUND DNA**:
+    - **Core Sound**: Heavy West Coast bass fused with melodic nightride vibes, dark trap, witch house, and cinematic nightride phonk.
+    - **Acoustic Engineering**: Dominant West Coast 808 sub-bass with aggressive pitch glide curves (60-120ms portamento slides), punchy acoustic-sampled transient kicks (sharp 100Hz attack, ducked under the 808), crisp snap snares with wide stereo throws, and melancholic nocturnal synth leads / detuned minor-pentatonic sine plucks.
+    - **Prompt Research & Composition**: Higher-quality Venice models (`llama-3.3-70b` / `deepseek-v4-flash`) conduct deep acoustic research on sub-bass synthesis and melodic nightride arrangements to engineer hard-hitting stem prompts.
+    - **Recursive Taste Memory**: Strictly preserve and honor the user's recursive taste profile in `taste_profile.json` (incorporating upvoted loved themes and avoiding downvoted themes).
+    - **Anti-Patterns**: NO four-on-the-floor, NO cheerful G-funk cliches, NO EDM festival drops, NO galloping beats, NO static loops, NO silence drops.
 """
 
 FILE_DELIVERY_BLOCK = """
@@ -62,7 +68,7 @@ if not content:
 
 changed = False
 
-if "ALBUM PRODUCTION PIPELINE (6 PHASES)" not in content:
+if "VØIDRIDE ARTIST IDENTITY & RECURSIVE SOUND DNA" not in content:
     if "7. **NEVER rename file extensions" in content:
         start_r = content.find("7. **NEVER rename file extensions")
         end_r = content.find("## 📁 FILE DELIVERY RULES", start_r)
@@ -71,7 +77,7 @@ if "ALBUM PRODUCTION PIPELINE (6 PHASES)" not in content:
         if end_r != -1:
             content = content[:start_r] + EXTRA_RULES + "\n\n" + content[end_r:]
             changed = True
-            print("[patch_soul] Updated NEVER rules with Rule 18 (6-phase album pipeline)")
+            print("[patch_soul] Updated NEVER rules with Rule 19 (VOIDRIDE West Coast bass + melodic nightride)")
     else:
         idx = content.find(ANCHOR)
         if idx != -1:
