@@ -946,6 +946,16 @@ def phase_2_daw_handoff(proposal, tracklist, mode="full", dashboard=None):
         if daw_ok:
             logger.info(f"✓ DAWAGENT mastering complete for {title_plain}: {master_flac}")
             t['master_path'] = master_flac
+            # Ensure mastered MP3 is available for reference preview
+            if not os.path.exists(master_mp3) or os.path.getsize(master_mp3) < 1000:
+                mp3_wait_start = time.time()
+                while time.time() - mp3_wait_start < 10:
+                    if os.path.exists(master_mp3) and os.path.getsize(master_mp3) > 1000:
+                        break
+                    time.sleep(1)
+            # If still not created by auto_processor, convert now with ffmpeg
+            if not os.path.exists(master_mp3) or os.path.getsize(master_mp3) < 1000:
+                subprocess.run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-i", master_flac, "-codec:a", "libmp3lame", "-b:a", "320k", "-ar", "48000", master_mp3], capture_output=True, timeout=30)
             t['master_mp3'] = master_mp3 if os.path.exists(master_mp3) else t.get('mp3_path')
             t['dawagent_mastered'] = True
             send_message(f"✅ <i>[{i}/{len(tracklist)}]</i> <b>{html.escape(title_plain)}</b> mastered by DAWAGENT! (48kHz/32-bit studio master)")
@@ -966,31 +976,67 @@ def phase_3_song_review(tracklist, proposal=None, dashboard=None):
     if dashboard:
         dashboard.set_phase(3)
 
-    # Single delivery: send MP3s once
-    send_message("🎧 <b>Delivering tracks for inline review:</b>")
-    for t in tracklist:
-        mp3 = t.get('master_mp3') or t.get('mp3_path')
-        if mp3 and os.path.exists(mp3):
-            send_audio(mp3, caption=f"Track {t.get('track')}: {t.get('title')}")
+    album_name = proposal.get("album", "Release") if proposal else "Album"
+    total_tracks = len(tracklist)
 
-    # Send review buttons
+    # 1. Send clear, structured master preview announcement
+    send_message(
+        f"🎚️ <b>{html.escape(album_name)} — All {total_tracks} Tracks Mastered</b>\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"✨ Every track has completed 48kHz/32-bit DAW stem mastering & DSP processing.\n"
+        f"🎧 <b>Reference Masters (320kbps MP3) for inline preview below:</b>"
+    )
+
+    # 2. Deliver all masters together for inline preview
+    for t in tracklist:
+        track_num = t.get('track', '?')
+        title = t.get('title', f"Track {track_num}")
+        bpm = t.get('bpm', proposal.get('bpm', '?') if proposal else '?')
+        key = t.get('key', proposal.get('key', '?') if proposal else '?')
+
+        # Verify master MP3 exists; convert from master FLAC if needed
+        mp3 = t.get('master_mp3')
+        if (not mp3 or not os.path.exists(mp3)) and t.get('master_path') and os.path.exists(t['master_path']):
+            mp3_candidate = t['master_path'].replace('.flac', '.mp3')
+            if os.path.exists(mp3_candidate):
+                mp3 = mp3_candidate
+                t['master_mp3'] = mp3
+            else:
+                subprocess.run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-i", t['master_path'], "-codec:a", "libmp3lame", "-b:a", "320k", "-ar", "48000", mp3_candidate], capture_output=True, timeout=30)
+                if os.path.exists(mp3_candidate):
+                    mp3 = mp3_candidate
+                    t['master_mp3'] = mp3
+        if not mp3 or not os.path.exists(mp3):
+            mp3 = t.get('mp3_path')
+
+        if mp3 and os.path.exists(mp3):
+            send_audio(mp3, caption=f"🎵 [{track_num}/{total_tracks}] {title} (Mastered · {bpm} BPM · {key})")
+
+    # 3. Always package and deliver BOTH external and internal download links
+    _package_and_share_flacs(tracklist, proposal)
+
+    # 4. Interactive review buttons (Approve / Redo / Reject - NO premature publish button!)
     buttons = [
-        [{"text": "✅ Approve All", "callback_data": "ap:songs:approve"}],
-        [{"text": "📥 Download FLACs", "callback_data": "ap:songs:flac"}]
+        [{"text": "✅ Approve All Songs", "callback_data": "ap:songs:approve"}],
+        [{"text": "📥 Re-package Master Archive", "callback_data": "ap:songs:flac"}]
     ]
     for t in tracklist:
         n = t.get('track')
         buttons.append([{"text": f"🔄 Redo Track {n}", "callback_data": f"ap:songs:redo:{n}"}])
     buttons.append([{"text": "❌ Remake Entire Album", "callback_data": "ap:songs:reject"}])
 
-    send_message("👆 <b>Review your tracks above:</b>", reply_markup={"inline_keyboard": buttons})
+    send_message(
+        "👆 <b>Listen to all masters above and review your options:</b>\n"
+        "<i>Tap <b>Approve All Songs</b> to proceed to Album Cover Art review, or select a track to revise.</i>",
+        reply_markup={"inline_keyboard": buttons}
+    )
 
     while True:
         flag, content = poll_flags()
         if flag == "songs_approved":
             return "approved", None
         elif flag == "songs_flac_requested":
-            send_message("📦 Packaging FLACs + playlist via Cloudflare tunnel...")
+            send_message("📦 Re-packaging FLACs + playlist via Cloudflare tunnel...")
             _package_and_share_flacs(tracklist, proposal)
             continue
         elif flag.startswith("songs_redo_"):
@@ -1046,19 +1092,37 @@ def _package_and_share_flacs(tracklist, proposal):
         if os.path.exists(tag_script):
             subprocess.run(["/opt/hermes/.venv/bin/python3", tag_script, "--dir", pack_dir], capture_output=True, timeout=60)
 
-        # Share via Cloudflare tunnel
+        # Share via Cloudflare tunnel & local service
         res = subprocess.run(["/opt/hermes/.venv/bin/python3", SHARE_SCRIPT, "--path", pack_dir], capture_output=True, text=True, timeout=120)
         external_link = None
+        internal_link = None
+        local_path = None
         for line in res.stdout.splitlines():
             if "[EXTERNAL LINK]" in line:
                 external_link = line.split("[EXTERNAL LINK]")[-1].strip()
-                break
+            elif "[INTERNAL LINK]" in line:
+                internal_link = line.split("[INTERNAL LINK]")[-1].strip()
+            elif "[SUCCESS] Packaged successfully:" in line:
+                linux_path = line.split("[SUCCESS] Packaged successfully:")[-1].strip()
+                if linux_path.startswith("/opt/data/music/"):
+                    local_path = linux_path.replace("/opt/data/music/", "D:\\music\\").replace("/", "\\")
+                else:
+                    local_path = linux_path
 
-        pl_suffix = " + playlist" if has_playlist else ""
+        pl_suffix = " + VLC playlist" if has_playlist else ""
+        msg = (
+            f"📦 <b>{html.escape(album_name)} — Full Master Archive</b>\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"🎵 {len(flac_files)} Tracks (48kHz/32-bit Studio FLACs{pl_suffix})\n\n"
+        )
         if external_link:
-            send_message(f"📥 <b>{album_name}</b> — {len(flac_files)} tracks{pl_suffix}\n🔗 <a href='{external_link}'>Download ZIP</a>")
-        else:
-            send_message(f"📥 FLACs packaged ({len(flac_files)} tracks{pl_suffix}).")
+            msg += f"🌐 <b>External Download (Cloudflare / Mobile):</b>\n🔗 <a href='{external_link}'>{external_link}</a>\n\n"
+        if internal_link:
+            msg += f"🏠 <b>Internal Download (Tailscale / LAN):</b>\n🔗 <a href='{internal_link}'>{internal_link}</a>\n\n"
+        if local_path:
+            msg += f"📁 <b>Windows Local File:</b>\n<code>{html.escape(local_path)}</code>\n"
+
+        send_message(msg)
         shutil.rmtree(pack_dir, ignore_errors=True)
     except Exception as e:
         send_message(f"❌ FLAC packaging error: {e}")
@@ -1492,20 +1556,29 @@ def phase_6_final_review(proposal, tracklist=None, state=None, dashboard=None):
     except Exception as e:
         logger.error(f"Playlist/receipt generation error: {e}")
 
-    # 3. Share album directory via Cloudflare tunnel
+    # 3. Share album directory via Cloudflare tunnel & local service
     album_release_dir = f"/opt/data/music/releases/{album_slug}"
     ext_link = None
+    int_link = None
+    local_path = None
     if os.path.exists(album_release_dir):
         try:
             share_res = subprocess.run(["/opt/hermes/.venv/bin/python3", SHARE_SCRIPT, "--path", album_release_dir], capture_output=True, text=True, timeout=180)
             for line in share_res.stdout.splitlines():
                 if "[EXTERNAL LINK]" in line:
                     ext_link = line.split("[EXTERNAL LINK]")[-1].strip()
-                    break
+                elif "[INTERNAL LINK]" in line:
+                    int_link = line.split("[INTERNAL LINK]")[-1].strip()
+                elif "[SUCCESS] Packaged successfully:" in line:
+                    lp = line.split("[SUCCESS] Packaged successfully:")[-1].strip()
+                    if lp.startswith("/opt/data/music/"):
+                        local_path = lp.replace("/opt/data/music/", "D:\\music\\").replace("/", "\\")
+                    else:
+                        local_path = lp
         except Exception as e:
             logger.error(f"Packaging error: {e}")
 
-    # 4. Build prompt message with download link & interactive buttons
+    # 4. Build prompt message with download links & interactive buttons
     final_buttons = [
         [{"text": "🚀 Publish to SoundCloud", "callback_data": "ap:final:publish"}],
         [
@@ -1519,12 +1592,16 @@ def phase_6_final_review(proposal, tracklist=None, state=None, dashboard=None):
     ]
 
     msg = (
-        f"📦 <b>{album_name} — Final Package Ready!</b>\n\n"
-        f"✨ Lossless 24-bit/48kHz FLAC studio masters (artwork embedded directly into files).\n"
+        f"📦 <b>{html.escape(album_name)} — Final Release Package Ready!</b>\n\n"
+        f"✨ Lossless 24-bit/48kHz FLAC studio masters (artwork embedded into files).\n"
         f"🖼️ Exactly 1 cover per track + album cover.\n\n"
     )
     if ext_link:
-        msg += f"🔗 <b>Download Review Package:</b>\n<a href='{ext_link}'>{ext_link}</a>\n\n"
+        msg += f"🌐 <b>External Download (Cloudflare / Mobile):</b>\n🔗 <a href='{ext_link}'>{ext_link}</a>\n\n"
+    if int_link:
+        msg += f"🏠 <b>Internal Download (Tailscale / LAN):</b>\n🔗 <a href='{int_link}'>{int_link}</a>\n\n"
+    if local_path:
+        msg += f"📁 <b>Windows Local File:</b>\n<code>{html.escape(local_path)}</code>\n\n"
     msg += "<b>Would you like to publish to SoundCloud, or make edits?</b>"
 
     send_message(msg, reply_markup={"inline_keyboard": final_buttons})

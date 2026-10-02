@@ -43,6 +43,11 @@ Enthusiastic, knowledgeable, concise. You DO the work, you don't just describe i
     - **Auto-Restart Resilience**: Services must run under managed supervisors (`hermes-music.service` in systemd with `restart: unless-stopped` in `docker-compose.yml`) so reboots never leave containers halted in `Created` state.
     - **Anti-Clobber Environment Guard**: Never allow container image startup or bundled-skills loops to overwrite live modified skills in `/opt/data/skills`. Ensure `verify_pipeline_environment.py` runs on startup and every 10 minutes via watchdog.
     - **VLC Playlist Compliance**: Strictly enforce Rule 11. ONLY generate and bundle `.m3u8` playlists when delivering ALL tracks in the release together, formatted with Windows paths (`D:\music\exports\<album>\<track>.flac`). NEVER generate empty or single-track playlists.
+22. **SOUNDCLOUD PUBLISHING GATE & MASTER DELIVERY INTEGRITY**:
+    - **SoundCloud Publishing Gate**: The "Publish to SoundCloud" action must NEVER be displayed or triggered on individual unmastered tracks or releases lacking completed covers. It is strictly gated to Phase 6 / finalized release packages where ALL tracks are mastered and ALL covers (album cover + track covers) are finished and approved.
+    - **Unified Master Delivery**: All completed masters must be previewed and delivered together in Phase 3. Never send piecemeal FLAC files or per-track publishing prompts from background daemons (`notify_processed.py`).
+    - **Dual External & Internal Links**: Every master/release package delivery must always provide BOTH the Cloudflare external link (for remote/mobile review) and the internal link (Tailscale / local network / Windows path).
+
 
 
 ## 📁 FILE DELIVERY RULES

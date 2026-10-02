@@ -298,14 +298,29 @@ def format_receipt_telegram(receipt):
 
 
 def build_receipt_buttons(session):
-    """Build inline keyboard buttons for post-mastering actions."""
+    """Build inline keyboard buttons for post-mastering actions.
+    Rule: NEVER include Publish to SoundCloud unless all covers and masters are completed.
+    """
     slug = session.replace("_", "-")
-    return [
-        [{"text": "🚀 Publish to SoundCloud", "callback_data": f"pub:{slug}:go"}],
+    buttons = []
+    # Check if this session has completed covers/artwork
+    music_exports = Path("/opt/data/music/exports") / session
+    session_dir = EXPORTS_DIR / session
+    has_cover = False
+    for check_dir in (session_dir, music_exports):
+        if check_dir.exists():
+            if list(check_dir.glob("*.png")) or list(check_dir.glob("*.jpg")):
+                has_cover = True
+                break
+
+    if has_cover:
+        buttons.append([{"text": "🚀 Publish to SoundCloud", "callback_data": f"pub:{slug}:go"}])
+    buttons.extend([
         [{"text": "👀 Preview audio first", "callback_data": f"pub:{slug}:preview"}],
         [{"text": "🔄 Regenerate", "callback_data": f"pub:{slug}:regen"}],
         [{"text": "⏭️ Skip", "callback_data": f"pub:{slug}:skip"}],
-    ]
+    ])
+    return buttons
 
 
 def check_notifications():
@@ -330,6 +345,9 @@ def check_notifications():
 
                 # Read the handoff manifest for processing details
                 handoff = read_handoff(session)
+                is_pipeline = (handoff.get("source") == "album_pipeline")
+                parts = session.split("-")
+                is_album_track = len(parts) >= 3
 
                 # Build detailed receipt
                 receipt = build_receipt(session, notif, handoff)
@@ -341,27 +359,31 @@ def check_notifications():
                     json.dump(receipt, f, indent=2)
                 log(f"  Receipt saved: {receipt_path}")
 
-                # Send compact receipt with action buttons via Telegram
-                buttons = build_receipt_buttons(session)
-                payload = {
-                    "chat_id": CHAT_ID,
-                    "text": receipt_text,
-                    "parse_mode": "Markdown",
-                    "reply_markup": {"inline_keyboard": buttons},
-                }
-                if TELEGRAM_BOT_TOKEN:
-                    import urllib.request as _ur
-                    _req = _ur.Request(
-                        f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
-                        data=json.dumps(payload).encode(),
-                        headers={"Content-Type": "application/json"})
-                    try:
-                        _ur.urlopen(_req, timeout=15)
-                        log("  ✓ Receipt + buttons sent")
-                    except Exception as _e:
-                        log(f"  ⚠ Receipt send failed: {_e}")
-                        # Fallback: send without buttons
-                        send_telegram(receipt_text)
+                # Send compact receipt with action buttons via Telegram ONLY for standalone singles.
+                # If managed by album_pipeline or part of a multi-track album, album_pipeline orchestrates review.
+                if not is_pipeline and not is_album_track:
+                    buttons = build_receipt_buttons(session)
+                    payload = {
+                        "chat_id": CHAT_ID,
+                        "text": receipt_text,
+                        "parse_mode": "Markdown",
+                        "reply_markup": {"inline_keyboard": buttons},
+                    }
+                    if TELEGRAM_BOT_TOKEN:
+                        import urllib.request as _ur
+                        _req = _ur.Request(
+                            f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+                            data=json.dumps(payload).encode(),
+                            headers={"Content-Type": "application/json"})
+                        try:
+                            _ur.urlopen(_req, timeout=15)
+                            log("  ✓ Receipt + buttons sent")
+                        except Exception as _e:
+                            log(f"  ⚠ Receipt send failed: {_e}")
+                            # Fallback: send without buttons
+                            send_telegram(receipt_text)
+                else:
+                    log(f"  Track is part of album pipeline ({session}) — skipping standalone Telegram receipt & buttons")
 
                 # ── GAP 4: Copy FLAC + MP3 to music/exports/ ──
                 music_exports = Path("/opt/data/music/exports") / session
@@ -377,25 +399,28 @@ def check_notifications():
                 if copied_count:
                     log(f"  ✓ Copied {copied_count} files to {music_exports}")
 
-                # Send master FLACs via Telegram (prefer lossless; fall back to MP3)
-                flacs = sorted(music_exports.glob("*_MASTER.flac"))
-                if flacs:
-                    for flac in flacs:
-                        title = flac.stem.replace("_MASTER", "").replace("_", " ")
-                        if send_document(str(flac), session, title):
-                            log(f"  ✓ Sent FLAC: {title}")
-                        else:
-                            log(f"  ✗ Failed: {title}")
-                        time.sleep(2)  # Rate limit
+                # Send master FLACs via Telegram ONLY for standalone singles (album_pipeline handles full batch)
+                if not is_pipeline and not is_album_track:
+                    flacs = sorted(music_exports.glob("*_MASTER.flac"))
+                    if flacs:
+                        for flac in flacs:
+                            title = flac.stem.replace("_MASTER", "").replace("_", " ")
+                            if send_document(str(flac), session, title):
+                                log(f"  ✓ Sent FLAC: {title}")
+                            else:
+                                log(f"  ✗ Failed: {title}")
+                            time.sleep(2)  # Rate limit
+                    else:
+                        # Fallback to MP3 if no FLACs
+                        for mp3 in sorted(music_exports.glob("*_MASTER.mp3")):
+                            title = mp3.stem.replace("_MASTER", "").replace("_", " ")
+                            if send_audio(str(mp3), session, title):
+                                log(f"  ✓ Sent MP3: {title}")
+                            else:
+                                log(f"  ✗ Failed: {title}")
+                            time.sleep(2)  # Rate limit
                 else:
-                    # Fallback to MP3 if no FLACs
-                    for mp3 in sorted(music_exports.glob("*_MASTER.mp3")):
-                        title = mp3.stem.replace("_MASTER", "").replace("_", " ")
-                        if send_audio(str(mp3), session, title):
-                            log(f"  ✓ Sent MP3: {title}")
-                        else:
-                            log(f"  ✗ Failed: {title}")
-                        time.sleep(2)  # Rate limit
+                    log(f"  Album track audio managed by album pipeline — skipping per-track chat document delivery")
 
                 # Also copy WAV masters if FLAC doesn't exist yet
                 for f in sorted(session_dir.glob("*_MASTER.wav")):

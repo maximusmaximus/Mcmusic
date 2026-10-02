@@ -37,9 +37,7 @@ def get_public_url():
 
 def ensure_server_running():
     url = get_public_url()
-    if sys.platform == "win32" and is_port_open(PORT) and url:
-        return url
-    if sys.platform != "win32" and url:
+    if is_port_open(PORT) and url:
         return url
 
     server_script = Path(__file__).parent / "server.py"
@@ -62,7 +60,7 @@ def ensure_server_running():
         for _ in range(30):
             time.sleep(0.5)
             url = get_public_url()
-            if url:
+            if url and is_port_open(PORT):
                 return url
     return url
 
@@ -93,6 +91,11 @@ def main():
     local_url = f"{BASE_URL}/{share_id}/{final_path.name}"
     print(f"[SUCCESS] Packaged successfully: {final_path}")
     print(f"[LOCAL LINK] {local_url}")
+
+    tailscale_host = os.environ.get("TAILSCALE_HOST", "planetaryexplorer.tail24df4e.ts.net")
+    tailscale_port = os.environ.get("TAILSCALE_PORT", str(PORT))
+    internal_url = f"http://{tailscale_host}:{tailscale_port}/{share_id}/{final_path.name}"
+    print(f"[INTERNAL LINK] {internal_url}")
 
     external_base = ensure_server_running()
     if external_base:
