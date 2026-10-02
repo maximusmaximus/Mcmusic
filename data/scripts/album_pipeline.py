@@ -64,6 +64,7 @@ HANDOFF_SCRIPT = "/opt/data/skills/dawagent/dawagent/scripts/handoff.py"
 
 # Cost constants
 VENICE_IMAGE_GEN_COST = 0.04
+VENICE_IMAGE_EDIT_COST = 0.04
 VENICE_UPSCALE_COST = 0.02
 
 
@@ -152,10 +153,12 @@ def init_cost_tracker(state):
             "track_redos": 0.0,
             "cover_generation": 0.0,
             "cover_regeneration": 0.0,
+            "cover_edits": 0.0,
             "cover_upscale": 0.0,
             "mastering": 0.0,
             "redo_count": 0,
             "cover_regen_count": 0,
+            "cover_edit_count": 0,
         }
     return state["costs"]
 
@@ -168,7 +171,7 @@ def add_cost(state, category, amount):
 
 def get_total_cost(state):
     costs = state.get("costs", {})
-    return sum(v for k, v in costs.items() if isinstance(v, (int, float)) and k not in ("redo_count", "cover_regen_count"))
+    return sum(v for k, v in costs.items() if isinstance(v, (int, float)) and k not in ("redo_count", "cover_regen_count", "cover_edit_count"))
 
 
 def format_cost_summary(state, album_name):
@@ -187,6 +190,8 @@ def format_cost_summary(state, album_name):
     ])
     if costs.get("cover_regeneration", 0) > 0:
         lines.append(f"🔄 Cover Regeneration:  ${costs.get('cover_regeneration', 0):.2f}  ({costs.get('cover_regen_count', 0)} regens)")
+    if costs.get("cover_edits", 0) > 0:
+        lines.append(f"✏️ Cover Edits:         ${costs.get('cover_edits', 0):.2f}  ({costs.get('cover_edit_count', 0)} edits)")
     lines.extend([
         f"⬆️ Cover Upscale:       ${costs.get('cover_upscale', 0):.2f}",
         f"🎛️ DAWAGENT Mastering:  $0.00  (local)",
@@ -1129,7 +1134,154 @@ def _package_and_share_flacs(tracklist, proposal):
 
 
 # ── Phase 4: Album Cover Art ───────────────────────────────────────────
-def generate_artwork_venice(prompt, album_name):
+def get_current_moon_phase(dt=None):
+    """
+    Calculate dynamic astronomical moon phase using synodic lunar cycle.
+    Returns (phase_name, atmospheric_description).
+    """
+    if dt is None:
+        dt = datetime.now(timezone.utc)
+    ref = datetime(2000, 1, 6, 18, 14, tzinfo=timezone.utc)
+    diff_days = (dt - ref).total_seconds() / 86400.0
+    synodic = 29.53058867
+    cycle = (diff_days % synodic) / synodic
+
+    if cycle < 0.03 or cycle >= 0.97:
+        return "New Moon", "a dark, near-invisible new moon obscured by dense smog"
+    elif cycle < 0.22:
+        return "Waxing Crescent", "a razor-thin waxing crescent moon hanging sharp and cold in the night sky"
+    elif cycle < 0.28:
+        return "First Quarter", "a stark, half-lit first quarter moon carving sharp shadows"
+    elif cycle < 0.47:
+        return "Waxing Gibbous", "a luminous waxing gibbous moon casting heavy silver rim light"
+    elif cycle < 0.53:
+        return "Full Moon", "a blinding, silver-white full moon piercing through nocturnal haze"
+    elif cycle < 0.72:
+        return "Waning Gibbous", "a cold waning gibbous moon casting pale rim light and diffused glows through the mist"
+    elif cycle < 0.78:
+        return "Last Quarter", "a stark half-lit waning last quarter moon cutting through the gloom"
+    else:
+        return "Waning Crescent", "a delicate waning crescent moon glowing faintly above the skyline"
+
+
+def sanitize_prompt_for_venice(prompt, max_len=1450):
+    """
+    Ensure prompt satisfies Venice AI validation (max 1500 chars) and enforces NO TEXT.
+    """
+    prompt = prompt.strip()
+    suffix = " NO TEXT, NO LETTERS, NO TYPOGRAPHY, NO WORDS"
+    if "NO TEXT" in prompt.upper():
+        suffix = ""
+    avail_len = max_len - len(suffix)
+    if len(prompt) > avail_len:
+        trimmed = prompt[:avail_len]
+        last_period = trimmed.rfind('.')
+        if last_period > avail_len - 150:
+            prompt = trimmed[:last_period + 1]
+        else:
+            last_space = trimmed.rfind(' ')
+            if last_space > 0:
+                prompt = trimmed[:last_space]
+            else:
+                prompt = trimmed
+    return (prompt + suffix).strip()
+
+
+def upsample_image_prompt_k3(title, core_concept, subgenre="", is_album=False, custom_notes=""):
+    """
+    Upsample image prompt into a hyper-detailed cinematic scene using kimi-k3 via Venice API.
+    Derives visuals directly from the musical theme / acoustic DNA.
+    Sometimes includes signature recurring motifs:
+      - Shadowed man with fedora
+      - Dynamic current moon phase
+      - Katana
+    """
+    if not VENICE_API_KEY:
+        logger.warning("VENICE_API_KEY missing, using fallback prompt.")
+        return sanitize_prompt_for_venice(f"Cinematic neon-noir scene for {title}. {core_concept}. {subgenre}")
+
+    moon_name, moon_desc = get_current_moon_phase()
+
+    import random
+    include_fedora = random.random() < 0.65
+    include_moon = random.random() < 0.75
+    include_katana = random.random() < 0.60
+
+    motifs = []
+    if include_fedora:
+        motifs.append("A mysterious silhouette of a shadowed man in a wide-brimmed fedora (motionless in background doorway or deep shadow, face completely obscured in darkness, trenchcoat hem dissolving into haze)")
+    if include_moon:
+        motifs.append(f"Current astronomical moon phase: {moon_name} ({moon_desc}) visible through skylight, frosted window, or reflected on wet concrete/water")
+    if include_katana:
+        motifs.append("A matte-black katana with textured black tsuka hilt wrapping, resting naturally in the scene (on a brushed steel table, dashboard, or wet floor), subtle razor edge reflection")
+
+    motifs_instruction = "\n".join(f"- {m}" for m in motifs) if motifs else "- Maintain minimalist neon-noir clinical aesthetic"
+
+    system_instruction = (
+        "You are an elite cinematic art director and visual prompt engineer for VØIDRIDE, "
+        "a dark neon-noir / witch house trap / heavy West Coast bass electronic artist.\n"
+        "Your task: Convert the given song theme, sonic DNA, and visual concept into an extraordinarily "
+        "detailed, photorealistic cinematic scene prompt for an AI image generation model.\n\n"
+        "Strict Guidelines:\n"
+        "1. NO TEXT, NO LETTERS, NO TYPOGRAPHY, NO WATERMARKS, NO WORDS in the image.\n"
+        "2. Style: Photorealistic 35mm / anamorphic cinematic photography, ARRI Alexa 65, shallow depth of field, "
+        "volumetric fog, film grain, subtle halation, dramatic chiaroscuro lighting, razor-sharp textures.\n"
+        "3. Derive all visual metaphors directly from the song's musical themes, instruments, and mood.\n"
+        "4. Seamlessly incorporate these signature recurring motifs if listed:\n"
+        f"{motifs_instruction}\n"
+        "5. CRITICAL CONSTRAINT: The generated prompt MUST be under 1200 characters (around 150 words). Be densely atmospheric and concise.\n\n"
+        "Output ONLY the final generated image prompt paragraph. Do NOT include markdown headers, preambles, or conversational filler."
+    )
+
+    user_input = (
+        f"Title: {title}\n"
+        f"Type: {'Album Cover' if is_album else 'Single Track Cover'}\n"
+        f"Subgenre / Sonic DNA: {subgenre}\n"
+        f"Core Concept / Theme: {core_concept}\n"
+    )
+    if custom_notes:
+        user_input += f"Specific Director Notes: {custom_notes}\n"
+
+    url = "https://api.venice.ai/api/v1/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {VENICE_API_KEY}",
+        "Content-Type": "application/json"
+    }
+
+    models_to_try = ["kimi-k3", "qwen-3-7-plus"]
+    for model_name in models_to_try:
+        payload = {
+            "model": model_name,
+            "messages": [
+                {"role": "system", "content": system_instruction},
+                {"role": "user", "content": user_input}
+            ],
+            "temperature": 0.7,
+            "max_tokens": 1800
+        }
+        try:
+            req = urllib.request.Request(url, data=json.dumps(payload).encode('utf-8'), headers=headers)
+            with urllib.request.urlopen(req, timeout=45) as resp:
+                data = json.loads(resp.read().decode('utf-8'))
+                choice = data.get("choices", [{}])[0]
+                msg = choice.get("message", {})
+                content = msg.get("content", "").strip() or msg.get("reasoning_content", "").strip()
+                if content:
+                    cleaned = re.sub(r'^(Prompt:\s*|Here is the prompt:\s*|Visual prompt:\s*)', '', content, flags=re.IGNORECASE).strip('"` \n')
+                    logger.info(f"Successfully upsampled prompt with {model_name} for '{title}' ({len(cleaned)} chars)")
+                    return sanitize_prompt_for_venice(cleaned)
+        except Exception as e:
+            logger.warning(f"K3 upsample attempt with {model_name} failed: {e}")
+            time.sleep(1)
+
+    fallback_prompt = (
+        f"Cinematic photorealistic nightride scene for {title}. {core_concept}. "
+        f"{subgenre}. Volumetric lighting, 35mm film grain, 8K resolution, atmospheric fog."
+    )
+    return sanitize_prompt_for_venice(fallback_prompt)
+
+
+def generate_artwork_venice(prompt, album_name, state=None):
     parts = album_name.split('/')
     if len(parts) == 2:
         art_dir = get_album_artwork_dir(parts[0])
@@ -1143,26 +1295,88 @@ def generate_artwork_venice(prompt, album_name):
         logger.error("VENICE_API_KEY missing, skipping image generation.")
         return None
 
+    clean_prompt = sanitize_prompt_for_venice(prompt)
+
     url = "https://api.venice.ai/api/v1/images/generations"
     headers = {"Authorization": f"Bearer {VENICE_API_KEY}", "Content-Type": "application/json"}
-    payload = {
-        "model": "grok-imagine-image-quality",
-        "prompt": f"{prompt} NO TEXT, NO LETTERS, NO TYPOGRAPHY",
-        "response_format": "b64_json"
+    models = ["qwen-image-3-pro", "grok-imagine-image-quality"]
+
+    for model_name in models:
+        payload = {
+            "model": model_name,
+            "prompt": clean_prompt,
+            "response_format": "b64_json"
+        }
+        req = urllib.request.Request(url, data=json.dumps(payload).encode('utf-8'), headers=headers)
+        for attempt in range(2):
+            try:
+                logger.info(f"Generating artwork using {model_name} (attempt {attempt+1})...")
+                with urllib.request.urlopen(req, timeout=120) as resp:
+                    data = json.loads(resp.read().decode('utf-8'))
+                    b64 = data.get('data', [{}])[0].get('b64_json')
+                    if b64:
+                        with open(out_path, 'wb') as f:
+                            f.write(base64.b64decode(b64))
+                        if state:
+                            add_cost(state, "cover_generation", VENICE_IMAGE_GEN_COST)
+                        logger.info(f"Artwork saved to {out_path} ({os.path.getsize(out_path)} bytes)")
+                        return out_path
+            except Exception as e:
+                logger.warning(f"Venice image generation with {model_name} attempt {attempt+1} failed: {e}")
+                time.sleep(2)
+
+    return None
+
+
+def edit_artwork_venice(image_path, edit_prompt, out_path=None, state=None):
+    """
+    Edit artwork using Venice AI image edit inference (/api/v1/image/edit).
+    Uses base64 data URL and enhance_prompt=True for vision-guided precision.
+    """
+    if not VENICE_API_KEY or not os.path.exists(image_path):
+        logger.error("VENICE_API_KEY missing or image file not found.")
+        return None
+
+    if out_path is None:
+        out_path = image_path
+
+    with open(image_path, "rb") as f:
+        img_b64 = base64.b64encode(f.read()).decode("utf-8")
+
+    clean_prompt = sanitize_prompt_for_venice(edit_prompt)
+
+    url = "https://api.venice.ai/api/v1/image/edit"
+    headers = {
+        "Authorization": f"Bearer {VENICE_API_KEY}",
+        "Content-Type": "application/json"
     }
-    req = urllib.request.Request(url, data=json.dumps(payload).encode('utf-8'), headers=headers)
+
+    payload = {
+        "image": f"data:image/png;base64,{img_b64}",
+        "prompt": clean_prompt,
+        "enhance_prompt": True
+    }
+
+    req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers)
     for attempt in range(2):
         try:
+            logger.info(f"Editing artwork with prompt: '{clean_prompt}' (attempt {attempt+1})...")
             with urllib.request.urlopen(req, timeout=90) as resp:
-                data = json.loads(resp.read().decode('utf-8'))
-                b64 = data.get('data', [{}])[0].get('b64_json')
-                if b64:
-                    with open(out_path, 'wb') as f:
-                        f.write(base64.b64decode(b64))
+                data = resp.read()
+                if len(data) > 1000:
+                    with open(out_path, "wb") as f:
+                        f.write(data)
+                    if state:
+                        add_cost(state, "cover_edits", VENICE_IMAGE_EDIT_COST)
+                        costs = init_cost_tracker(state)
+                        costs["cover_edit_count"] = costs.get("cover_edit_count", 0) + 1
+                        save_state(state)
+                    logger.info(f"Edited artwork saved to {out_path} ({len(data)} bytes)")
                     return out_path
         except Exception as e:
-            logger.warning(f"Venice image generation attempt {attempt+1} failed: {e}")
+            logger.warning(f"Venice image edit attempt {attempt+1} failed: {e}")
             time.sleep(2)
+
     return None
 
 
@@ -1220,139 +1434,178 @@ def phase_4_album_cover(proposal, tracklist, state=None, dashboard=None):
         dashboard.set_phase(4)
     album_name = proposal.get('album', 'Unknown Album')
     visual = proposal.get('visual', '')
+    subgenre = proposal.get('subgenre', '')
+    brief = proposal.get('brief', '')
 
-    send_message("🎨 <b>Generating album cover...</b>")
-    while True:
-        cover_path = generate_artwork_venice(visual, album_name)
-        if state:
-            add_cost(state, "cover_generation", VENICE_IMAGE_GEN_COST)
-        if not cover_path or not os.path.exists(cover_path):
-            send_message("❌ Failed to generate album cover.")
-            return "regen"
+    art_dir = get_album_artwork_dir(album_name)
+    os.makedirs(art_dir, exist_ok=True)
+    cover_path = os.path.join(art_dir, "album_cover.png")
+    cover_bg = os.path.join(art_dir, "album_cover_bg.png")
 
-        if os.path.exists(OVERLAY_TITLE_SCRIPT):
-            album_bg = cover_path.replace('.png', '_bg.png')
-            if not os.path.exists(album_bg):
-                shutil.copy2(cover_path, album_bg)
-            styled_album = stylize_title(album_name)
-            subprocess.run(["/opt/hermes/.venv/bin/python3", OVERLAY_TITLE_SCRIPT,
-                            "--image", album_bg, "--title", styled_album, "--auto-color", "--output", cover_path], capture_output=True)
+    send_message(f"🎨 <b>Designing album cover for {html.escape(album_name)}...</b>\nUpsampling visual prompt with K3 AI...")
 
-        send_message("⬆️ Upscaling album cover to 3000×3000...")
-        upscale_artwork_venice(cover_path)
-        if state:
-            add_cost(state, "cover_upscale", VENICE_UPSCALE_COST)
+    core_concept = f"Album visual: {visual}. Musical brief: {brief}"
+    upsampled_prompt = upsample_image_prompt_k3(album_name, core_concept, subgenre=subgenre, is_album=True)
 
+    send_message("🖼️ <b>Synthesizing visual with Venice SOTA image engine (qwen-image-3-pro)...</b>")
+    raw_path = generate_artwork_venice(upsampled_prompt, album_name, state=state)
+    if not raw_path or not os.path.exists(raw_path):
+        send_message("❌ Failed to generate album cover.")
+        return "regen"
+
+    shutil.copy2(raw_path, cover_bg)
+
+    if os.path.exists(OVERLAY_TITLE_SCRIPT):
+        styled_album = stylize_title(album_name)
+        subprocess.run(["/opt/hermes/.venv/bin/python3", OVERLAY_TITLE_SCRIPT,
+                        "--image", cover_bg, "--title", styled_album, "--auto-color", "--output", cover_path], capture_output=True)
+    else:
+        shutil.copy2(cover_bg, cover_path)
+
+    send_message("⬆️ Upscaling album cover to 3000×3000...")
+    upscale_artwork_venice(cover_path)
+    if state:
+        add_cost(state, "cover_upscale", VENICE_UPSCALE_COST)
+
+    def _send_album_review_card():
         buttons = [
             [{"text": "✅ Approve Album Cover", "callback_data": "ap:albumcover:approve"}],
-            [{"text": "🔄 Regenerate Cover", "callback_data": "ap:albumcover:regen"}]
+            [
+                {"text": "🔄 Regenerate", "callback_data": "ap:albumcover:regen"},
+                {"text": "✏️ Edit Cover", "callback_data": "ap:albumcover:edit"}
+            ],
+            [
+                {"text": "🌑 Darker", "callback_data": "ap:albumcover:quickedit:darker"},
+                {"text": "🌫️ Dense Mist", "callback_data": "ap:albumcover:quickedit:mist"},
+                {"text": "🗡️ Add Katana", "callback_data": "ap:albumcover:quickedit:katana"}
+            ],
+            [
+                {"text": "👤 Fedora Shadow", "callback_data": "ap:albumcover:quickedit:fedora"},
+                {"text": "🌕 Moon Glint", "callback_data": "ap:albumcover:quickedit:moon"}
+            ]
         ]
-        send_photo(cover_path, caption=f"🎨 Album Cover: <b>{album_name}</b>", reply_markup={"inline_keyboard": buttons})
+        moon_phase, _ = get_current_moon_phase()
+        caption = (
+            f"🎨 <b>Album Cover: {html.escape(album_name)}</b>\n"
+            f"🌙 Phase: <i>{moon_phase}</i> | 📐 3000×3000 Ultra-HD\n"
+            f"<i>Review cover below — tap Approve, Regenerate, or Edit:</i>"
+        )
+        send_photo(cover_path, caption=caption, reply_markup={"inline_keyboard": buttons})
 
-        while True:
-            flag, content = poll_flags()
-            if flag == "albumcover_approved":
-                send_message("✅ Album cover approved!")
-                return "approved"
-            elif flag == "albumcover_regen":
-                send_message("🔄 Regenerating album cover...")
-                break
+    _send_album_review_card()
+
+    while True:
+        flag, content = poll_flags()
+        if flag == "albumcover_approved":
+            send_message("✅ Album cover approved!")
+            return "approved"
+        elif flag == "albumcover_regen":
+            send_message("🔄 <b>Regenerating album cover from scratch...</b>")
+            if state:
+                add_cost(state, "cover_regeneration", VENICE_IMAGE_GEN_COST)
+                costs = init_cost_tracker(state)
+                costs["cover_regen_count"] = costs.get("cover_regen_count", 0) + 1
+                save_state(state)
+            return phase_4_album_cover(proposal, tracklist, state=state, dashboard=dashboard)
+        elif flag == "albumcover_edit":
+            edit_directive = content if content else "darker, heavier contrast, dramatic lighting"
+            send_message(f"✏️ <b>Modifying cover visual:</b> <i>{html.escape(edit_directive)}</i>\nRunning Venice AI vision edit inference...")
+
+            edit_artwork_venice(cover_bg, edit_directive, cover_bg, state=state)
+
+            if os.path.exists(OVERLAY_TITLE_SCRIPT):
+                styled_album = stylize_title(album_name)
+                subprocess.run(["/opt/hermes/.venv/bin/python3", OVERLAY_TITLE_SCRIPT,
+                                "--image", cover_bg, "--title", styled_album, "--auto-color", "--output", cover_path], capture_output=True)
+            else:
+                shutil.copy2(cover_bg, cover_path)
+
+            send_message("⬆️ Upscaling edited album cover to 3000×3000...")
+            upscale_artwork_venice(cover_path)
+            if state:
+                add_cost(state, "cover_upscale", VENICE_UPSCALE_COST)
+
+            _send_album_review_card()
 
 
 # ── Phase 5: Track Cover Art ───────────────────────────────────────────
-def _build_varied_scene(visual, title, direction, track_idx, total_tracks):
-    environments = [
-        "desolate volcanic wasteland with cracked obsidian ground and distant eruptions",
-        "flooded industrial ruins with water reflecting burning sky, submerged machinery",
-        "lightning-struck highway overpass above a sea of molten lava and ash clouds",
-        "hurricane-ravaged cityscape with buildings torn apart, debris spiraling upward",
-        "aftermath crater landscape under clearing skies, embers floating like fireflies",
-    ]
-    weather = [
-        "raining molten fire droplets from a volcanic sky, pyroclastic flow in background",
-        "torrential acid rain with neon reflections in puddles, thick fog rolling in",
-        "massive lightning storm with forked bolts illuminating everything in purple-white",
-        "category 5 hurricane winds with horizontal rain and swirling fire tornados",
-        "ash snow falling gently through shafts of golden light breaking through dark clouds",
-    ]
-    cameras = [
-        "extreme wide shot, figure silhouetted against massive explosion",
-        "low angle shot looking up through rain, reflections on wet ground",
-        "aerial drone view looking down at destruction pattern, geometric chaos",
-        "dutch angle close-up with debris flying past camera, motion blur",
-        "symmetrical centered composition, long perspective vanishing into distance",
-    ]
-    lighting = [
-        "blood-red twilight, sky cracked with orange fissures",
-        "deep midnight blue with bioluminescent accents and distant fires",
-        "overcast bruised-purple sky with sickly green underlighting",
-        "stark chiaroscuro with single harsh spotlight from above",
-        "golden hour through smoke haze, long dramatic shadows",
-    ]
-    color_accents = [
-        "dominant crimson red and charcoal black",
-        "deep ocean teal and rusted copper",
-        "electric violet and ash grey",
-        "molten amber-orange and obsidian",
-        "ghostly silver-white and burnt umber",
-    ]
-    env = environments[track_idx % len(environments)]
-    wthr = weather[track_idx % len(weather)]
-    cam = cameras[track_idx % len(cameras)]
-    light = lighting[track_idx % len(lighting)]
-    color = color_accents[track_idx % len(color_accents)]
+def _extract_track_dna(track_item, proposal):
+    title = track_item.get('title', 'Unknown Track')
+    visual = proposal.get('visual', '')
+    subgenre = proposal.get('subgenre', '')
 
-    return (
-        f"{visual}. UNIQUE SCENE: {env}. WEATHER: {wthr}. CAMERA: {cam}. "
-        f"LIGHTING: {light}. COLOR PALETTE: {color}. Track mood: {title} — {direction}. "
-        f"Cohesive album art series track {track_idx + 1}/{total_tracks}. "
-        f"NO TEXT, NO LETTERS, NO TYPOGRAPHY, NO WORDS"
-    )
+    prod_dir = track_item.get('production_dir')
+    if prod_dir and os.path.exists(os.path.join(prod_dir, 'production_plan.json')):
+        try:
+            with open(os.path.join(prod_dir, 'production_plan.json')) as f:
+                plan = json.load(f)
+            stems = plan.get('stems', {})
+            main_p = stems.get('main', {}).get('prompt', '')
+            tex_p = stems.get('texture', {}).get('prompt', '')
+            energy = plan.get('energy', '')
+            genre = plan.get('genre', subgenre)
+            return (
+                f"Track title: {title}. Subgenre: {genre}. Energy & mood: {energy}. "
+                f"Main sonic DNA: {main_p}. Texture elements: {tex_p}. Album atmosphere: {visual}"
+            )
+        except Exception as e:
+            logger.warning(f"Failed to read production_plan.json for {title}: {e}")
+
+    direction = track_item.get('direction', track_item.get('genre', subgenre))
+    return f"Track title: {title}. Style: {direction}. Album visual concept: {visual}"
 
 
 def phase_5_track_covers(proposal, tracklist, state=None, dashboard=None):
     if dashboard:
         dashboard.set_phase(5)
     album_name = proposal.get('album', 'Unknown Album')
-    visual = proposal.get('visual', '')
+    subgenre = proposal.get('subgenre', '')
     track_art_dir = get_album_artwork_dir(album_name)
     os.makedirs(track_art_dir, exist_ok=True)
 
-    send_message("🎨 <b>Generating track covers with scene variation...</b>")
+    send_message(f"🎨 <b>Generating {len(tracklist)} track covers derived directly from song themes...</b>\nUpsampling each track's sonic DNA with K3 AI...")
     track_cover_paths = []
 
     for i, t in enumerate(tracklist):
         title = t.get('title', f'Track {i+1}')
-        direction = t.get('direction', t.get('genre', ''))
-        scene = _build_varied_scene(visual, title, direction, i, len(tracklist))
+        dna = _extract_track_dna(t, proposal)
 
-        cover_path = generate_artwork_venice(scene, f"{album_name}/{title}")
-        if state:
-            add_cost(state, "cover_generation", VENICE_IMAGE_GEN_COST)
-        if cover_path and os.path.exists(cover_path):
-            final_path = os.path.join(track_art_dir, f"{title}_cover.png")
-            if cover_path != final_path:
-                shutil.move(cover_path, final_path)
-                cover_path = final_path
+        send_message(f"🖌️ [{(i+1)}/{len(tracklist)}] Upsampling visual for <b>{html.escape(title)}</b> with K3...")
+        upsampled = upsample_image_prompt_k3(title, dna, subgenre=subgenre, is_album=False)
 
-            bg_backup = cover_path.replace('_cover.png', '_cover_bg.png')
-            if not os.path.exists(bg_backup):
-                shutil.copy2(cover_path, bg_backup)
+        cover_path = os.path.join(track_art_dir, f"{title}_cover.png")
+        bg_backup = os.path.join(track_art_dir, f"{title}_cover_bg.png")
+
+        raw_path = generate_artwork_venice(upsampled, f"{album_name}/{title}", state=state)
+        if raw_path and os.path.exists(raw_path):
+            shutil.copy2(raw_path, bg_backup)
 
             if os.path.exists(OVERLAY_TITLE_SCRIPT):
                 styled_title = stylize_title(title)
                 subprocess.run(["/opt/hermes/.venv/bin/python3", OVERLAY_TITLE_SCRIPT,
                                 "--image", bg_backup, "--title", styled_title, "--bottom", "--auto-color", "--output", cover_path], capture_output=True)
+            else:
+                shutil.copy2(bg_backup, cover_path)
 
-            track_btn = [[{"text": f"🔄 Regen {title}", "callback_data": f"ap:art:redo:{i+1}"}]]
-            send_photo(cover_path, caption=f"🎨 Track {i+1}: <b>{title}</b>", reply_markup={"inline_keyboard": track_btn})
+            track_btn = [
+                [
+                    {"text": f"🔄 Regen {title}", "callback_data": f"ap:art:redo:{i+1}"},
+                    {"text": f"✏️ Edit {title}", "callback_data": f"ap:art:edit:{i+1}"}
+                ],
+                [
+                    {"text": "🌑 Darker", "callback_data": f"ap:art:quickedit:{i+1}:darker"},
+                    {"text": "🌫️ Mist", "callback_data": f"ap:art:quickedit:{i+1}:mist"},
+                    {"text": "🗡️ Katana", "callback_data": f"ap:art:quickedit:{i+1}:katana"}
+                ]
+            ]
+            send_photo(cover_path, caption=f"🎨 Track {i+1}: <b>{html.escape(title)}</b>", reply_markup={"inline_keyboard": track_btn})
             track_cover_paths.append(cover_path)
 
     buttons = [
         [{"text": "✅ Approve All Covers", "callback_data": "ap:trackcovers:approve"}],
         [{"text": "🔄 Regenerate All", "callback_data": "ap:trackcovers:regenall"}]
     ]
-    send_message("👆 <b>Review track covers above:</b>", reply_markup={"inline_keyboard": buttons})
+    send_message("👆 <b>Review all track covers above:</b>\nTap any track's button to edit or regenerate, or Approve All to finalize:", reply_markup={"inline_keyboard": buttons})
 
     while True:
         flag, content = poll_flags()
@@ -1360,14 +1613,19 @@ def phase_5_track_covers(proposal, tracklist, state=None, dashboard=None):
             send_message(f"⬆️ <b>Upscaling all {len(track_cover_paths)} track covers to 3000×3000...</b> (ETA ~15s per track)")
             for i, cp in enumerate(track_cover_paths):
                 track_title = os.path.basename(cp).replace('_cover.png', '').replace('_cover.jpg', '')
-                send_message(f"⚙️ [{(i+1)}/{len(track_cover_paths)}] Upscaling <b>{track_title}</b> to 3000×3000...")
+                send_message(f"⚙️ [{(i+1)}/{len(track_cover_paths)}] Upscaling <b>{html.escape(track_title)}</b> to 3000×3000...")
                 upscale_artwork_venice(cp)
                 if state:
                     add_cost(state, "cover_upscale", VENICE_UPSCALE_COST)
             send_message("✅ <b>All track covers upscaled to 3000×3000!</b> Packaging release and launching to SoundCloud...")
             return "approved"
         elif flag == "trackcovers_regenall":
-            send_message("🔄 Regenerating all track covers...")
+            send_message("🔄 <b>Regenerating all track covers...</b>")
+            if state:
+                add_cost(state, "cover_regeneration", VENICE_IMAGE_GEN_COST * len(tracklist))
+                costs = init_cost_tracker(state)
+                costs["cover_regen_count"] = costs.get("cover_regen_count", 0) + len(tracklist)
+                save_state(state)
             return phase_5_track_covers(proposal, tracklist, state=state, dashboard=dashboard)
         elif flag and flag.startswith("art_redo_"):
             try:
@@ -1376,12 +1634,70 @@ def phase_5_track_covers(proposal, tracklist, state=None, dashboard=None):
                 if 0 <= idx < len(tracklist):
                     t = tracklist[idx]
                     title = t.get('title', f'Track {track_num}')
-                    scene = _build_varied_scene(visual, title, t.get('direction', ''), idx, len(tracklist))
-                    new_path = generate_artwork_venice(scene, f"{album_name}/{title}")
-                    if new_path:
-                        send_photo(new_path, caption=f"🎨 Track {track_num}: <b>{title}</b> (Redone)")
-            except Exception:
-                pass
+                    send_message(f"🔄 <b>Regenerating cover for Track {track_num}: {html.escape(title)}...</b>")
+                    dna = _extract_track_dna(t, proposal)
+                    upsampled = upsample_image_prompt_k3(title, dna, subgenre=subgenre, is_album=False)
+                    cover_path = os.path.join(track_art_dir, f"{title}_cover.png")
+                    bg_path = os.path.join(track_art_dir, f"{title}_cover_bg.png")
+                    raw = generate_artwork_venice(upsampled, f"{album_name}/{title}", state=state)
+                    if raw and os.path.exists(raw):
+                        shutil.copy2(raw, bg_path)
+                        if os.path.exists(OVERLAY_TITLE_SCRIPT):
+                            styled_title = stylize_title(title)
+                            subprocess.run(["/opt/hermes/.venv/bin/python3", OVERLAY_TITLE_SCRIPT,
+                                            "--image", bg_path, "--title", styled_title, "--bottom", "--auto-color", "--output", cover_path], capture_output=True)
+                        else:
+                            shutil.copy2(bg_path, cover_path)
+                        track_btn = [
+                            [
+                                {"text": f"🔄 Regen {title}", "callback_data": f"ap:art:redo:{track_num}"},
+                                {"text": f"✏️ Edit {title}", "callback_data": f"ap:art:edit:{track_num}"}
+                            ],
+                            [
+                                {"text": "🌑 Darker", "callback_data": f"ap:art:quickedit:{track_num}:darker"},
+                                {"text": "🌫️ Mist", "callback_data": f"ap:art:quickedit:{track_num}:mist"},
+                                {"text": "🗡️ Katana", "callback_data": f"ap:art:quickedit:{track_num}:katana"}
+                            ]
+                        ]
+                        send_photo(cover_path, caption=f"🎨 Track {track_num}: <b>{html.escape(title)}</b> (Regenerated)", reply_markup={"inline_keyboard": track_btn})
+            except Exception as e:
+                logger.error(f"Error redoing track cover: {e}")
+        elif flag and flag.startswith("art_edit_"):
+            try:
+                track_num = int(flag.split("_")[-1])
+                idx = track_num - 1
+                if 0 <= idx < len(tracklist):
+                    t = tracklist[idx]
+                    title = t.get('title', f'Track {track_num}')
+                    edit_directive = content if content else "deepen shadows, cinematic chiaroscuro, moody atmosphere"
+                    send_message(f"✏️ <b>Modifying Track {track_num} ({html.escape(title)}):</b> <i>{html.escape(edit_directive)}</i>\nRunning Venice AI vision edit inference...")
+                    cover_path = os.path.join(track_art_dir, f"{title}_cover.png")
+                    bg_path = os.path.join(track_art_dir, f"{title}_cover_bg.png")
+                    if not os.path.exists(bg_path) and os.path.exists(cover_path):
+                        shutil.copy2(cover_path, bg_path)
+
+                    if os.path.exists(bg_path):
+                        edit_artwork_venice(bg_path, edit_directive, bg_path, state=state)
+                        if os.path.exists(OVERLAY_TITLE_SCRIPT):
+                            styled_title = stylize_title(title)
+                            subprocess.run(["/opt/hermes/.venv/bin/python3", OVERLAY_TITLE_SCRIPT,
+                                            "--image", bg_path, "--title", styled_title, "--bottom", "--auto-color", "--output", cover_path], capture_output=True)
+                        else:
+                            shutil.copy2(bg_path, cover_path)
+                        track_btn = [
+                            [
+                                {"text": f"🔄 Regen {title}", "callback_data": f"ap:art:redo:{track_num}"},
+                                {"text": f"✏️ Edit {title}", "callback_data": f"ap:art:edit:{track_num}"}
+                            ],
+                            [
+                                {"text": "🌑 Darker", "callback_data": f"ap:art:quickedit:{track_num}:darker"},
+                                {"text": "🌫️ Mist", "callback_data": f"ap:art:quickedit:{track_num}:mist"},
+                                {"text": "🗡️ Katana", "callback_data": f"ap:art:quickedit:{track_num}:katana"}
+                            ]
+                        ]
+                        send_photo(cover_path, caption=f"🎨 Track {track_num}: <b>{html.escape(title)}</b> (Edited: <i>{html.escape(edit_directive)}</i>)", reply_markup={"inline_keyboard": track_btn})
+            except Exception as e:
+                logger.error(f"Error editing track cover: {e}")
 
 
 def assemble_release(proposal, tracklist, album_slug):

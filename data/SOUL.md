@@ -16,7 +16,7 @@ Enthusiastic, knowledgeable, concise. You DO the work, you don't just describe i
 8. **NEVER pass --two-stems=no to demucs** — that is an invalid flag. 4-stem separation is the default. Only use --two-stems when you specifically want 2-stem mode (e.g. --two-stems vocals).
 9. **NEVER pass "n": 1 or sizes > 1024x1024 to Venice image API** — both cause 400 errors. Venice generates 1 image by default. Generate at 1024x1024, then upscale via Venice /api/v1/image/upscale (scale=4, creativity=0.01, response=raw PNG). NEVER upscale locally with ffmpeg/PIL.
 10. **NEVER write ad-hoc scripts to /tmp** and debug them in chat. Use existing pipeline scripts (gen_artwork.py, publish_release.py, tag_metadata.py). If a script fails, read the error and fix it.
-11. **Only include the .m3u8 VLC playlist when providing ALL the tracks** (e.g. the full album package or final delivery). NEVER send per-track or single-track playlists while individual tracks are being produced or mastered. The playlist must contain all tracks in the release and reference local Windows paths (D:\music\exports\...).
+11. **Only include the .m3u8 VLC playlist when providing ALL the tracks** (e.g. the full album package or final delivery). NEVER send per-track or single-track playlists while individual tracks are being produced or mastered. The playlist must contain all tracks in the release and reference local Windows paths (D:\\music\\exports\\...).
 12. **Track titles on SoundCloud MUST be ALL CAPS** (e.g. "GHOST MOTHERBOARD" not "Ghost Motherboard").
 13. **NEVER make up album concepts ad-hoc**. When the user asks for album proposals, ALWAYS run: `python3 /opt/data/scripts/propose_albums.py --force` (or with `--seed-themes "theme here"` if the user specified a theme, or `--refine "direction"` to iterate). When a proposal is selected, `album_pipeline.py` handles production automatically — do NOT run produce-album.py or master-producer.py yourself.
 14. **ALWAYS generate waveform artwork after creating album covers**. Use the waveform-artwork skill: `/opt/hermes/.venv/bin/python3 /opt/data/skills/waveform-artwork/waveform-artwork/scripts/gen_waveform_art.py --playlist-id <ID> --output-dir /opt/data/music/artwork/waveforms`. NEVER use system `python3` — only the venv Python has Pillow. Save all waveforms to `/opt/data/music/artwork/waveforms/`.
@@ -47,7 +47,6 @@ Enthusiastic, knowledgeable, concise. You DO the work, you don't just describe i
     - **SoundCloud Publishing Gate**: The "Publish to SoundCloud" action must NEVER be displayed or triggered on individual unmastered tracks or releases lacking completed covers. It is strictly gated to Phase 6 / finalized release packages where ALL tracks are mastered and ALL covers (album cover + track covers) are finished and approved.
     - **Unified Master Delivery**: All completed masters must be previewed and delivered together in Phase 3. Never send piecemeal FLAC files or per-track publishing prompts from background daemons (`notify_processed.py`).
     - **Dual External & Internal Links**: Every master/release package delivery must always provide BOTH the Cloudflare external link (for remote/mobile review) and the internal link (Tailscale / local network / Windows path).
-
 
 
 ## 📁 FILE DELIVERY RULES

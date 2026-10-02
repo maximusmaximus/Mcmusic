@@ -195,7 +195,7 @@ Use ffmpeg for all image pre-processing; reserve venv Python for scripts that ac
 
 | File | Contents |
 |------|----------|
-| `references/cover-art-generation.md` | Full cover art pipeline reference — arguments, workflow, Visual DNA motifs, argument table, all known pitfalls (1500-char limit, SC upload size, upscale timeout, empty state recovery) |
+| `references/cover-art-generation.md` | Full cover art pipeline reference — arguments, workflow, Visual DNA motifs, argument table, all known pitfalls (1500-char limit, SC upload size, upscale timeout, empty state recovery, hardcoded color palette dilution for custom color requests) |
 | `references/playlist-cover-redo.md` | Complete workflow for regenerating SoundCloud playlist covers based on individual track artwork |
 | `references/python3-pil-fix.md` | Fix for missing PIL in overlay step (VENV_PYTHON constant + code change) |
 | `references/stale-playlist-ids.md` | Detecting and resolving stale SC playlist IDs after cover re-upload |

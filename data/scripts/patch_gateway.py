@@ -564,6 +564,83 @@ PATCH_CODE = '''
                 except Exception: pass
                 return
 
+            if choice == 'albumcover:edit':
+                await query.answer(text='✏️ Select cover edit')
+                _edit_buttons = [
+                    [
+                        {"text": "🌑 Deeper Shadows & Noir", "callback_data": "ap:albumcover:quickedit:darker"},
+                        {"text": "🌫️ Dense Cyan Mist & Steam", "callback_data": "ap:albumcover:quickedit:mist"}
+                    ],
+                    [
+                        {"text": "🗡️ Add Sleek Katana", "callback_data": "ap:albumcover:quickedit:katana"},
+                        {"text": "👤 Fedora Silhouette", "callback_data": "ap:albumcover:quickedit:fedora"}
+                    ],
+                    [
+                        {"text": "🌕 Cold Moon Glow", "callback_data": "ap:albumcover:quickedit:moon"},
+                        {"text": "💬 Custom Edit Instructions", "callback_data": "ap:albumcover:customedit"}
+                    ],
+                    [{"text": "↩️ Cancel Edit", "callback_data": "ap:albumcover:edit_cancel"}]
+                ]
+                import json as _json
+                import urllib.request as _urllib
+                _bot_token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+                _chat_id = str(query.message.chat_id) if query.message else ""
+                if _bot_token and _chat_id:
+                    _payload = _json.dumps({
+                        "chat_id": _chat_id,
+                        "text": "✏️ <b>Choose a visual edit for the Album Cover:</b>",
+                        "parse_mode": "HTML",
+                        "reply_markup": {"inline_keyboard": _edit_buttons}
+                    }).encode()
+                    try:
+                        _req = _urllib.Request(f"https://api.telegram.org/bot{_bot_token}/sendMessage", data=_payload, headers={"Content-Type": "application/json"})
+                        _urllib.urlopen(_req, timeout=10)
+                    except Exception: pass
+                return
+
+            if choice.startswith('albumcover:quickedit:'):
+                preset = choice.split(':')[-1]
+                preset_map = {
+                    "darker": "Dramatically deepen shadows, pitch black void contrast, sinister nocturnal chiaroscuro, specular wet reflections",
+                    "mist": "Dense volumetric cyan fog and rising vent steam curling across the floor, cold breath haze and diffused light beams",
+                    "katana": "A matte-black katana with woven hilt resting in the scene, razor folded steel edge catching cold neon gleam",
+                    "fedora": "A motionless silhouette of a shadowed man in a wide-brimmed fedora in the distant doorway, face completely dark",
+                    "moon": "A cold luminous moon casting silver rim light and shafts through drifting mist and cracked skylight"
+                }
+                directive = preset_map.get(preset, "Enhance cinematic atmospheric contrast and textures")
+                os.makedirs('/tmp/pipeline_flags', exist_ok=True)
+                with open('/tmp/pipeline_flags/albumcover_edit', 'w') as f:
+                    f.write(directive)
+                await query.answer(text=f'✏️ Editing cover ({preset})...')
+                try: await query.edit_message_text(text=f"✏️ <b>Applying Album Cover Edit</b>\\nDirective: <i>{directive}</i>", parse_mode="HTML", reply_markup=None)
+                except Exception: pass
+                return
+
+            if choice == 'albumcover:customedit':
+                await query.answer(text="💬 Tell agent your custom cover edit...")
+                from gateway.session import SessionSource
+                from gateway.platforms.base import MessageEvent, MessageType
+                from datetime import datetime as _dt
+                _chat_id = str(query.message.chat_id) if query.message else None
+                _user_id = str(query.from_user.id) if query.from_user else None
+                _user_name = getattr(query.from_user, "first_name", "User")
+                if _chat_id:
+                    _source = SessionSource(platform=self.platform, chat_id=_chat_id, chat_type="dm", user_id=_user_id, user_name=_user_name)
+                    _event = MessageEvent(text='The user wants to edit the album cover. Ask them what specific visual changes they want, then write their exact instructions to /tmp/pipeline_flags/albumcover_edit')
+                    _event.message_type = MessageType.TEXT
+                    _event.source = _source
+                    _event.internal = False
+                    _event.timestamp = _dt.now()
+                    import asyncio
+                    asyncio.create_task(self.handle_message(_event))
+                return
+
+            if choice == 'albumcover:edit_cancel':
+                await query.answer(text="↩️ Edit cancelled")
+                try: await query.edit_message_reply_markup(reply_markup=None)
+                except Exception: pass
+                return
+
             # ── Track Covers Review Handlers ──
             if choice == 'trackcovers:approve':
                 os.makedirs('/tmp/pipeline_flags', exist_ok=True)
@@ -591,6 +668,88 @@ PATCH_CODE = '''
                 with open(f'/tmp/pipeline_flags/art_redo_{track_num}', 'w') as f:
                     f.write('redo')
                 await query.answer(text=f'🔄 Regenerating cover for track {track_num}...')
+                return
+
+            # ── Individual Track Cover Edit Handlers ──
+            if choice.startswith('art:edit:'):
+                track_num = choice.split(':')[-1]
+                await query.answer(text=f'✏️ Select edit for Track {track_num}')
+                _edit_buttons = [
+                    [
+                        {"text": "🌑 Deeper Shadows", "callback_data": f"ap:art:quickedit:{track_num}:darker"},
+                        {"text": "🌫️ Dense Mist", "callback_data": f"ap:art:quickedit:{track_num}:mist"}
+                    ],
+                    [
+                        {"text": "🗡️ Add Katana", "callback_data": f"ap:art:quickedit:{track_num}:katana"},
+                        {"text": "👤 Fedora Silhouette", "callback_data": f"ap:art:quickedit:{track_num}:fedora"}
+                    ],
+                    [
+                        {"text": "🌕 Moon Highlight", "callback_data": f"ap:art:quickedit:{track_num}:moon"},
+                        {"text": "💬 Custom Prompt", "callback_data": f"ap:art:customedit:{track_num}"}
+                    ],
+                    [{"text": "↩️ Cancel", "callback_data": "ap:art:edit_cancel"}]
+                ]
+                import json as _json
+                import urllib.request as _urllib
+                _bot_token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+                _chat_id = str(query.message.chat_id) if query.message else ""
+                if _bot_token and _chat_id:
+                    _payload = _json.dumps({
+                        "chat_id": _chat_id,
+                        "text": f"✏️ <b>Choose a visual edit for Track {track_num} cover:</b>",
+                        "parse_mode": "HTML",
+                        "reply_markup": {"inline_keyboard": _edit_buttons}
+                    }).encode()
+                    try:
+                        _req = _urllib.Request(f"https://api.telegram.org/bot{_bot_token}/sendMessage", data=_payload, headers={"Content-Type": "application/json"})
+                        _urllib.urlopen(_req, timeout=10)
+                    except Exception: pass
+                return
+
+            if choice.startswith('art:quickedit:'):
+                parts = choice.split(':')
+                track_num = parts[1]
+                preset = parts[2]
+                preset_map = {
+                    "darker": "Dramatically deepen shadows, pitch black void contrast, sinister nocturnal chiaroscuro, specular wet reflections",
+                    "mist": "Dense volumetric cyan fog and rising vent steam curling across the floor, cold breath haze and diffused light beams",
+                    "katana": "A matte-black katana with woven hilt resting in the scene, razor folded steel edge catching cold neon gleam",
+                    "fedora": "A motionless silhouette of a shadowed man in a wide-brimmed fedora in the distant doorway, face completely dark",
+                    "moon": "A cold luminous moon casting silver rim light and shafts through drifting mist and cracked skylight"
+                }
+                directive = preset_map.get(preset, "Enhance cinematic atmospheric contrast and textures")
+                os.makedirs('/tmp/pipeline_flags', exist_ok=True)
+                with open(f'/tmp/pipeline_flags/art_edit_{track_num}', 'w') as f:
+                    f.write(directive)
+                await query.answer(text=f'✏️ Editing Track {track_num} ({preset})...')
+                try: await query.edit_message_text(text=f"✏️ <b>Applying Track {track_num} Edit</b>\\nDirective: <i>{directive}</i>", parse_mode="HTML", reply_markup=None)
+                except Exception: pass
+                return
+
+            if choice.startswith('art:customedit:'):
+                track_num = choice.split(':')[-1]
+                await query.answer(text=f"💬 Tell agent your custom edit for Track {track_num}...")
+                from gateway.session import SessionSource
+                from gateway.platforms.base import MessageEvent, MessageType
+                from datetime import datetime as _dt
+                _chat_id = str(query.message.chat_id) if query.message else None
+                _user_id = str(query.from_user.id) if query.from_user else None
+                _user_name = getattr(query.from_user, "first_name", "User")
+                if _chat_id:
+                    _source = SessionSource(platform=self.platform, chat_id=_chat_id, chat_type="dm", user_id=_user_id, user_name=_user_name)
+                    _event = MessageEvent(text=f'The user wants to edit Track {track_num} cover. Ask them what specific visual changes they want, then write their exact instructions to /tmp/pipeline_flags/art_edit_{track_num}')
+                    _event.message_type = MessageType.TEXT
+                    _event.source = _source
+                    _event.internal = False
+                    _event.timestamp = _dt.now()
+                    import asyncio
+                    asyncio.create_task(self.handle_message(_event))
+                return
+
+            if choice == 'art:edit_cancel':
+                await query.answer(text="↩️ Edit cancelled")
+                try: await query.edit_message_reply_markup(reply_markup=None)
+                except Exception: pass
                 return
 
             # ── Final Review & Publishing Gate Handlers ──

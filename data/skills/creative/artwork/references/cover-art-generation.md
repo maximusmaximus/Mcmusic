@@ -144,6 +144,22 @@ When updating playlist artwork, the share link may resolve to a stale 404 ID (pl
 6. If uploading to SC: downscale to 2000×2000 PNG, find playlist ID, multipart PUT
 7. Save to `/opt/data/music/artwork/albums/<album-name>/`
 
+### Hardcoded Color Palette in `build_cover_prompt()` Dilutes Custom Color Requests
+
+The `build_cover_prompt()` function always appends:
+```
+"Deep blacks, dark purples, neon accents, spectral light, industrial textures."
+```
+
+This hardcoded color direction (purple-dominant) actively competes with any `--notes` that request a different palette (e.g. orange/sunset, amber/red, blue/cold). The notes are appended after the color line, so Venice sees both color signals simultaneously — results can blend purple with the requested palette instead of replacing it.
+
+**Mitigations (in order of effectiveness):**
+1. Add explicit color overrides in `--notes` that are strong enough to dominate — e.g. "OVERRIDE: NO purple, NO cyan. The ONLY colors are deep orange, amber, and golden sunset tones."
+2. For a full palette swap, consider temporarily patching line 395 of `gen_artwork.py` to replace the color line, then revert after generation.
+3. Accept some purple/cyan bleed-through and use the `covers-notext` skill to edit out unwanted hues via Venice image inpainting afterwards.
+
+This is a known design limitation of the prompt template, not a bug. The default palette matches VØIDRIDE's standard aesthetic (purple/magenta/cyan), so it works correctly for the majority of covers.
+
 ### "Combine Symbols" Variant
 When user says "combine symbols from the track art" (not just "based on art"):
 1. Download all track covers at `-t500x500.jpg`
