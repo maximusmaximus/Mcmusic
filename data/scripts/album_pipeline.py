@@ -688,6 +688,13 @@ def phase_1_produce(proposal, profile, redo_track=None, redo_feedback=None, mode
         state["completed_tracks"] = tracklist
         save_state(state)
 
+    if not tracklist:
+        logger.error(f"Phase 1 for {album_name} completed with 0 tracks! Halting.")
+        if dashboard:
+            dashboard.set_error("Production failed: 0 tracks produced", track_num=1)
+        send_message(f"🚨 <b>Production failed:</b> No audio tracks were produced for <b>{album_name}</b>. Halting pipeline.")
+        sys.exit(1)
+
     if logger_hub:
         logger_hub.log_event("PHASE_COMPLETE", {"tracks_count": len(tracklist)}, album=album_name, phase=1)
 
@@ -1018,14 +1025,21 @@ def _package_and_share_flacs(tracklist, proposal):
                 shutil.copy2(t["mp3_path"], dest)
                 flac_files.append(dest_name)
 
-        # M3U playlist
-        if flac_files:
-            playlist_path = os.path.join(pack_dir, f"{album_name}.m3u")
-            with open(playlist_path, "w") as pf:
+        if not flac_files:
+            send_message(f"⚠️ No completed audio tracks found for <b>{album_name}</b> yet. Production is currently in progress.")
+            shutil.rmtree(pack_dir, ignore_errors=True)
+            return
+
+        # M3U8 playlist - ONLY when all tracks are present
+        total_expected = len(tracklist) if tracklist else 5
+        has_playlist = len(flac_files) >= total_expected and total_expected > 1
+        if has_playlist:
+            playlist_path = os.path.join(pack_dir, f"{album_name}.m3u8")
+            with open(playlist_path, "w", encoding="utf-8") as pf:
                 pf.write("#EXTM3U\n")
                 for fname in flac_files:
                     title_clean = os.path.splitext(fname)[0].split("-", 1)[-1].replace("-", " ")
-                    pf.write(f"#EXTINF:-1,{title_clean}\n{fname}\n")
+                    pf.write(f"#EXTINF:-1,{title_clean}\nD:\\music\\exports\\{album_name}\\{fname}\n")
 
         # Tag metadata
         tag_script = "/opt/data/skills/delivery-receipt/scripts/tag_metadata.py"
@@ -1040,10 +1054,11 @@ def _package_and_share_flacs(tracklist, proposal):
                 external_link = line.split("[EXTERNAL LINK]")[-1].strip()
                 break
 
+        pl_suffix = " + playlist" if has_playlist else ""
         if external_link:
-            send_message(f"📥 <b>{album_name}</b> — {len(flac_files)} tracks + playlist\n🔗 <a href='{external_link}'>Download ZIP</a>")
+            send_message(f"📥 <b>{album_name}</b> — {len(flac_files)} tracks{pl_suffix}\n🔗 <a href='{external_link}'>Download ZIP</a>")
         else:
-            send_message(f"📥 FLACs packaged ({len(flac_files)} tracks).")
+            send_message(f"📥 FLACs packaged ({len(flac_files)} tracks{pl_suffix}).")
         shutil.rmtree(pack_dir, ignore_errors=True)
     except Exception as e:
         send_message(f"❌ FLAC packaging error: {e}")
