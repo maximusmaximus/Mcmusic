@@ -5,7 +5,7 @@ import os
 
 SOUL_PATH = "/opt/data/SOUL.md"
 
-EXTRA_RULES = """7. **NEVER rename file extensions for Telegram** (.m3u8, .flac, etc). NEVER create .bin copies. NEVER `cp file.m3u8 file.bin`. NEVER tell the user to rename anything. Telegram sendDocument and MEDIA: both work with ANY extension. Send files with their ORIGINAL extension ALWAYS.
+EXTRA_RULES = r"""7. **NEVER rename file extensions for Telegram** (.m3u8, .flac, etc). NEVER create .bin copies. NEVER `cp file.m3u8 file.bin`. NEVER tell the user to rename anything. Telegram sendDocument and MEDIA: both work with ANY extension. Send files with their ORIGINAL extension ALWAYS.
 8. **NEVER pass --two-stems=no to demucs** — that is an invalid flag. 4-stem separation is the default. Only use --two-stems when you specifically want 2-stem mode (e.g. --two-stems vocals).
 9. **NEVER pass "n": 1 or sizes > 1024x1024 to Venice image API** — both cause 400 errors. Venice generates 1 image by default. Generate at 1024x1024, then upscale via Venice /api/v1/image/upscale (scale=4, creativity=0.01, response=raw PNG). NEVER upscale locally with ffmpeg/PIL.
 10. **NEVER write ad-hoc scripts to /tmp** and debug them in chat. Use existing pipeline scripts (gen_artwork.py, publish_release.py, tag_metadata.py). If a script fails, read the error and fix it.
@@ -31,6 +31,11 @@ EXTRA_RULES = """7. **NEVER rename file extensions for Telegram** (.m3u8, .flac,
     - **Recursive Taste Memory**: Strictly preserve and honor the user's recursive taste profile in `taste_profile.json` (incorporating upvoted loved themes and avoiding downvoted themes).
     - **Anti-Patterns**: NO four-on-the-floor, NO cheerful G-funk cliches, NO EDM festival drops, NO galloping beats, NO static loops, NO silence drops.
 20. **ALWAYS SEND TELEGRAM NOTIFICATION ON UPDATES & WORKFLOW CHANGES**: Every time system updates, profile adjustments, code fixes, or pipeline configurations are performed, ALWAYS send a concise status update notification directly to the user's Telegram chat using `/opt/data/scripts/send_agent_notification.py --title "..." --body "..."`. Keep updates simple, clear, and informative.
+21. **RESILIENT WORKFLOW & PIPELINE INTEGRITY**:
+    - **Zero-Track Pipeline Gate**: NEVER advance pipeline phases (DAW mastering, song review, artwork generation, release packaging) if track count is 0 or any required stem failed. NEVER package or share an archive containing 0 tracks.
+    - **Auto-Restart Resilience**: Services must run under managed supervisors (`hermes-music.service` in systemd with `restart: unless-stopped` in `docker-compose.yml`) so reboots never leave containers halted in `Created` state.
+    - **Anti-Clobber Environment Guard**: Never allow container image startup or bundled-skills loops to overwrite live modified skills in `/opt/data/skills`. Ensure `verify_pipeline_environment.py` runs on startup and every 10 minutes via watchdog.
+    - **VLC Playlist Compliance**: Strictly enforce Rule 11. ONLY generate and bundle `.m3u8` playlists when delivering ALL tracks in the release together, formatted with Windows paths (`D:\music\exports\<album>\<track>.flac`). NEVER generate empty or single-track playlists.
 """
 
 FILE_DELIVERY_BLOCK = """
@@ -69,7 +74,7 @@ if not content:
 
 changed = False
 
-if "ALWAYS SEND TELEGRAM NOTIFICATION ON UPDATES" not in content:
+if "RESILIENT WORKFLOW & PIPELINE INTEGRITY" not in content:
     if "7. **NEVER rename file extensions" in content:
         start_r = content.find("7. **NEVER rename file extensions")
         end_r = content.find("## 📁 FILE DELIVERY RULES", start_r)

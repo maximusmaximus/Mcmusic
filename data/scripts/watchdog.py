@@ -201,9 +201,25 @@ def check_session_health():
         log(f"Session check error: {e}")
 
 
+def check_pipeline_scripts_health():
+    """Verify and self-heal pipeline scripts and container guards."""
+    verifier = Path("/opt/data/scripts/verify_pipeline_environment.py")
+    if not verifier.exists():
+        return
+    try:
+        res = subprocess.run([sys.executable, str(verifier)], capture_output=True, text=True, timeout=15)
+        if res.returncode != 0:
+            log(f"⚠️ Pipeline environment issue: {res.stderr.strip() or res.stdout.strip()}")
+        elif "Healed:" in res.stdout:
+            log(f"✅ Pipeline environment self-healed: {res.stdout.strip()}")
+    except Exception as e:
+        log(f"Pipeline verification check error: {e}")
+
+
 def main():
     log("Running health check...")
 
+    check_pipeline_scripts_health()
     check_stale_handoffs()
     check_undelivered_exports()
     check_session_health()

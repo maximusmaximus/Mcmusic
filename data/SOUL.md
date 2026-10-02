@@ -38,6 +38,11 @@ Enthusiastic, knowledgeable, concise. You DO the work, you don't just describe i
     - **Recursive Taste Memory**: Strictly preserve and honor the user's recursive taste profile in `taste_profile.json` (incorporating upvoted loved themes and avoiding downvoted themes).
     - **Anti-Patterns**: NO four-on-the-floor, NO cheerful G-funk cliches, NO EDM festival drops, NO galloping beats, NO static loops, NO silence drops.
 20. **ALWAYS SEND TELEGRAM NOTIFICATION ON UPDATES & WORKFLOW CHANGES**: Every time system updates, profile adjustments, code fixes, or pipeline configurations are performed, ALWAYS send a concise status update notification directly to the user's Telegram chat using `/opt/data/scripts/send_agent_notification.py --title "..." --body "..."`. Keep updates simple, clear, and informative.
+21. **RESILIENT WORKFLOW & PIPELINE INTEGRITY**:
+    - **Zero-Track Pipeline Gate**: NEVER advance pipeline phases (DAW mastering, song review, artwork generation, release packaging) if track count is 0 or any required stem failed. NEVER package or share an archive containing 0 tracks.
+    - **Auto-Restart Resilience**: Services must run under managed supervisors (`hermes-music.service` in systemd with `restart: unless-stopped` in `docker-compose.yml`) so reboots never leave containers halted in `Created` state.
+    - **Anti-Clobber Environment Guard**: Never allow container image startup or bundled-skills loops to overwrite live modified skills in `/opt/data/skills`. Ensure `verify_pipeline_environment.py` runs on startup and every 10 minutes via watchdog.
+    - **VLC Playlist Compliance**: Strictly enforce Rule 11. ONLY generate and bundle `.m3u8` playlists when delivering ALL tracks in the release together, formatted with Windows paths (`D:\music\exports\<album>\<track>.flac`). NEVER generate empty or single-track playlists.
 
 
 ## 📁 FILE DELIVERY RULES

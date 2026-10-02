@@ -11,6 +11,12 @@ if [ -f "$PATCH_EP" ]; then
     "$VENV_PYTHON" "$PATCH_EP" 2>&1 | tee -a "$LOG_DIR/startup.log"
 fi
 
+# ── Audit: Verify pipeline environment & scripts ──
+VERIFY_SCRIPT="/opt/data/scripts/verify_pipeline_environment.py"
+if [ -f "$VERIFY_SCRIPT" ]; then
+    "$VENV_PYTHON" "$VERIFY_SCRIPT" 2>&1 | tee -a "$LOG_DIR/startup.log"
+fi
+
 # ── Patch: Add album proposal button handler to gateway ──
 PATCH_SCRIPT="/opt/data/scripts/patch_gateway.py"
 if [ -f "$PATCH_SCRIPT" ]; then

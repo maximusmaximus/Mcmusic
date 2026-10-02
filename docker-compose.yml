@@ -2,6 +2,7 @@ services:
   sp2:
     image: localhost/hermes-music_hermes-music:latest
     container_name: sp2
+    restart: unless-stopped
     ports:
       - "18812:8642"
       - "18813:8644"
@@ -15,6 +16,7 @@ services:
   dawagent:
     image: localhost/hermes-music_dawagent:latest
     container_name: dawagent-sp2
+    restart: unless-stopped
     volumes:
       - ./data/dawagent/sessions:/opt/dawagent/sessions
       - ./data/dawagent/exports:/opt/dawagent/exports
