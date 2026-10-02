@@ -5,6 +5,12 @@ VENV_PYTHON="/opt/hermes/.venv/bin/python3"
 LOG_DIR="/opt/data/logs"
 mkdir -p "$LOG_DIR"
 
+# ── Patch: Prevent entrypoint.sh from overwriting live skills ──
+PATCH_EP="/opt/data/scripts/patch_entrypoint.py"
+if [ -f "$PATCH_EP" ]; then
+    "$VENV_PYTHON" "$PATCH_EP" 2>&1 | tee -a "$LOG_DIR/startup.log"
+fi
+
 # ── Patch: Add album proposal button handler to gateway ──
 PATCH_SCRIPT="/opt/data/scripts/patch_gateway.py"
 if [ -f "$PATCH_SCRIPT" ]; then

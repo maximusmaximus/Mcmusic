@@ -12,13 +12,15 @@ class SessionManager:
     def _get_session_path(self, name):
         return os.path.join(self.sessions_dir, name, f"{name}.ardour")
 
-    def create_session(self, name, sr=48000, bpm=120):
+    def create_session(self, name, sr=48000, bpm=120, force=False):
         # Creates a basic Ardour session XML structure
         session_dir = os.path.join(self.sessions_dir, name)
         if os.path.exists(session_dir):
-            raise Exception(f"Session {name} already exists.")
+            if not force:
+                raise Exception(f"Session {name} already exists.")
+            # Force mode: preserve interchange/ and handoff.json, recreate session XML
         
-        os.makedirs(session_dir)
+        os.makedirs(session_dir, exist_ok=True)
         xml_path = os.path.join(session_dir, f"{name}.ardour")
         
         root = ET.Element("Session", {
