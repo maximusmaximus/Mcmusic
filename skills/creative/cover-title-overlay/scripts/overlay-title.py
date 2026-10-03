@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
 Overlay a Unicode-styled song title onto a cover art image with high-voltage
-chromatic inverted typography and crisp black framing.
+chromatic inverted typography, 60% font fill opacity, and crisp black framing.
 
 Usage:
-    python3 overlay-title.py --image <bg_image> --title "<TITLE>" [--color <hex>] [--auto-color] [--output <path>] [--no-glow] [--no-shadow] [--top] [--bottom]
+    python3 overlay-title.py --image <bg_image> --title "<TITLE>" [--color <hex>] [--auto-color] [--opacity 0.60] [--output <path>] [--no-glow] [--no-shadow] [--top] [--bottom]
 
 The title is centered vertically (or placed at top/bottom) and scaled horizontally to fill ~90% of the image width.
 Font candidates include Segoe UI Bold/Black, Calibri Bold, Arial Bold with complete Unicode coverage.
@@ -170,9 +170,9 @@ def detect_opposite_key_color(image_path, top=False, bottom=False):
 detect_harmonious_cmy_color = detect_opposite_key_color
 
 
-def overlay_title(image_path, title, color_hex=None, output_path=None, glow=True, shadow=True, top=False, bottom=False, auto_color=False):
+def overlay_title(image_path, title, color_hex=None, output_path=None, glow=True, shadow=True, top=False, bottom=False, auto_color=False, opacity=0.60):
     """
-    Renders 100% solid, fully opaque inverted title with crisp black outline/stroke and drop shadow.
+    Renders inverted title in VØIDRIDE Unicode aesthetic with 60% font fill opacity and crisp black outline/stroke.
     """
     img = Image.open(image_path).convert("RGBA")
     w, h = img.size
@@ -213,11 +213,12 @@ def overlay_title(image_path, title, color_hex=None, output_path=None, glow=True
     # Dynamic line metrics based on canvas resolution
     stroke_w = max(3, int(w * 0.0035))
     shadow_offset = max(5, int(w * 0.0055))
+    fill_alpha = int(255 * max(0.05, min(1.0, opacity)))
 
     # 1. Subtle ambient neon halo behind the stroke
     if glow:
         glow_radius = max(6, int(w * 0.005))
-        for r, a in [(glow_radius * 2, 20), (glow_radius, 50)]:
+        for r, a in [(glow_radius * 2, int(25 * opacity)), (glow_radius, int(60 * opacity))]:
             step = max(2, r // 3)
             for dx in range(-r, r + 1, step):
                 for dy in range(-r, r + 1, step):
@@ -228,11 +229,11 @@ def overlay_title(image_path, title, color_hex=None, output_path=None, glow=True
     if shadow:
         shadow_stroke = stroke_w + max(2, int(w * 0.001))
         draw.text((x + shadow_offset, y + shadow_offset), title, font=font,
-                  fill=(0, 0, 0, 230), stroke_width=shadow_stroke, stroke_fill=(0, 0, 0, 230))
+                  fill=(0, 0, 0, int(220 * opacity)), stroke_width=shadow_stroke, stroke_fill=(0, 0, 0, int(220 * opacity)))
 
-    # 3. 100% solid, fully opaque main text framed with crisp black stroke
-    draw.text((x, y), title, font=font, fill=(*color, 255),
-              stroke_width=stroke_w, stroke_fill=(0, 0, 0, 255))
+    # 3. Unicode styled text with 60% opacity fill and crisp black outline
+    draw.text((x, y), title, font=font, fill=(*color, fill_alpha),
+              stroke_width=stroke_w, stroke_fill=(0, 0, 0, 230))
 
     # Composite onto background
     result = Image.alpha_composite(img, text_layer)
@@ -249,7 +250,7 @@ def overlay_title(image_path, title, color_hex=None, output_path=None, glow=True
             output_path = os.path.splitext(output_path)[0] + ".png"
         result.save(output_path, "PNG")
 
-    print(f"Saved: {output_path} (Color: #{color_hex}, Stroke: {stroke_w}px)")
+    print(f"Saved: {output_path} (Color: #{color_hex}, Opacity: {int(opacity*100)}%, Stroke: {stroke_w}px)")
 
     try:
         if os.path.exists(ARTWORK_COVERS_DIR):
@@ -268,6 +269,7 @@ def main():
     parser.add_argument("--title", required=True, help="Unicode-styled track title to overlay")
     parser.add_argument("--color", default=None, help="Neon color in hex (e.g. #00f0ff, #ff007f, #faff00) or palette name")
     parser.add_argument("--auto-color", action="store_true", help="Automatically select highest-contrast inverted color based on background")
+    parser.add_argument("--opacity", type=float, default=0.60, help="Font fill opacity between 0.0 and 1.0 (default: 0.60)")
     parser.add_argument("--output", default=None, help="Output file path (default: <input>-titled.png)")
     parser.add_argument("--no-glow", action="store_true", help="Skip neon glow effect")
     parser.add_argument("--no-shadow", action="store_true", help="Skip drop shadow effect")
@@ -290,6 +292,7 @@ def main():
         top=args.top,
         bottom=args.bottom,
         auto_color=args.auto_color,
+        opacity=args.opacity,
     )
 
 

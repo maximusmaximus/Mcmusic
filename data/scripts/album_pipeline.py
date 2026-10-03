@@ -323,17 +323,41 @@ def send_photo(photo_path, caption=None, reply_markup=None):
         return None
 
 
+UNICODE_STYLING_MAP = {
+    'A': '\u0394', 'B': '\u0e3f', 'C': '\u03fe', 'D': '\u0110', 'E': '\u0246',
+    'F': '\u20a3', 'G': '\u01e4', 'H': '\u2c67', 'I': '\u0142', 'K': '\u049e',
+    'L': '\u2c60', 'M': '\u04ce', 'N': '\u20a6', 'O': '\u00d8', 'P': '\u01a4',
+    'Q': '\u024b', 'R': '\u01a6', 'S': '\u20a4', 'T': '\u2020', 'U': '\u0244',
+    'V': '\u2c74', 'W': '\u20a9', 'X': '\u04fc', 'Y': '\u024e', 'Z': '\u007a',
+}
+ALWAYS_REPLACE_CHARS = set('OARDLWIBET')
+SOMETIMES_REPLACE_CHARS = set('CNGHSFKMPUVXYQZ')
+
 def stylize_title(title):
     try:
-        res = subprocess.run(["/opt/hermes/.venv/bin/python3", STYLIZE_SCRIPT, title], capture_output=True, text=True, timeout=10)
-        if res.returncode == 0 and res.stdout.strip():
-            styled = res.stdout.strip()
-            if '->' in styled:
-                styled = styled.split('->')[-1].strip()
-            return styled
+        if os.path.exists(STYLIZE_SCRIPT):
+            res = subprocess.run(["/opt/hermes/.venv/bin/python3", STYLIZE_SCRIPT, title], capture_output=True, text=True, timeout=10)
+            if res.returncode == 0 and res.stdout.strip():
+                styled = res.stdout.strip()
+                if '->' in styled:
+                    styled = styled.split('->')[-1].strip()
+                return styled
     except Exception:
         pass
-    return title
+
+    # Reliable inline VØIDRIDE Unicode stylizer fallback
+    result = []
+    secondary_count = {}
+    for ch in str(title).upper():
+        if ch in ALWAYS_REPLACE_CHARS and ch in UNICODE_STYLING_MAP:
+            result.append(UNICODE_STYLING_MAP[ch])
+        elif ch in SOMETIMES_REPLACE_CHARS and ch in UNICODE_STYLING_MAP:
+            count = secondary_count.get(ch, 0)
+            secondary_count[ch] = count + 1
+            result.append(UNICODE_STYLING_MAP[ch] if count % 2 == 0 else ch)
+        else:
+            result.append(ch)
+    return ''.join(result)
 
 
 def clear_flags():
@@ -1558,9 +1582,9 @@ def phase_4_album_cover(proposal, tracklist, state=None, dashboard=None):
 
     if os.path.exists(OVERLAY_TITLE_SCRIPT) and os.path.exists(cover_bg):
         styled_album = stylize_title(album_name)
-        logger.info(f"Overlaying title '{styled_album}' with chromatic opposite color onto 3000x3000 canvas...")
+        logger.info(f"Overlaying title '{styled_album}' with chromatic opposite color (60% opacity) onto 3000x3000 canvas...")
         subprocess.run(["/opt/hermes/.venv/bin/python3", OVERLAY_TITLE_SCRIPT,
-                        "--image", cover_bg, "--title", styled_album, "--auto-color", "--output", cover_path], capture_output=True)
+                        "--image", cover_bg, "--title", styled_album, "--auto-color", "--opacity", "0.60", "--output", cover_path], capture_output=True)
     elif os.path.exists(cover_bg) and not os.path.exists(cover_path):
         shutil.copy2(cover_bg, cover_path)
 
@@ -1630,9 +1654,9 @@ def phase_4_album_cover(proposal, tracklist, state=None, dashboard=None):
 
             if os.path.exists(OVERLAY_TITLE_SCRIPT):
                 styled_album = stylize_title(album_name)
-                logger.info(f"Overlaying title '{styled_album}' with chromatic opposite color onto 3000x3000 canvas...")
+                logger.info(f"Overlaying title '{styled_album}' with chromatic opposite color (60% opacity) onto 3000x3000 canvas...")
                 subprocess.run(["/opt/hermes/.venv/bin/python3", OVERLAY_TITLE_SCRIPT,
-                                "--image", cover_bg, "--title", styled_album, "--auto-color", "--output", cover_path], capture_output=True)
+                                "--image", cover_bg, "--title", styled_album, "--auto-color", "--opacity", "0.60", "--output", cover_path], capture_output=True)
             else:
                 shutil.copy2(cover_bg, cover_path)
 
@@ -1708,7 +1732,7 @@ def phase_5_track_covers(proposal, tracklist, state=None, dashboard=None):
             if os.path.exists(OVERLAY_TITLE_SCRIPT):
                 styled_title = stylize_title(title)
                 subprocess.run(["/opt/hermes/.venv/bin/python3", OVERLAY_TITLE_SCRIPT,
-                                "--image", bg_backup, "--title", styled_title, "--bottom", "--auto-color", "--output", cover_path], capture_output=True)
+                                "--image", bg_backup, "--title", styled_title, "--bottom", "--auto-color", "--opacity", "0.60", "--output", cover_path], capture_output=True)
             else:
                 shutil.copy2(bg_backup, cover_path)
 
@@ -1754,7 +1778,7 @@ def phase_5_track_covers(proposal, tracklist, state=None, dashboard=None):
                     if os.path.exists(OVERLAY_TITLE_SCRIPT):
                         styled_title = stylize_title(track_title)
                         subprocess.run(["/opt/hermes/.venv/bin/python3", OVERLAY_TITLE_SCRIPT,
-                                        "--image", bg_path, "--title", styled_title, "--bottom", "--auto-color", "--output", cp], capture_output=True)
+                                        "--image", bg_path, "--title", styled_title, "--bottom", "--auto-color", "--opacity", "0.60", "--output", cp], capture_output=True)
                 else:
                     upscale_artwork_venice(cp)
                 if state:
@@ -1795,7 +1819,7 @@ def phase_5_track_covers(proposal, tracklist, state=None, dashboard=None):
                         if os.path.exists(OVERLAY_TITLE_SCRIPT):
                             styled_title = stylize_title(title)
                             subprocess.run(["/opt/hermes/.venv/bin/python3", OVERLAY_TITLE_SCRIPT,
-                                            "--image", bg_path, "--title", styled_title, "--bottom", "--auto-color", "--output", cover_path], capture_output=True)
+                                            "--image", bg_path, "--title", styled_title, "--bottom", "--auto-color", "--opacity", "0.60", "--output", cover_path], capture_output=True)
                         else:
                             shutil.copy2(bg_path, cover_path)
                         track_btn = [
@@ -1831,7 +1855,7 @@ def phase_5_track_covers(proposal, tracklist, state=None, dashboard=None):
                         if os.path.exists(OVERLAY_TITLE_SCRIPT):
                             styled_title = stylize_title(title)
                             subprocess.run(["/opt/hermes/.venv/bin/python3", OVERLAY_TITLE_SCRIPT,
-                                            "--image", bg_path, "--title", styled_title, "--bottom", "--auto-color", "--output", cover_path], capture_output=True)
+                                            "--image", bg_path, "--title", styled_title, "--bottom", "--auto-color", "--opacity", "0.60", "--output", cover_path], capture_output=True)
                         else:
                             shutil.copy2(bg_path, cover_path)
                         track_btn = [
