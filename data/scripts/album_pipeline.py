@@ -1708,7 +1708,7 @@ def phase_5_track_covers(proposal, tracklist, state=None, dashboard=None):
                 upscale_artwork_venice(cp)
                 if state:
                     add_cost(state, "cover_upscale", VENICE_UPSCALE_COST)
-            send_message("✅ <b>All track covers upscaled to 3000×3000!</b> Packaging release and launching to SoundCloud...")
+            send_message("✅ <b>All track covers upscaled to 3000×3000!</b> Assembling final release package for your review & confirmation...")
             return "approved"
         elif flag == "trackcovers_regenall":
             send_message("🔄 <b>Regenerating all track covers...</b>")
@@ -1997,21 +1997,21 @@ def phase_6_final_review(proposal, tracklist=None, state=None, dashboard=None):
 
     # 4. Build prompt message with download links & interactive buttons
     final_buttons = [
-        [{"text": "🚀 Publish to SoundCloud", "callback_data": "ap:final:publish"}],
+        [{"text": "🚀 Confirm: Good to Proceed to SoundCloud", "callback_data": "ap:final:publish"}],
         [
             {"text": "🎵 Edit Songs", "callback_data": "ap:final:edit_songs"},
             {"text": "🎨 Edit Album Art", "callback_data": "ap:final:edit_album"}
         ],
         [
             {"text": "🖼️ Edit Track Covers", "callback_data": "ap:final:edit_covers"},
-            {"text": "❌ Cancel", "callback_data": "ap:final:cancel"}
+            {"text": "❌ Keep on Hold / Cancel", "callback_data": "ap:final:cancel"}
         ]
     ]
 
     msg = (
-        f"📦 <b>{html.escape(album_name)} — Final Release Package Ready!</b>\n\n"
+        f"📦 <b>{html.escape(album_name)} — Final Release Package Submitted!</b>\n\n"
         f"✨ Lossless 24-bit/48kHz FLAC studio masters (artwork embedded into files).\n"
-        f"🖼️ Exactly 1 cover per track + album cover.\n\n"
+        f"🖼️ Exactly 1 cover per track + album cover (styled with opposite key color).\n\n"
     )
     if ext_link:
         msg += f"🌐 <b>External Download (Cloudflare / Mobile):</b>\n🔗 <a href='{ext_link}'>{ext_link}</a>\n\n"
@@ -2019,7 +2019,10 @@ def phase_6_final_review(proposal, tracklist=None, state=None, dashboard=None):
         msg += f"🏠 <b>Internal Download (Tailscale / LAN):</b>\n🔗 <a href='{int_link}'>{int_link}</a>\n\n"
     if local_path:
         msg += f"📁 <b>Windows Local File:</b>\n<code>{html.escape(local_path)}</code>\n\n"
-    msg += "<b>Would you like to publish to SoundCloud, or make edits?</b>"
+    msg += (
+        "<b>Please review all reference masters and artwork above.</b>\n"
+        "👉 <i>When you are ready, tap <b>Confirm: Good to Proceed to SoundCloud</b> to push live:</i>"
+    )
 
     send_message(msg, reply_markup={"inline_keyboard": final_buttons})
     logger.info("Sent final review package & publishing gate to Telegram. Polling for decisions...")

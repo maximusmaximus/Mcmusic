@@ -757,9 +757,9 @@ PATCH_CODE = '''
                 os.makedirs('/tmp/pipeline_flags', exist_ok=True)
                 with open('/tmp/pipeline_flags/final_publish', 'w') as f:
                     f.write('publish')
-                await query.answer(text='🚀 Publishing to SoundCloud...')
+                await query.answer(text='🚀 Confirmed: Proceeding to SoundCloud...')
                 try:
-                    await query.message.reply_text("🚀 <b>Publishing approved!</b> Uploading studio masters to SoundCloud...", parse_mode="HTML")
+                    await query.message.reply_text("🚀 <b>Good to proceed confirmed!</b> Uploading studio masters and artwork to SoundCloud...", parse_mode="HTML")
                 except Exception: pass
                 try: await query.edit_message_reply_markup(reply_markup=None)
                 except: pass

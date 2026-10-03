@@ -104,26 +104,83 @@ def find_font_size(draw, title, img_width, font_path, target_ratio=DEFAULT_TARGE
     return lo
 
 
-def detect_harmonious_cmy_color(image_path):
-    """Analyze background image lighting and return highest-contrast CMY neon color."""
+def detect_opposite_key_color(image_path):
+    """
+    Extracts the key color (dominant chromatic lighting/accent hue) of the artwork
+    and returns its exact chromatic opposite (complementary color) as a high-voltage neon hex string.
+    """
     try:
+        import colorsys
         img = Image.open(image_path).convert("RGB")
-        thumb = img.resize((64, 64))
+        # Resize to 128x128 for robust, fast pixel sampling
+        thumb = img.resize((128, 128), Image.Resampling.BOX if hasattr(Image, "Resampling") else Image.BOX)
         pixels = list(thumb.getdata())
-        avg_r = sum(p[0] for p in pixels) / len(pixels)
-        avg_g = sum(p[1] for p in pixels) / len(pixels)
-        avg_b = sum(p[2] for p in pixels) / len(pixels)
 
-        if avg_r > avg_g + 15 and avg_r > avg_b + 15:
-            return CMY_NEON_PALETTE["electric_cyan"]
-        elif avg_b > avg_r + 15:
-            return CMY_NEON_PALETTE["acid_yellow"]
-        elif avg_g > avg_r and avg_g > avg_b:
-            return CMY_NEON_PALETTE["hyper_magenta"]
+        weighted_cos = 0.0
+        weighted_sin = 0.0
+        total_weight = 0.0
+        total_r, total_g, total_b = 0, 0, 0
+
+        for r, g, b in pixels:
+            total_r += r
+            total_g += g
+            total_b += b
+            rf, gf, bf = r / 255.0, g / 255.0, b / 255.0
+            h, s, v = colorsys.rgb_to_hsv(rf, gf, bf)
+
+            # In nightride/noir artwork, most pixels are black or deep shadows.
+            # The key color is defined by the luminous, saturated lights and highlights.
+            if v > 0.12 and s > 0.18:
+                weight = (s ** 1.6) * (v ** 1.2)
+                angle = h * 2.0 * math.pi
+                weighted_cos += weight * math.cos(angle)
+                weighted_sin += weight * math.sin(angle)
+                total_weight += weight
+
+        if total_weight > 0.05:
+            mean_angle = math.atan2(weighted_sin, weighted_cos)
+            if mean_angle < 0:
+                mean_angle += 2.0 * math.pi
+            key_hue = (mean_angle / (2.0 * math.pi)) * 360.0
+            opposite_hue = (key_hue + 180.0) % 360.0
         else:
-            return CMY_NEON_PALETTE["hyper_magenta"]
-    except Exception:
-        return CMY_NEON_PALETTE["hyper_magenta"]
+            avg_r = total_r / max(1, len(pixels))
+            avg_g = total_g / max(1, len(pixels))
+            avg_b = total_b / max(1, len(pixels))
+            opp_r = 255 - avg_r
+            opp_g = 255 - avg_g
+            opp_b = 255 - avg_b
+            h, s, v = colorsys.rgb_to_hsv(opp_r / 255.0, opp_g / 255.0, opp_b / 255.0)
+            key_hue = (h * 360.0 + 180.0) % 360.0
+            opposite_hue = h * 360.0
+
+        # Map opposite_hue to our high-voltage neon palette for maximum legibility and contrast
+        opp_h = opposite_hue
+        if 15 <= opp_h < 45:
+            chosen = CMY_NEON_PALETTE["blaze_orange"]       # #FF6600
+        elif 45 <= opp_h < 85:
+            chosen = CMY_NEON_PALETTE["acid_yellow"]        # #FAFF00
+        elif 85 <= opp_h < 155:
+            chosen = CMY_NEON_PALETTE["neon_lime"]          # #39FF14
+        elif 155 <= opp_h < 205:
+            chosen = CMY_NEON_PALETTE["electric_cyan"]      # #00F0FF
+        elif 205 <= opp_h < 255:
+            chosen = CMY_NEON_PALETTE["ice_blue"]           # #38E5FF
+        elif 255 <= opp_h < 295:
+            chosen = CMY_NEON_PALETTE["electric_violet"]    # #D000FF
+        elif 295 <= opp_h < 345:
+            chosen = CMY_NEON_PALETTE["hyper_magenta"]      # #FF007F
+        else:
+            chosen = CMY_NEON_PALETTE["crimson_magenta"]    # #FF0055
+
+        print(f"[color] Analyzed image: Key Color Hue = {key_hue:.1f}°, Opposite Hue = {opposite_hue:.1f}°, Selected Title Color = {chosen}")
+        return chosen
+    except Exception as e:
+        print(f"[color] Error detecting key color: {e}, falling back to electric cyan", file=sys.stderr)
+        return CMY_NEON_PALETTE["electric_cyan"]
+
+
+detect_harmonious_cmy_color = detect_opposite_key_color
 
 
 def draw_neon_glow(draw, x, y, title, font, color, glow_layers=None):
