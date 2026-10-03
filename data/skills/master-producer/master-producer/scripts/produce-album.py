@@ -21,6 +21,7 @@ import argparse
 import datetime
 import json
 import os
+import re
 import subprocess
 import sys
 import threading
@@ -192,6 +193,214 @@ def save_batch(slug, batch_data):
     return batch_path
 
 
+def interpret_track_from_cover_and_theme(album_name, album_theme, cover_visual, track_title, track_num, total_tracks, sonic_dna=None):
+    """
+    Derive a bespoke musical interpretation of a song from:
+      1. The Album Cover Art (lighting, materials, motifs, setting)
+      2. The Album Theme & Sonic DNA (subgenre, tempo, key, mood)
+      3. The Track Title (the song's distinct narrative hook)
+    Uses Venice AI (kimi-k3 with fallback to llama-3.3-70b) and rich deterministic fallbacks.
+    """
+    api_key = os.environ.get("VENICE_API_KEY", "")
+
+    # Domain fallbacks tailored for BASEMENT BAY
+    base_fallbacks = {
+        "TILE FEVER": {
+            "direction": "Subterranean wet tile reverb and feverish syncopated 808 slides with sterile high-frequency medical clicks",
+            "rules": [
+                "Massive 808 sub-bass with aggressive pitch glide curves sliding between Eb1 and Bb0",
+                "Sterile transient snap snares with cold ceramic plate reverb reflections matching hospital basement tiles",
+                "Detuned minor sine plucks creating a dizzying, feverish medical melody in Eb minor",
+                "Foley layer of flickering fluorescent tube voltage hum and hydraulic ambulance idling",
+                "Dynamic contrast between claustrophobic verse and wide stereo sub drops"
+            ],
+            "bpm": 132,
+            "key": "Ebm",
+            "stems": {
+                "main": "Clinical witch house trap, 132 BPM, Eb minor. Hypnotic sterile dread. Glazed tile reverberation, aggressive West Coast 808 sub-bass slides, punchy acoustic transient kicks, crisp snap snares with cold gated reflections. Detuned sine plucks, high-voltage fluorescent buzz, reese undertones, menacing nocturnal cruising groove.",
+                "texture": "Cold ceramic tile acoustic space, subtle fluorescent light hum, distant echoing hospital basement drone, 132 BPM, key of Eb minor, dark ambient pad.",
+                "accent": "Sterile medical snap click into heavy subterranean sub drop impact with metallic tile ring, crisp transient."
+            }
+        },
+        "CYAN DRIP": {
+            "direction": "Gated cyan neon synth bleeds and hypnotic dripping foley percussion echoing across cold concrete",
+            "rules": [
+                "Deep sliding West Coast 808 sub-bass with rounded saturation and long decay",
+                "Hypnotic foley percussion incorporating rhythmic water drips echoing in an underground bay",
+                "Cyan-lit analog synthesizer stabs with stereo chorus and haas delay bleed",
+                "Subtle pitch-dropped vocal breath textures echoing across the wet floor",
+                "Silky nocturnal groove balancing cold precision with heavy low-end authority"
+            ],
+            "bpm": 130,
+            "key": "Ebm",
+            "stems": {
+                "main": "Neon-noir medical phonk, 130 BPM, Eb minor. Cyan tube light aesthetic. Subterranean water drips echoing off wet concrete, deep sliding West Coast 808 bass, punchy tight kicks, syncopated trap hi-hats. Gated cyan synth stabs, detuned sine plucks, sterile hypnotic atmosphere.",
+                "texture": "Rhythmic water drips echoing on wet concrete in an underground garage, faint cyan neon electrical buzz, dark spacious pad in Eb minor, 130 BPM.",
+                "accent": "Single resonant cyan water drop falling on concrete with long sterile reverb tail and sub sweep."
+            }
+        },
+        "VENT STEAM": {
+            "direction": "Pressurized industrial exhaust, filtered white noise steam sweeps, and thundering sub-bass impacts",
+            "rules": [
+                "Devastating 808 sub drops hitting at 45Hz with long portamento glide releases",
+                "Percussive white-noise bursts and pressurized steam hiss used as syncopated risers",
+                "Haunting spectral witch house pads evoking cold mist rolling across concrete",
+                "Heavy acoustic transient kicks sidechained aggressively to the sub-bass",
+                "Menacing, relentless industrial cruising energy with sudden pressure drop mutes"
+            ],
+            "bpm": 134,
+            "key": "Ebm",
+            "stems": {
+                "main": "Dark nightride trap and industrial witch house, 134 BPM, Eb minor. Heavy steam pouring from underground vents. Devastating West Coast 808 sub-bass slides, punchy transient kicks, crisp snap snares. White noise steam hiss risers, spectral cold pads, reese bass growl, atmospheric pressure releases.",
+                "texture": "Continuous atmospheric steam hiss escaping industrial pipe vents, deep low-frequency ventilation rumble, Eb minor nocturnal drone, 134 BPM.",
+                "accent": "High-pressure steam release burst with metallic pipe valve clank and sudden stereo sub drop impact."
+            }
+        },
+        "CODE BLUE": {
+            "direction": "Urgent cardiac telemetry arpeggios, defibrillator sub-drop surge, and cold clinical emergency pulse",
+            "rules": [
+                "Rapid cardiac monitor telemetry beeps integrated directly into syncopated percussion",
+                "High-energy half-time trap bounce driven by punchy transient kicks and crisp snap snares",
+                "Aggressive sliding 808 sub-bass with sudden defibrillator style transient charge-up sweeps",
+                "Urgent detuned arpeggiated synths cutting through dense witch house reverb haze",
+                "Tension-building filtered builds exploding into crushing, high-octane sub drops"
+            ],
+            "bpm": 136,
+            "key": "Ebm",
+            "stems": {
+                "main": "High-intensity clinical medical phonk and nightride trap, 136 BPM, Eb minor. Heart-monitor telemetry blips as syncopated percussion, defibrillator sub-bass charge sweeps, aggressive sliding 808s, punchy transient acoustic kicks, urgent detuned arpeggios, sterile emergency dread.",
+                "texture": "Rhythmic hospital telemetry heart monitor blips, soft sterile ventilation hum, tense low Eb minor drone, 136 BPM.",
+                "accent": "Defibrillator charge-up riser into flatline tone and massive crushing 808 bass impact."
+            }
+        },
+        "QUIET SIREN": {
+            "direction": "Distant pitched-down emergency wails filtered through concrete, doppler synths, and haunting spectral outro",
+            "rules": [
+                "Distant, pitched-down emergency siren harmonics filtered through subterranean concrete walls",
+                "Hypnotic half-speed nightride cruiser groove with deep 808 sub portamento",
+                "Ethereal witch house choral pads and detuned analog strings dissolving into mist",
+                "Razor-sharp katana transient texture echoing in the breakdown",
+                "Expansive, lingering outro fading into cold nocturnal silence and pale moonlight"
+            ],
+            "bpm": 128,
+            "key": "Ebm",
+            "stems": {
+                "main": "Cinematic nightride witch house trap, 128 BPM, Eb minor. Distant pitched-down emergency siren echoes filtered through hospital basement concrete, slow devastating 808 sub-bass slides, punchy kicks, ethereal spectral choir pads, razor transient accents, melancholic nocturnal closure.",
+                "texture": "Distant muffled emergency siren echoing from above ground through thick concrete, soft rain and mist on metal, Eb minor pad, 128 BPM.",
+                "accent": "Razor-sharp metallic katana draw resonance transitioning into a deep sub-bass fade and filtered siren doppler."
+            }
+        }
+    }
+
+    norm_title = track_title.strip().upper()
+    fallback = base_fallbacks.get(norm_title)
+    if not fallback:
+        fallback = {
+            "direction": f"Auditory interpretation of cover scene embodying '{track_title}'",
+            "rules": [
+                f"Sub-bass and 808 glide behavior reflecting {cover_visual[:50] or album_theme[:50]}",
+                "Transient percussion and acoustic snap matching visual materials",
+                "Atmospheric synth leads and pads translating visual lighting and motifs into sound",
+                f"Dynamic progression and arrangement embodying '{track_title}'"
+            ],
+            "bpm": 130,
+            "key": "Ebm",
+            "stems": {
+                "main": f"{album_theme}. Auditory translation of {cover_visual}. Focused on {track_title}. Heavy 808 slides, punchy kicks, atmospheric synth textures.",
+                "texture": f"Atmospheric soundscape reflecting {cover_visual[:150]}, subtle background drone.",
+                "accent": f"Sharp dynamic impact matching {track_title} and visual scene."
+            }
+        }
+
+    if not api_key:
+        return fallback
+
+    system_prompt = (
+        "You are the Creative Director and Master Sound Designer for VØIDRIDE.\n"
+        "Your task: Translate the visual album cover art and album theme into an auditory, "
+        "compositional interpretation for the specific song title below.\n\n"
+        f"ALBUM: {album_name}\n"
+        f"ALBUM THEME & SONIC DNA: {album_theme}\n"
+        f"COVER ART VISUAL SCENE: {cover_visual}\n"
+        f"TRACK {track_num} OF {total_tracks} TITLE: {track_title}\n\n"
+        "Translate the visual setting, lighting, materials, and motifs directly into sound:\n"
+        "- Visual materials (wet concrete, cold tiles, steel grills, glass) -> reverb acoustics, transient snap, high-frequency reflections.\n"
+        "- Atmospheric phenomena (venting steam, drifting fog, fluorescent tube hum) -> sound beds, filtered white-noise sweeps, voltage drone.\n"
+        "- Visual motifs (ambulance idle, shadowed man, katana, moon) -> deep sub-bass motor glide, predatory reese undertones, razor transient cuts, pale pad swells.\n"
+        f"- Song Title '{track_title}' -> the central musical hook, groove, and narrative of this specific track.\n\n"
+        "Return ONLY a valid JSON object (no markdown fences, no commentary):\n"
+        "{\n"
+        '  "direction": "One-sentence summary of how this track translates the visual cover into sound",\n'
+        '  "rules": [\n'
+        '    "Rule 1: Sub-bass and 808 glide behavior reflecting the scene",\n'
+        '    "Rule 2: Drum and transient textures reflecting visual materials",\n'
+        '    "Rule 3: Lead synth/melodic elements reflecting the visual mood",\n'
+        '    "Rule 4: Foley and atmospheric textures from the cover scene",\n'
+        '    "Rule 5: Pacing and arrangement embodying the song title"\n'
+        '  ],\n'
+        '  "bpm": 132,\n'
+        '  "key": "Ebm",\n'
+        '  "main_prompt": "Comprehensive main prompt for elevenlabs-music (60-120 words) detailing genre, BPM, key, instruments, 808 behavior, atmospheric space, and mood",\n'
+        '  "texture_prompt": "Prompt for stable-audio-25 (UNDER 450 CHARS) describing atmospheric texture/foley bed with key and BPM",\n'
+        '  "accent_prompt": "Prompt for elevenlabs-sound-effects-v2 (UNDER 450 CHARS) describing short transition FX/foley hit from the scene"\n'
+        "}"
+    )
+
+    for model_name in ["kimi-k3", "llama-3.3-70b"]:
+        try:
+            payload = json.dumps({
+                "model": model_name,
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": f"Generate auditory interpretation for Track {track_num}: '{track_title}' based on the cover art and theme."}
+                ],
+                "temperature": 0.6,
+                "max_tokens": 1500,
+                "venice_parameters": {
+                    "strip_thinking_response": True
+                }
+            }).encode('utf-8')
+
+            req = urllib.request.Request(
+                "https://api.venice.ai/api/v1/chat/completions",
+                data=payload,
+                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+            )
+            with urllib.request.urlopen(req, timeout=45) as resp:
+                data = json.loads(resp.read().decode('utf-8'))
+                raw = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+                if "<think>" in raw:
+                    raw = raw.split("</think>")[-1].strip()
+                if "```" in raw:
+                    m = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', raw, re.DOTALL)
+                    if m:
+                        raw = m.group(1)
+                    else:
+                        raw = re.sub(r'```(?:json)?\s*', '', raw)
+                        raw = re.sub(r'\s*```', '', raw)
+
+                parsed = json.loads(raw)
+                if parsed.get("direction") and parsed.get("rules") and len(parsed["rules"]) >= 3:
+                    stems = parsed.get("stems", {})
+                    if not stems:
+                        stems = {
+                            "main": parsed.get("main_prompt", fallback["stems"]["main"]),
+                            "texture": parsed.get("texture_prompt", fallback["stems"]["texture"]),
+                            "accent": parsed.get("accent_prompt", fallback["stems"]["accent"])
+                        }
+                    if len(stems.get("texture", "")) > 450:
+                        stems["texture"] = stems["texture"][:445]
+                    if len(stems.get("accent", "")) > 450:
+                        stems["accent"] = stems["accent"][:445]
+                    parsed["stems"] = stems
+                    return parsed
+        except Exception as e:
+            log(f"  ⚠️ Cover-to-song inference with {model_name} failed: {e}")
+            continue
+
+    return fallback
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--brief", required=True, help="Album concept")
@@ -204,6 +413,9 @@ def main():
     parser.add_argument("--target", default="streaming")
     parser.add_argument("--vocals-pct", type=int, default=0, help="Pct of tracks with vocals (0-100)")
     parser.add_argument("--track-names", nargs="*", default=None, help="Pre-defined track names")
+    parser.add_argument("--album-name", default=None, help="Album name")
+    parser.add_argument("--album-theme", default=None, help="Album theme / musical brief")
+    parser.add_argument("--cover-visual", default=None, help="Album cover visual description")
     args = parser.parse_args()
 
     _auto_detect_chat_id()
@@ -255,28 +467,69 @@ def main():
         except Exception:
             pass
 
+    album_name = args.album_name or (args.brief.split(" - ")[0] if " - " in args.brief else args.brief[:30])
+    album_theme = args.album_theme or args.brief
+    cover_visual = args.cover_visual or ""
+
     for i in range(args.resume_tracks, args.tracks):
         track_num = i + 1
-        variation = VARIATION_TEMPLATES[i % len(VARIATION_TEMPLATES)]
         has_vocals = i in vocal_positions
 
+        # Determine track title if pre-defined
+        predefined_title = None
+        if i < len(track_names) and track_names[i] and not track_names[i].lower().startswith("track "):
+            predefined_title = track_names[i].strip().upper()
+        current_title = predefined_title or f"Track {track_num}"
+
+        # If cover_visual, album_theme, or predefined_title are present, derive track direction from cover + theme + title
+        if cover_visual or predefined_title or args.album_theme:
+            log(f"  🎨 Interpreting Track {track_num} '{current_title}' from cover scene & album theme...")
+            interp = interpret_track_from_cover_and_theme(
+                album_name=album_name,
+                album_theme=album_theme,
+                cover_visual=cover_visual,
+                track_title=current_title,
+                track_num=track_num,
+                total_tracks=args.tracks,
+                sonic_dna=profile.get("sonic_dna") if profile else None
+            )
+            variation = {
+                "direction": interp.get("direction", f"Interpretation of {current_title}"),
+                "rules": list(interp.get("rules", VARIATION_TEMPLATES[i % len(VARIATION_TEMPLATES)]["rules"])),
+                "bpm": interp.get("bpm"),
+                "key": interp.get("key"),
+                "stems": interp.get("stems", {})
+            }
+        else:
+            variation = dict(VARIATION_TEMPLATES[i % len(VARIATION_TEMPLATES)])
+            variation["rules"] = list(variation.get("rules", []))
+
         if has_vocals:
-            variation = {"direction": "subtle vocal texture",
-                         "rules": ["Subtle breathy female vocals as background texture only",
-                                   "Vocals ~5% of mix — atmosphere, not lead",
-                                   "Bass drops still hit hard through the vocal sections"]}
+            variation["direction"] += " (subtle vocal texture)"
+            variation["rules"].append("Subtle breathy female vocals as background texture only (~5% of mix)")
 
         # Enrich the brief with variation rules for this track
         enriched_brief = (
             f"{args.brief}. "
+            f"Track {track_num}: {current_title}. "
             f"This track direction: {variation['direction']}. "
             f"Requirements: {'; '.join(variation['rules'])}"
         )
 
         # Album context
-        ctx = {"track_number": track_num, "total_tracks": args.tracks,
-               "brief": args.brief, "previous_tracks": completed,
-               "variation_rules": variation["rules"]}
+        ctx = {
+            "track_number": track_num,
+            "total_tracks": args.tracks,
+            "album_name": album_name,
+            "album_theme": album_theme,
+            "cover_visual": cover_visual,
+            "track_title": current_title,
+            "track_interpretation": variation["direction"],
+            "brief": args.brief,
+            "previous_tracks": completed,
+            "variation_rules": variation["rules"],
+            "stem_prompts": variation.get("stems", {})
+        }
         ctx_file = f"/tmp/album_ctx_{track_num}.json"
         with open(ctx_file, "w") as f:
             json.dump(ctx, f)
@@ -338,11 +591,6 @@ def main():
         progress_thread = threading.Thread(target=_update_progress, daemon=True)
         progress_thread.start()
 
-        # Determine track title if pre-defined
-        predefined_title = None
-        if i < len(track_names) and track_names[i] and not track_names[i].lower().startswith("track "):
-            predefined_title = track_names[i].strip().upper()
-
         # Use enriched brief that includes variation direction
         cmd = [sys.executable, PRODUCER,
                "--prompt", enriched_brief,
@@ -393,15 +641,21 @@ def main():
                 if plan_path and os.path.isfile(plan_path):
                     with open(plan_path) as f:
                         plan = json.load(f)
-                    plan_title = plan.get("title")
-                    if plan_title and not plan_title.lower().startswith("track "):
-                        info["title"] = plan_title
-                    elif predefined_title:
+                    if predefined_title:
                         info["title"] = predefined_title
+                    else:
+                        plan_title = plan.get("title")
+                        if plan_title and not plan_title.lower().startswith("track "):
+                            info["title"] = plan_title
                     info.update({"bpm": plan.get("bpm"), "key": plan.get("key"),
                                  "genre": plan.get("genre")})
                 elif predefined_title:
                     info["title"] = predefined_title
+
+                if not info.get("bpm") and variation.get("bpm"):
+                    info["bpm"] = str(variation.get("bpm"))
+                if not info.get("key") and variation.get("key"):
+                    info["key"] = str(variation.get("key"))
 
                 completed.append(info)
                 # For full tracks, prefer FLAC; for samples, MP3 only

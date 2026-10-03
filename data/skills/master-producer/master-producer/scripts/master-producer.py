@@ -563,7 +563,7 @@ Output ONLY the production brief as flowing text. No markdown headers, no number
         return user_prompt
 
 
-def creative_director(user_prompt, quality_tier, duration, lyrics=None, profile=None, album_context=None):
+def creative_director(user_prompt, quality_tier, duration, lyrics=None, profile=None, album_context=None, title=None):
     """Use Kimi K3 to produce a structured production plan with per-stem, per-model prompts."""
     api_key = os.environ.get("VENICE_API_KEY", "")
     if not api_key:
@@ -673,6 +673,27 @@ def creative_director(user_prompt, quality_tier, duration, lyrics=None, profile=
         total_tracks = album_context.get("total_tracks", 5)
         album_brief = album_context.get("brief", "")
         variation_rules = album_context.get("variation_rules", [])
+        cover_visual = album_context.get("cover_visual", "")
+        track_title = album_context.get("track_title", "") or title
+        album_theme = album_context.get("album_theme", "")
+        stem_prompts = album_context.get("stem_prompts", {})
+
+        if cover_visual:
+            album_instructions += f"\n\nALBUM COVER ART CONTEXT:\nThe visual scene depicted on the album cover is:\n\"{cover_visual}\"\n"
+            album_instructions += (
+                "AUDITORY COVER ART INTERPRETATION (MANDATORY):\n"
+                "- Every stem of this song MUST be a direct sonic interpretation of the album cover art.\n"
+                "- Translate visual textures into auditory textures:\n"
+                "  * Wet concrete, glazed tile walls → cold reverberation, metallic plate reflections, haas slapback\n"
+                "  * Steam pouring from vents → white-noise breath risers, filtered hiss percussion, pressurized air releases\n"
+                "  * Magenta & cyan neon tubes → saturated synth blips, detuned sine plucks, high-frequency voltage hum\n"
+                "  * Shadowed man in fedora & katana → menacing, predatory 808 pitch glide curves, razor-sharp transient attacks\n"
+                "  * Nocturnal moon / skylight haze → pale, icy spectral pads, ethereal witch house choir layers\n"
+            )
+        if track_title:
+            album_instructions += f"\nTRACK TITLE REQUIREMENT:\n- The exact track title is \"{track_title}\".\n- Your JSON response MUST set \"title\": \"{track_title}\".\n- The song's arrangement, energy, and melody must be a sonic manifestation of \"{track_title}\".\n"
+        if stem_prompts:
+            album_instructions += f"\nDIRECTOR STEM GUIDANCE:\n{json.dumps(stem_prompts, indent=2)}\n"
 
         if prev_tracks:
             prev_summary = json.dumps([
@@ -851,6 +872,14 @@ OUTPUT VALID JSON (no markdown, no code fences):
                     if limit and len(stem_info.get("prompt", "")) > limit:
                         stem_info["prompt"] = stem_info["prompt"][:limit]
 
+            target_title = None
+            if album_context and album_context.get("track_title"):
+                target_title = album_context["track_title"].strip().upper()
+            elif title:
+                target_title = title.strip().upper()
+            if target_title:
+                plan["title"] = target_title
+
             cost = result.get("cost", {}).get("usd", 0)
             log(f"  ✅ Creative Director plan ready ({director_model}, ${cost:.4f})")
             log(f"  Title: {plan.get('title', '?')}")
@@ -952,14 +981,21 @@ def _quick_inference(system_prompt, user_prompt, model="qwen-3-7-plus", max_toke
         return None
 
 
-def upscale_prompt(prompt, stem_name, genre="", bpm=0, key="", max_chars=490):
+def upscale_prompt(prompt, stem_name, genre="", bpm=0, key="", max_chars=490, cover_visual="", track_title=""):
     """Pass 1c: Enrich a stem prompt with vivid, specific audio details."""
+    visual_context = ""
+    if cover_visual or track_title:
+        visual_context = (
+            f"Visual scene from album cover: \"{cover_visual}\". Track Title: \"{track_title}\". "
+            f"Weave subtle auditory cues reflecting this visual scene and title into the {stem_name} prompt. "
+        )
     system = (
         "You are an expert audio prompt engineer. Take the input prompt and make it MORE "
         "vivid, specific, and detailed for an AI audio generation model. Add: specific "
         "frequency descriptions (sub-bass, mid-range, high-end), spatial positioning "
         "(wide stereo, centered, panning), dynamic characteristics (attack, sustain, "
         "release), and textural details (gritty, smooth, crystalline, warm). "
+        f"{visual_context}"
         f"Keep the result under {max_chars} characters. "
         "Return JSON: {\"prompt\": \"enhanced prompt text\"}"
     )
@@ -2687,20 +2723,23 @@ def main():
             args.prompt, args.quality, args.duration,
             lyrics=args.lyrics, profile=active_profile,
             album_context=album_context,
+            title=args.title,
         )
         if production_plan:
             # Pass 1c: Upscale each stem prompt for richer audio output
             genre = production_plan.get("genre", "")
             bpm = production_plan.get("bpm", 0)
             key = production_plan.get("key", "")
+            cov_vis = album_context.get("cover_visual", "") if album_context else ""
+            trk_tit = album_context.get("track_title", "") if album_context else (args.title or "")
             for stem_name, stem_info in production_plan.get("stems", {}).items():
                 if isinstance(stem_info, dict) and stem_info.get("prompt"):
                     model = stem_info.get("model", "")
-                    max_chars = {"stable-audio-25": 490, "elevenlabs-sound-effects-v2": 490,
-                                 "minimax-music-v2": 290}.get(model, 500)
+                    max_chars = 1800 if model == "elevenlabs-music" else {"stable-audio-25": 480, "elevenlabs-sound-effects-v2": 480, "minimax-music-v2": 290}.get(model, 480)
                     stem_info["prompt"] = upscale_prompt(
                         stem_info["prompt"], stem_name,
-                        genre=genre, bpm=bpm, key=key, max_chars=max_chars
+                        genre=genre, bpm=bpm, key=key, max_chars=max_chars,
+                        cover_visual=cov_vis, track_title=trk_tit
                     )
             log("")
         else:

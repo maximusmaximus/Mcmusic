@@ -562,6 +562,8 @@ def phase_1_produce(proposal, profile, redo_track=None, redo_feedback=None, mode
         brief += f"The VØIDRIDE sound: {profile.get('prompt_prefix', '')}\n"
 
     prop_tracks = proposal.get("tracks", [])
+    cover_visual = proposal.get("visual", "")
+    album_theme = f"{subgenre}. {proposal.get('brief', '')}".strip()
     cmd = [
         "/opt/hermes/.venv/bin/python3", PRODUCE_SCRIPT,
         "--brief", brief,
@@ -570,7 +572,10 @@ def phase_1_produce(proposal, profile, redo_track=None, redo_feedback=None, mode
         "--mode", mode,
         "--quality", "standard",
         "--no-deliver",
-        "--resume-tracks", str(resume_count)
+        "--resume-tracks", str(resume_count),
+        "--album-name", album_name,
+        "--album-theme", album_theme,
+        "--cover-visual", cover_visual,
     ]
     if prop_tracks:
         cmd.extend(["--track-names"] + [str(t) for t in prop_tracks])
@@ -611,7 +616,12 @@ def phase_1_produce(proposal, profile, redo_track=None, redo_feedback=None, mode
             if "track" in data and "title" in data:
                 t_num = data.get("track")
                 t_title = str(data.get("title", "")).strip()
-                if not t_title or t_title.lower().startswith("track ") or t_title in ("?", "Unknown"):
+                if prop_tracks and (t_num - 1) < len(prop_tracks):
+                    prop_t = str(prop_tracks[t_num - 1]).strip().upper()
+                    if prop_t:
+                        t_title = prop_t
+                        data["title"] = t_title
+                elif not t_title or t_title.lower().startswith("track ") or t_title in ("?", "Unknown"):
                     if prop_tracks and (t_num - 1) < len(prop_tracks):
                         t_title = str(prop_tracks[t_num - 1]).strip().upper()
                         data["title"] = t_title
@@ -634,7 +644,11 @@ def phase_1_produce(proposal, profile, redo_track=None, redo_feedback=None, mode
         if match:
             track_num += 1
             t_title = match.group(1).strip()
-            if not t_title or t_title.lower().startswith("track ") or t_title in ("?", "Unknown"):
+            if prop_tracks and (track_num - 1) < len(prop_tracks):
+                prop_t = str(prop_tracks[track_num - 1]).strip().upper()
+                if prop_t:
+                    t_title = prop_t
+            elif not t_title or t_title.lower().startswith("track ") or t_title in ("?", "Unknown"):
                 if prop_tracks and (track_num - 1) < len(prop_tracks):
                     t_title = str(prop_tracks[track_num - 1]).strip().upper()
             t_bpm = match.group(2)
@@ -720,7 +734,10 @@ def phase_1_redo_single(proposal, profile, tracklist, track_num, feedback=None, 
     bpm = original.get('bpm', '130')
     key = original.get('key', 'Cm')
 
+    cover_visual = proposal.get("visual", "")
     brief = f"{album_name} - {subgenre}. Track {track_num}: {title}. {proposal.get('brief', '')} {bpm} BPM, {key}. "
+    if cover_visual:
+        brief += f"Auditory interpretation of cover scene: {cover_visual}. "
     if profile:
         sonic = profile.get('sonic_dna', {})
         brief += f"\n--- VØIDRIDE IDENTITY ---\nPrimary genres: {', '.join(sonic.get('primary_genres', []))}\n"
@@ -739,8 +756,32 @@ def phase_1_redo_single(proposal, profile, tracklist, track_num, feedback=None, 
 
     send_message(f"🔄 Redoing Track {track_num}: <b>{title}</b>...")
 
-    cmd = ["/opt/hermes/.venv/bin/python3", MASTER_PRODUCER_SCRIPT, "--prompt", brief, "--duration", str(duration), "--quality", "standard", "--no-deliver"]
-    proc = subprocess.run(cmd, capture_output=True, text=True)
+    ctx = {
+        "track_number": track_num,
+        "total_tracks": len(tracklist),
+        "album_name": album_name,
+        "album_theme": f"{subgenre}. {proposal.get('brief', '')}",
+        "cover_visual": cover_visual,
+        "track_title": title,
+        "brief": brief,
+        "variation_rules": [f"Redo with feedback: {feedback}"] if feedback else []
+    }
+    ctx_file = f"/tmp/album_ctx_redo_{track_num}.json"
+    with open(ctx_file, "w") as f:
+        json.dump(ctx, f)
+
+    cmd = [
+        "/opt/hermes/.venv/bin/python3", MASTER_PRODUCER_SCRIPT,
+        "--prompt", brief,
+        "--duration", str(duration),
+        "--quality", "standard",
+        "--director",
+        "--title", title,
+        "--no-deliver"
+    ]
+    env = os.environ.copy()
+    env["ALBUM_CONTEXT_FILE"] = ctx_file
+    proc = subprocess.run(cmd, capture_output=True, text=True, env=env)
 
     if proc.returncode != 0:
         send_message(f"❌ Track {track_num} redo failed: {proc.stderr[:100]}")
