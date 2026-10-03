@@ -2117,15 +2117,23 @@ def phase_6_final_review(proposal, tracklist=None, state=None, dashboard=None):
             logger.info("User confirmed publish. Pushing to SoundCloud...")
             send_message(f"🚀 <b>Publishing {html.escape(album_name)} to SoundCloud...</b>\n<i>Uploading 24-bit studio FLAC masters and synchronized covers. Live progress will be reported below.</i>")
             cmd = ["/opt/hermes/.venv/bin/python3", PUBLISH_SCRIPT, "--release", album_slug, "--confirm", "--force"]
-            res = subprocess.run(cmd, capture_output=True, text=True)
             if res.returncode == 0:
                 logger.info(f"Published {album_name} to SoundCloud successfully.")
                 send_agent_notification(f"Published {album_name} to SoundCloud")
+                return "published"
             else:
-                send_message(f"❌ SoundCloud upload failed:\n<pre>{html.escape(res.stderr[:300])}</pre>")
+                err_text = res.stderr or res.stdout or "Unknown publishing failure"
+                send_message(f"❌ SoundCloud upload failed:\n<pre>{html.escape(err_text[:300])}</pre>")
                 if logger_hub:
-                    logger_hub.log_failure("PUBLISH_FAIL", res.stderr, album=album_name, phase=6)
-            return "published"
+                    logger_hub.log_failure("PUBLISH_FAIL", err_text, album=album_name, phase=6)
+                remediation_buttons = [
+                    [{"text": "🔄 Retry Publish", "callback_data": "ap:final:publish"}],
+                    [{"text": "🎵 Redo Songs", "callback_data": "ap:final:edit_songs"}],
+                    [{"text": "❌ Cancel", "callback_data": "ap:final:cancel"}],
+                ]
+                send_message("SoundCloud publishing did not complete successfully. Please choose an option:",
+                             reply_markup={"inline_keyboard": remediation_buttons})
+                continue
         elif flag == "final_edit_songs":
             return "edit_songs"
         elif flag == "final_edit_album":

@@ -140,8 +140,30 @@ def tag_file_ffmpeg(filepath, metadata, cover_path=None):
             meta_args.extend(["-metadata", f"{key}={val}"])
 
     has_cover = False
+    temp_cover = None
     if cover_path and Path(cover_path).exists():
-        inputs.extend(["-i", str(cover_path)])
+        cpath = Path(cover_path)
+        # FLAC spec maximum metadata block size is 16,777,215 bytes (2^24 - 1).
+        # Uncompressed PNGs or large art can exceed this limit or crash streaming transcoders.
+        # Convert PNG or any cover > 3 MB to an optimized JPEG <= 3 MB.
+        if cpath.suffix.lower() == ".png" or cpath.stat().st_size > 3 * 1024 * 1024:
+            temp_cover = tempfile.NamedTemporaryFile(suffix=".jpg", delete=False)
+            temp_cover.close()
+            conv_cmd = [
+                "ffmpeg", "-y", "-i", str(cpath),
+                "-vf", "scale='min(3000,iw)':'min(3000,ih)':force_original_aspect_ratio=decrease",
+                "-q:v", "3",
+                temp_cover.name
+            ]
+            conv_res = subprocess.run(conv_cmd, capture_output=True, timeout=30)
+            if conv_res.returncode == 0 and os.path.exists(temp_cover.name) and os.path.getsize(temp_cover.name) > 0:
+                cover_to_use = temp_cover.name
+            else:
+                cover_to_use = str(cpath)
+        else:
+            cover_to_use = str(cpath)
+
+        inputs.extend(["-i", cover_to_use])
         maps.extend(["-map", "1:v"])
         meta_args.extend([
             "-metadata:s:v", "title=Album cover",
@@ -181,6 +203,12 @@ def tag_file_ffmpeg(filepath, metadata, cover_path=None):
             os.unlink(tmp.name)
         log(f"  ✗ {fp.name}: {e}")
         return False
+    finally:
+        if temp_cover and os.path.exists(temp_cover.name):
+            try:
+                os.unlink(temp_cover.name)
+            except Exception:
+                pass
 
 def tag_directory(target_dir, artist=None, album=None, genre=None,
                   year=None, tracks_meta=None, release_name=None, embed_art=True):

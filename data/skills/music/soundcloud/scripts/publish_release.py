@@ -431,23 +431,25 @@ def publish(release_name, manifest, tracks_meta, flacs, force=False):
         send_telegram(f"❌ <b>{html.escape(album)}</b> — All uploads failed.")
         return False
 
-    # ── Partial upload warning ──
+    # ── Strict upload verification: ALL tracks must succeed ──
     failed_count = len(flacs) - len(track_ids)
     if failed_count > 0:
-        log(f"⚠ {failed_count}/{len(flacs)} tracks failed to upload")
-        send_telegram(f"⚠️ <b>{html.escape(album)}</b>: {failed_count} of {len(flacs)} tracks failed to upload")
+        log(f"❌ {failed_count}/{len(flacs)} tracks failed to upload — halting publication")
+        send_telegram(f"❌ <b>Publication halted for {html.escape(album)}</b>: {failed_count} of {len(flacs)} tracks failed initial upload. All tracks must succeed.")
+        return False
 
-    # 2. Wait for encoding (poll status instead of fixed sleep)
-    log("Waiting for SoundCloud encoding...")
+    # 2. Wait for encoding & active Content ID verification
+    log("Waiting for SoundCloud encoding & verifying tracks...")
     send_telegram("⏳ <i>SoundCloud is transcoding audio masters into high-bitrate streaming formats...</i>")
-    max_wait = 120  # max 2 minutes
+    max_wait = 180  # max 3 minutes
     poll_interval = 10
     waited = 0
+    flagged_tracks = []
     while waited < max_wait:
         time.sleep(poll_interval)
         waited += poll_interval
-        # Check if all tracks are ready
         all_ready = True
+        flagged_tracks = []
         for tid in track_ids:
             r = subprocess.run(
                 [sys.executable, str(SC_SCRIPT), "status", "--track-id", str(tid)],
@@ -455,17 +457,31 @@ def publish(release_name, manifest, tracks_meta, flacs, force=False):
             )
             try:
                 status = json.loads(r.stdout)
-                if status.get("state") != "finished":
+                if not status.get("success", True) or "404" in str(status.get("error", "")):
+                    flagged_tracks.append((tid, "404 Not Found / Content ID Removal"))
                     all_ready = False
-                    break
+                elif status.get("state") == "failed":
+                    flagged_tracks.append((tid, "Transcode Failed"))
+                    all_ready = False
+                elif status.get("state") != "finished":
+                    all_ready = False
             except (json.JSONDecodeError, KeyError):
                 all_ready = False
-                break
-        if all_ready:
-            log(f"  ✓ All tracks encoded ({waited}s)")
+        if flagged_tracks:
             break
-    else:
-        log(f"  ⚠ Encoding wait timed out after {max_wait}s — proceeding anyway")
+        if all_ready:
+            log(f"  ✓ All tracks encoded and verified ({waited}s)")
+            break
+
+    if flagged_tracks:
+        err_msg = ", ".join(f"Track ID {tid} ({reason})" for tid, reason in flagged_tracks)
+        log(f"❌ Track verification failed: {err_msg}")
+        send_telegram(
+            f"❌ <b>Publication halted for {html.escape(album)}</b>:\n"
+            f"{html.escape(err_msg)}\n\n"
+            f"<i>One or more tracks were removed by SoundCloud Content ID or failed transcoding. Use track remediation to regenerate and replace flagged tracks before publishing.</i>"
+        )
+        return False
 
     send_telegram("✅ <i>Audio transcoding complete! Assembling SoundCloud playlist...</i>")
 
@@ -477,6 +493,32 @@ def publish(release_name, manifest, tracks_meta, flacs, force=False):
         artwork=album_artwork,
         description=f"{album} — {DEFAULT_LABEL}",
     )
+    if not playlist_id:
+        send_telegram(f"❌ Failed to create SoundCloud playlist for <b>{html.escape(album)}</b>")
+        return False
+
+    # STRICT PLAYLIST AUDIT: Ensure playlist actually contains all expected tracks
+    log(f"Auditing playlist {playlist_id} for all {len(flacs)} tracks...")
+    verified_count = 0
+    try:
+        r_pl = subprocess.run(
+            [sys.executable, "-c",
+             f"import sys; sys.path.insert(0, '{SC_SCRIPT.parent}'); import soundcloud_api as sc; s, p = sc.api_request('GET', '/playlists/{playlist_id}'); import json; print(len(p.get('tracks', [])) if isinstance(p, dict) and s == 200 else -1)"],
+            capture_output=True, text=True, timeout=20
+        )
+        if r_pl.returncode == 0:
+            verified_count = int(r_pl.stdout.strip())
+    except Exception as e:
+        log(f"Playlist check error: {e}")
+
+    if verified_count != len(flacs):
+        log(f"❌ Playlist verification failed: Expected {len(flacs)} tracks, but playlist has {verified_count}")
+        send_telegram(
+            f"❌ <b>{html.escape(album)}</b>: Playlist verification failed!\n"
+            f"Expected {len(flacs)} tracks, but SoundCloud playlist only contains {verified_count} tracks.\n"
+            f"<i>Release is NOT marked as published.</i>"
+        )
+        return False
 
     # 4. Tag update pass (tags sometimes don't stick on first upload)
     log("Running tag update pass...")
@@ -548,12 +590,104 @@ def publish(release_name, manifest, tracks_meta, flacs, force=False):
     return True
 
 
+def repair_track(release_name, manifest, tracks_meta, flacs, track_idx):
+    """Repair/re-upload a single track, update existing playlist and release.json."""
+    album_plain = manifest.get("album", release_name.upper()).replace("-", " ")
+    album = stylize_title(album_plain)
+    if track_idx < 1 or track_idx > len(flacs):
+        log(f"Invalid track index {track_idx}, must be 1..{len(flacs)}")
+        return False
+
+    i = track_idx - 1
+    flac = flacs[i]
+    import re
+    title_plain = re.sub(r'^\d+[\s_\-]*', '', flac.stem.replace("_MASTER", "").replace("_", " "))
+    title = stylize_title(title_plain)
+    meta = tracks_meta[i] if i < len(tracks_meta) else {}
+    tags = build_tags(meta, manifest)
+    genre = meta.get("genre", DEFAULT_GENRE).split("/")[0].strip()
+    artwork = find_artwork(release_name, title_plain)
+
+    send_telegram(f"🔧 <b>Repairing Track {track_idx}/{len(flacs)}:</b> Uploading <b>{html.escape(title)}</b> (24-bit studio FLAC)...")
+    track_res = sc_upload(flac, title, tags, genre, artwork)
+    if not track_res:
+        send_telegram(f"❌ Upload failed for <b>{html.escape(title)}</b>")
+        return False
+
+    new_track_id = track_res["track_id"]
+    send_telegram(f"⏳ <i>SoundCloud is transcoding & scanning {html.escape(title)} (ID: {new_track_id})...</i>")
+
+    time.sleep(15)
+    flagged = False
+    for _ in range(12):
+        time.sleep(5)
+        r = subprocess.run([sys.executable, str(SC_SCRIPT), "status", "--track-id", str(new_track_id)],
+                           capture_output=True, text=True, timeout=15)
+        try:
+            status = json.loads(r.stdout)
+            if not status.get("success", True) or "404" in str(status.get("error", "")):
+                flagged = True
+                break
+            if status.get("state") == "finished":
+                break
+        except Exception:
+            pass
+
+    if flagged:
+        send_telegram(f"❌ Track {new_track_id} was removed by SoundCloud (Content ID flag / transcode failure)!")
+        return False
+
+    # Update playlist
+    sc_info = manifest.get("soundcloud", {})
+    playlist_id = sc_info.get("playlist_id")
+    track_ids = list(sc_info.get("track_ids", []))
+    if len(track_ids) == len(flacs):
+        track_ids[i] = new_track_id
+    else:
+        existing_tracks = sc_info.get("tracks", [])
+        track_ids = []
+        for idx in range(len(flacs)):
+            if idx == i:
+                track_ids.append(new_track_id)
+            elif idx < len(existing_tracks):
+                track_ids.append(existing_tracks[idx].get("track_id"))
+
+    if playlist_id:
+        log(f"Updating playlist {playlist_id} with repaired track list: {track_ids}")
+        res_pl = subprocess.run([
+            sys.executable, str(SC_SCRIPT), "update-playlist",
+            "--playlist-id", str(playlist_id),
+            "--track-ids", ",".join(str(t) for t in track_ids)
+        ], capture_output=True, text=True, timeout=30)
+        if res_pl.returncode != 0:
+            send_telegram(f"❌ Failed to update playlist {playlist_id}")
+            return False
+
+    # Update manifest
+    manifest_tracks = sc_info.get("tracks", [])
+    while len(manifest_tracks) <= i:
+        manifest_tracks.append({})
+    manifest_tracks[i] = track_res
+    sc_info["track_ids"] = track_ids
+    sc_info["tracks"] = manifest_tracks
+    manifest["soundcloud"] = sc_info
+    manifest["status"] = "published"
+
+    manifest_path = RELEASES_DIR / release_name / "release.json"
+    with open(manifest_path, "w") as f:
+        json.dump(manifest, f, indent=2)
+
+    send_telegram(f"✅ <b>Track {track_idx} ({html.escape(title)}) successfully repaired and synced to playlist!</b>")
+    return True
+
+
 def main():
     parser = argparse.ArgumentParser(description="Gated SoundCloud publishing")
     parser.add_argument("--release", help="Release directory name (e.g., mars-descent)")
     parser.add_argument("--preview", action="store_true", help="Send audio for review before publishing")
     parser.add_argument("--confirm", action="store_true", help="Skip review gate, publish immediately")
     parser.add_argument("--force", action="store_true", help="Force re-publish even if already published")
+    parser.add_argument("--repair-track", type=int, default=None, help="Repair/replace a single track by 1-based index")
     parser.add_argument("--dry-run", action="store_true", help="Print what would happen without sending")
     parser.add_argument("--list", action="store_true", help="List release-ready albums")
     args = parser.parse_args()
@@ -573,8 +707,16 @@ def main():
 
     log(f"Loaded release: {args.release} ({len(flacs)} tracks)")
 
+    if args.repair_track is not None:
+        ok = repair_track(args.release, manifest, tracks_meta, flacs, args.repair_track)
+        if not ok:
+            sys.exit(1)
+        return
+
     if args.confirm:
-        publish(args.release, manifest, tracks_meta, flacs, force=args.force)
+        ok = publish(args.release, manifest, tracks_meta, flacs, force=args.force)
+        if not ok:
+            sys.exit(1)
     elif args.preview:
         preview_gate(args.release, flacs)
     else:

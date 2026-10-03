@@ -449,7 +449,7 @@ def cmd_list(args):
             lines.append(
                 f"  {state_icon} {sharing_icon} {t.get('id','?'):>10} │ "
                 f"{t.get('title', 'Untitled')[:50]:<50} │ "
-                f"{duration_str:>6} │ {t.get('genre', '')[:20]}"
+                f"{duration_str:>6} │ {(t.get('genre') or '')[:20]}"
             )
         result_text = "\n".join(lines)
         output_result({"success": True, "count": len(tracks), "text": result_text})
