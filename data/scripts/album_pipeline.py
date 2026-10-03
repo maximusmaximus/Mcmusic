@@ -1320,7 +1320,8 @@ def upsample_image_prompt_k3(title, core_concept, subgenre="", is_album=False, c
         "3. Derive all visual metaphors directly from the song's musical themes, instruments, and mood.\n"
         "4. Seamlessly incorporate these signature recurring motifs if listed:\n"
         f"{motifs_instruction}\n"
-        "5. CRITICAL CONSTRAINT: The generated prompt MUST be under 1200 characters (around 150 words). Be densely atmospheric and concise.\n\n"
+        "5. CRITICAL CONSTRAINT: The generated prompt MUST be under 1200 characters (around 150 words). Be densely atmospheric and concise.\n"
+        "6. MAXIMUM SCENE VARIATION: If Type is 'Single Track Cover', depict a completely unique focal subject, architectural sub-setting, and camera perspective that interprets the track title within the album's world. NEVER repeat the exact same vehicle, room layout, or central object across covers.\n\n"
         "Output ONLY the final generated image prompt paragraph. Do NOT include markdown headers, preambles, or conversational filler."
     )
 
@@ -1651,7 +1652,9 @@ def _extract_track_dna(track_item, proposal):
     title = track_item.get('title', 'Unknown Track')
     visual = proposal.get('visual', '')
     subgenre = proposal.get('subgenre', '')
+    album = proposal.get('album', '')
 
+    extra_stems = ""
     prod_dir = track_item.get('production_dir')
     if prod_dir and os.path.exists(os.path.join(prod_dir, 'production_plan.json')):
         try:
@@ -1662,15 +1665,16 @@ def _extract_track_dna(track_item, proposal):
             tex_p = stems.get('texture', {}).get('prompt', '')
             energy = plan.get('energy', '')
             genre = plan.get('genre', subgenre)
-            return (
-                f"Track title: {title}. Subgenre: {genre}. Energy & mood: {energy}. "
-                f"Main sonic DNA: {main_p}. Texture elements: {tex_p}. Album atmosphere: {visual}"
-            )
+            extra_stems = f"Sonic DNA: {main_p}. Texture: {tex_p}. Mood: {energy}."
         except Exception as e:
             logger.warning(f"Failed to read production_plan.json for {title}: {e}")
 
     direction = track_item.get('direction', track_item.get('genre', subgenre))
-    return f"Track title: {title}. Style: {direction}. Album visual concept: {visual}"
+    return (
+        f"Track Title: '{title}'. Album Universe: '{album}' ({visual}). Musical Style: {direction}. {extra_stems} "
+        f"CRITICAL VISUAL DIRECTIVE: This track cover MUST depict a completely original, distinct sub-environment or focal subject within the '{album}' universe that directly interprets the title '{title}'. "
+        f"Dramatically vary the focal point, camera distance, and composition so it does NOT look like the main album cover or other tracks."
+    )
 
 
 def phase_5_track_covers(proposal, tracklist, state=None, dashboard=None):
