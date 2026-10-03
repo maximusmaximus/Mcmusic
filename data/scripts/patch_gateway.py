@@ -232,31 +232,24 @@ PATCH_CODE = '''
             # ── Refine ──
             if choice == "refine":
                 await query.answer(text="🔄 Pick a direction...")
-                import json as _json
-                import urllib.request as _urllib
+                from telegram import InlineKeyboardButton, InlineKeyboardMarkup
                 _refine_buttons = [
-                    [{"text": "🌑 Darker / Heavier", "callback_data": "ap:rd:dark"}],
-                    [{"text": "🌌 More Cosmic / Spacey", "callback_data": "ap:rd:cosmic"}],
-                    [{"text": "⚡ Faster / More Aggressive", "callback_data": "ap:rd:fast"}],
-                    [{"text": "🌊 More Atmospheric", "callback_data": "ap:rd:atmo"}],
-                    [{"text": "🗡️ More Experimental", "callback_data": "ap:rd:exp"}],
-                    [{"text": "💬 Type Custom Refinement", "callback_data": "ap:rd:custom"}],
-                    [{"text": "↩️ Keep Current", "callback_data": "ap:rd:cancel"}],
+                    [InlineKeyboardButton("🌑 Darker / Heavier", callback_data="ap:rd:dark")],
+                    [InlineKeyboardButton("🌌 More Cosmic / Spacey", callback_data="ap:rd:cosmic")],
+                    [InlineKeyboardButton("⚡ Faster / More Aggressive", callback_data="ap:rd:fast")],
+                    [InlineKeyboardButton("🌊 More Atmospheric", callback_data="ap:rd:atmo")],
+                    [InlineKeyboardButton("🗡️ More Experimental", callback_data="ap:rd:exp")],
+                    [InlineKeyboardButton("💬 Type Custom Refinement", callback_data="ap:rd:custom")],
+                    [InlineKeyboardButton("↩️ Keep Current", callback_data="ap:rd:cancel")],
                 ]
-                _bot_token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
-                _chat_id = str(query.message.chat_id) if query.message else ""
-                if _bot_token and _chat_id:
-                    _payload = _json.dumps({
-                        "chat_id": _chat_id,
-                        "text": "🔄 <b>Pick a refinement direction:</b>",
-                        "parse_mode": "HTML",
-                        "reply_markup": {"inline_keyboard": _refine_buttons},
-                    }).encode()
-                    try:
-                        _req = _urllib.Request(f"https://api.telegram.org/bot{_bot_token}/sendMessage", data=_payload, headers={"Content-Type": "application/json"})
-                        _urllib.urlopen(_req, timeout=10)
-                    except Exception as _e:
-                        logger.error("[Telegram] Failed to send refine buttons: %s", _e)
+                try:
+                    await query.message.reply_text(
+                        "🔄 <b>Pick a refinement direction:</b>",
+                        parse_mode="HTML",
+                        reply_markup=InlineKeyboardMarkup(_refine_buttons),
+                    )
+                except Exception as _e:
+                    logger.error("[Telegram] Failed to send refine buttons: %s", _e)
                 return
 
             # ── Refine Direction ──
@@ -334,35 +327,29 @@ PATCH_CODE = '''
             if choice.startswith('songs:redo:'):
                 track_num = choice.split(':')[-1]
                 await query.answer(text=f'🔄 Select tweak for Track {track_num}')
+                from telegram import InlineKeyboardButton, InlineKeyboardMarkup
                 _redo_buttons = [
                     [
-                        {"text": "🔊 More Sub-Bass", "callback_data": f"ap:redo_preset:{track_num}:bass"},
-                        {"text": "⚡ Faster Tempo", "callback_data": f"ap:redo_preset:{track_num}:faster"}
+                        InlineKeyboardButton("🔊 More Sub-Bass", callback_data=f"ap:redo_preset:{track_num}:bass"),
+                        InlineKeyboardButton("⚡ Faster Tempo", callback_data=f"ap:redo_preset:{track_num}:faster")
                     ],
                     [
-                        {"text": "🌫️ Darker / Witchy", "callback_data": f"ap:redo_preset:{track_num}:darker"},
-                        {"text": "🚫 Clean Instrumental", "callback_data": f"ap:redo_preset:{track_num}:clean"}
+                        InlineKeyboardButton("🌫️ Darker / Witchy", callback_data=f"ap:redo_preset:{track_num}:darker"),
+                        InlineKeyboardButton("🚫 Clean Instrumental", callback_data=f"ap:redo_preset:{track_num}:clean")
                     ],
                     [
-                        {"text": "✏️ Custom Instructions", "callback_data": f"ap:redo_custom:{track_num}"},
-                        {"text": "↩️ Cancel", "callback_data": "ap:redo_cancel"}
+                        InlineKeyboardButton("✏️ Custom Instructions", callback_data=f"ap:redo_custom:{track_num}"),
+                        InlineKeyboardButton("↩️ Cancel", callback_data="ap:redo_cancel")
                     ]
                 ]
-                import json as _json
-                import urllib.request as _urllib
-                _bot_token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
-                _chat_id = str(query.message.chat_id) if query.message else ""
-                if _bot_token and _chat_id:
-                    _payload = _json.dumps({
-                        "chat_id": _chat_id,
-                        "text": f"🔄 <b>What should be adjusted for Track {track_num}?</b>",
-                        "parse_mode": "HTML",
-                        "reply_markup": {"inline_keyboard": _redo_buttons}
-                    }).encode()
-                    try:
-                        _req = _urllib.Request(f"https://api.telegram.org/bot{_bot_token}/sendMessage", data=_payload, headers={"Content-Type": "application/json"})
-                        _urllib.urlopen(_req, timeout=10)
-                    except Exception: pass
+                try:
+                    await query.message.reply_text(
+                        f"🔄 <b>What should be adjusted for Track {track_num}?</b>",
+                        parse_mode="HTML",
+                        reply_markup=InlineKeyboardMarkup(_redo_buttons),
+                    )
+                except Exception as _e:
+                    logger.error("[Telegram] Failed to send redo buttons: %s", _e)
                 return
 
             # Apply Redo Preset
@@ -381,13 +368,21 @@ PATCH_CODE = '''
                 with open(f'/tmp/pipeline_flags/songs_redo_{track_num}', 'w') as f:
                     f.write(directive)
                 await query.answer(text=f'🔄 Redoing Track {track_num} ({preset_type})...')
-                try: await query.edit_message_text(text=f"🔄 <b>Redoing Track {track_num}</b>\\nDirective: <i>{directive}</i>", parse_mode="HTML", reply_markup=None)
-                except Exception: pass
+                try:
+                    await query.edit_message_text(text=f"🔄 <b>Redoing Track {track_num}</b>\\nDirective: <i>{directive}</i>", parse_mode="HTML", reply_markup=None)
+                except Exception:
+                    try: await query.edit_message_reply_markup(reply_markup=None)
+                    except Exception: pass
                 return
 
             if choice.startswith('redo_custom:'):
                 track_num = choice.split(':')[-1]
                 await query.answer(text="💬 Tell agent your custom direction...")
+                try:
+                    await query.edit_message_text(text=f"💬 <b>Custom Redo for Track {track_num}</b>\\nType your instructions in the chat, and the agent will remake the track.", parse_mode="HTML", reply_markup=None)
+                except Exception:
+                    try: await query.edit_message_reply_markup(reply_markup=None)
+                    except Exception: pass
                 from gateway.session import SessionSource
                 from gateway.platforms.base import MessageEvent, MessageType
                 from datetime import datetime as _dt
@@ -407,39 +402,36 @@ PATCH_CODE = '''
 
             if choice == 'redo_cancel':
                 await query.answer(text="↩️ Redo cancelled")
-                try: await query.edit_message_reply_markup(reply_markup=None)
-                except Exception: pass
+                try:
+                    await query.edit_message_text(text="↩️ <i>Track redo cancelled.</i>", parse_mode="HTML", reply_markup=None)
+                except Exception:
+                    try: await query.edit_message_reply_markup(reply_markup=None)
+                    except Exception: pass
                 return
 
             # Interactive Reject: preset directions
             if choice == 'songs:reject':
                 await query.answer(text='❌ Select new direction for album')
+                from telegram import InlineKeyboardButton, InlineKeyboardMarkup
                 _reject_buttons = [
                     [
-                        {"text": "🌑 Darker / Witch House", "callback_data": "ap:reject_preset:dark"},
-                        {"text": "🏎️ Faster Drift Phonk", "callback_data": "ap:reject_preset:phonk"}
+                        InlineKeyboardButton("🌑 Darker / Witch House", callback_data="ap:reject_preset:dark"),
+                        InlineKeyboardButton("🏎️ Faster Drift Phonk", callback_data="ap:reject_preset:phonk")
                     ],
                     [
-                        {"text": "📻 Cosmic Industrial Trap", "callback_data": "ap:reject_preset:industrial"},
-                        {"text": "✏️ Custom Direction", "callback_data": "ap:reject_custom"}
+                        InlineKeyboardButton("📻 Cosmic Industrial Trap", callback_data="ap:reject_preset:industrial"),
+                        InlineKeyboardButton("✏️ Custom Direction", callback_data="ap:reject_custom")
                     ],
-                    [{"text": "↩️ Cancel", "callback_data": "ap:reject_cancel"}]
+                    [InlineKeyboardButton("↩️ Cancel", callback_data="ap:reject_cancel")]
                 ]
-                import json as _json
-                import urllib.request as _urllib
-                _bot_token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
-                _chat_id = str(query.message.chat_id) if query.message else ""
-                if _bot_token and _chat_id:
-                    _payload = _json.dumps({
-                        "chat_id": _chat_id,
-                        "text": "❌ <b>Select a new sonic direction for the album remake:</b>",
-                        "parse_mode": "HTML",
-                        "reply_markup": {"inline_keyboard": _reject_buttons}
-                    }).encode()
-                    try:
-                        _req = _urllib.Request(f"https://api.telegram.org/bot{_bot_token}/sendMessage", data=_payload, headers={"Content-Type": "application/json"})
-                        _urllib.urlopen(_req, timeout=10)
-                    except Exception: pass
+                try:
+                    await query.message.reply_text(
+                        "❌ <b>Select a new sonic direction for the album remake:</b>",
+                        parse_mode="HTML",
+                        reply_markup=InlineKeyboardMarkup(_reject_buttons),
+                    )
+                except Exception as _e:
+                    logger.error("[Telegram] Failed to send reject buttons: %s", _e)
                 return
 
             if choice.startswith('reject_preset:'):
@@ -454,12 +446,20 @@ PATCH_CODE = '''
                 with open('/tmp/pipeline_flags/songs_rejected', 'w') as f:
                     f.write(directive)
                 await query.answer(text=f'❌ Remaking album ({preset_type})...')
-                try: await query.edit_message_text(text=f"❌ <b>Album Remake Scheduled</b>\\nNew Direction: <i>{directive}</i>", parse_mode="HTML", reply_markup=None)
-                except Exception: pass
+                try:
+                    await query.edit_message_text(text=f"❌ <b>Album Remake Scheduled</b>\\nNew Direction: <i>{directive}</i>", parse_mode="HTML", reply_markup=None)
+                except Exception:
+                    try: await query.edit_message_reply_markup(reply_markup=None)
+                    except Exception: pass
                 return
 
             if choice == 'reject_custom':
                 await query.answer(text="💬 Tell agent your new album direction...")
+                try:
+                    await query.edit_message_text(text="💬 <b>Custom Album Remake</b>\\nType your instructions in the chat, and the agent will regenerate the album.", parse_mode="HTML", reply_markup=None)
+                except Exception:
+                    try: await query.edit_message_reply_markup(reply_markup=None)
+                    except Exception: pass
                 from gateway.session import SessionSource
                 from gateway.platforms.base import MessageEvent, MessageType
                 from datetime import datetime as _dt
@@ -479,8 +479,11 @@ PATCH_CODE = '''
 
             if choice == 'reject_cancel':
                 await query.answer(text="↩️ Reject cancelled")
-                try: await query.edit_message_reply_markup(reply_markup=None)
-                except Exception: pass
+                try:
+                    await query.edit_message_text(text="↩️ <i>Remake cancelled. Keeping current tracks.</i>", parse_mode="HTML", reply_markup=None)
+                except Exception:
+                    try: await query.edit_message_reply_markup(reply_markup=None)
+                    except Exception: pass
                 return
 
             # ── Error Recovery Handlers ──
@@ -566,36 +569,30 @@ PATCH_CODE = '''
 
             if choice == 'albumcover:edit':
                 await query.answer(text='✏️ Select cover edit')
+                from telegram import InlineKeyboardButton, InlineKeyboardMarkup
                 _edit_buttons = [
                     [
-                        {"text": "🌑 Deeper Shadows & Noir", "callback_data": "ap:albumcover:quickedit:darker"},
-                        {"text": "🌫️ Dense Cyan Mist & Steam", "callback_data": "ap:albumcover:quickedit:mist"}
+                        InlineKeyboardButton("🌑 Deeper Shadows & Noir", callback_data="ap:albumcover:quickedit:darker"),
+                        InlineKeyboardButton("🌫️ Dense Cyan Mist & Steam", callback_data="ap:albumcover:quickedit:mist")
                     ],
                     [
-                        {"text": "🗡️ Add Sleek Katana", "callback_data": "ap:albumcover:quickedit:katana"},
-                        {"text": "👤 Fedora Silhouette", "callback_data": "ap:albumcover:quickedit:fedora"}
+                        InlineKeyboardButton("🗡️ Add Sleek Katana", callback_data="ap:albumcover:quickedit:katana"),
+                        InlineKeyboardButton("👤 Fedora Silhouette", callback_data="ap:albumcover:quickedit:fedora")
                     ],
                     [
-                        {"text": "🌕 Cold Moon Glow", "callback_data": "ap:albumcover:quickedit:moon"},
-                        {"text": "💬 Custom Edit Instructions", "callback_data": "ap:albumcover:customedit"}
+                        InlineKeyboardButton("🌕 Cold Moon Glow", callback_data="ap:albumcover:quickedit:moon"),
+                        InlineKeyboardButton("💬 Custom Edit Instructions", callback_data="ap:albumcover:customedit")
                     ],
-                    [{"text": "↩️ Cancel Edit", "callback_data": "ap:albumcover:edit_cancel"}]
+                    [InlineKeyboardButton("↩️ Cancel Edit", callback_data="ap:albumcover:edit_cancel")]
                 ]
-                import json as _json
-                import urllib.request as _urllib
-                _bot_token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
-                _chat_id = str(query.message.chat_id) if query.message else ""
-                if _bot_token and _chat_id:
-                    _payload = _json.dumps({
-                        "chat_id": _chat_id,
-                        "text": "✏️ <b>Choose a visual edit for the Album Cover:</b>",
-                        "parse_mode": "HTML",
-                        "reply_markup": {"inline_keyboard": _edit_buttons}
-                    }).encode()
-                    try:
-                        _req = _urllib.Request(f"https://api.telegram.org/bot{_bot_token}/sendMessage", data=_payload, headers={"Content-Type": "application/json"})
-                        _urllib.urlopen(_req, timeout=10)
-                    except Exception: pass
+                try:
+                    await query.message.reply_text(
+                        "✏️ <b>Choose a visual edit for the Album Cover:</b>",
+                        parse_mode="HTML",
+                        reply_markup=InlineKeyboardMarkup(_edit_buttons),
+                    )
+                except Exception as _e:
+                    logger.error("[Telegram] Failed to send album cover edit buttons: %s", _e)
                 return
 
             if choice.startswith('albumcover:quickedit:'):
@@ -612,12 +609,23 @@ PATCH_CODE = '''
                 with open('/tmp/pipeline_flags/albumcover_edit', 'w') as f:
                     f.write(directive)
                 await query.answer(text=f'✏️ Editing cover ({preset})...')
-                try: await query.edit_message_text(text=f"✏️ <b>Applying Album Cover Edit</b>\\nDirective: <i>{directive}</i>", parse_mode="HTML", reply_markup=None)
-                except Exception: pass
+                try:
+                    await query.edit_message_text(text=f"✏️ <b>Applying Album Cover Edit</b>\\nDirective: <i>{directive}</i>", parse_mode="HTML", reply_markup=None)
+                except Exception:
+                    try:
+                        await query.edit_message_caption(caption=f"✏️ <b>Applying Album Cover Edit</b>\\nDirective: <i>{directive}</i>", parse_mode="HTML", reply_markup=None)
+                    except Exception:
+                        try: await query.edit_message_reply_markup(reply_markup=None)
+                        except Exception: pass
                 return
 
             if choice == 'albumcover:customedit':
                 await query.answer(text="💬 Tell agent your custom cover edit...")
+                try:
+                    await query.edit_message_text(text="💬 <b>Custom Cover Edit</b>\\nType your instructions in the chat, and the agent will apply them to the cover.", parse_mode="HTML", reply_markup=None)
+                except Exception:
+                    try: await query.edit_message_reply_markup(reply_markup=None)
+                    except Exception: pass
                 from gateway.session import SessionSource
                 from gateway.platforms.base import MessageEvent, MessageType
                 from datetime import datetime as _dt
@@ -637,8 +645,11 @@ PATCH_CODE = '''
 
             if choice == 'albumcover:edit_cancel':
                 await query.answer(text="↩️ Edit cancelled")
-                try: await query.edit_message_reply_markup(reply_markup=None)
-                except Exception: pass
+                try:
+                    await query.edit_message_text(text="↩️ <i>Cover edit cancelled.</i>", parse_mode="HTML", reply_markup=None)
+                except Exception:
+                    try: await query.edit_message_reply_markup(reply_markup=None)
+                    except Exception: pass
                 return
 
             # ── Track Covers Review Handlers ──
@@ -674,36 +685,30 @@ PATCH_CODE = '''
             if choice.startswith('art:edit:'):
                 track_num = choice.split(':')[-1]
                 await query.answer(text=f'✏️ Select edit for Track {track_num}')
+                from telegram import InlineKeyboardButton, InlineKeyboardMarkup
                 _edit_buttons = [
                     [
-                        {"text": "🌑 Deeper Shadows", "callback_data": f"ap:art:quickedit:{track_num}:darker"},
-                        {"text": "🌫️ Dense Mist", "callback_data": f"ap:art:quickedit:{track_num}:mist"}
+                        InlineKeyboardButton("🌑 Deeper Shadows", callback_data=f"ap:art:quickedit:{track_num}:darker"),
+                        InlineKeyboardButton("🌫️ Dense Mist", callback_data=f"ap:art:quickedit:{track_num}:mist")
                     ],
                     [
-                        {"text": "🗡️ Add Katana", "callback_data": f"ap:art:quickedit:{track_num}:katana"},
-                        {"text": "👤 Fedora Silhouette", "callback_data": f"ap:art:quickedit:{track_num}:fedora"}
+                        InlineKeyboardButton("🗡️ Add Katana", callback_data=f"ap:art:quickedit:{track_num}:katana"),
+                        InlineKeyboardButton("👤 Fedora Silhouette", callback_data=f"ap:art:quickedit:{track_num}:fedora")
                     ],
                     [
-                        {"text": "🌕 Moon Highlight", "callback_data": f"ap:art:quickedit:{track_num}:moon"},
-                        {"text": "💬 Custom Prompt", "callback_data": f"ap:art:customedit:{track_num}"}
+                        InlineKeyboardButton("🌕 Moon Highlight", callback_data=f"ap:art:quickedit:{track_num}:moon"),
+                        InlineKeyboardButton("💬 Custom Prompt", callback_data=f"ap:art:customedit:{track_num}")
                     ],
-                    [{"text": "↩️ Cancel", "callback_data": "ap:art:edit_cancel"}]
+                    [InlineKeyboardButton("↩️ Cancel", callback_data="ap:art:edit_cancel")]
                 ]
-                import json as _json
-                import urllib.request as _urllib
-                _bot_token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
-                _chat_id = str(query.message.chat_id) if query.message else ""
-                if _bot_token and _chat_id:
-                    _payload = _json.dumps({
-                        "chat_id": _chat_id,
-                        "text": f"✏️ <b>Choose a visual edit for Track {track_num} cover:</b>",
-                        "parse_mode": "HTML",
-                        "reply_markup": {"inline_keyboard": _edit_buttons}
-                    }).encode()
-                    try:
-                        _req = _urllib.Request(f"https://api.telegram.org/bot{_bot_token}/sendMessage", data=_payload, headers={"Content-Type": "application/json"})
-                        _urllib.urlopen(_req, timeout=10)
-                    except Exception: pass
+                try:
+                    await query.message.reply_text(
+                        f"✏️ <b>Choose a visual edit for Track {track_num} cover:</b>",
+                        parse_mode="HTML",
+                        reply_markup=InlineKeyboardMarkup(_edit_buttons),
+                    )
+                except Exception as _e:
+                    logger.error("[Telegram] Failed to send track cover edit buttons: %s", _e)
                 return
 
             if choice.startswith('art:quickedit:'):
@@ -722,13 +727,24 @@ PATCH_CODE = '''
                 with open(f'/tmp/pipeline_flags/art_edit_{track_num}', 'w') as f:
                     f.write(directive)
                 await query.answer(text=f'✏️ Editing Track {track_num} ({preset})...')
-                try: await query.edit_message_text(text=f"✏️ <b>Applying Track {track_num} Edit</b>\\nDirective: <i>{directive}</i>", parse_mode="HTML", reply_markup=None)
-                except Exception: pass
+                try:
+                    await query.edit_message_text(text=f"✏️ <b>Applying Track {track_num} Edit</b>\\nDirective: <i>{directive}</i>", parse_mode="HTML", reply_markup=None)
+                except Exception:
+                    try:
+                        await query.edit_message_caption(caption=f"✏️ <b>Applying Track {track_num} Edit</b>\\nDirective: <i>{directive}</i>", parse_mode="HTML", reply_markup=None)
+                    except Exception:
+                        try: await query.edit_message_reply_markup(reply_markup=None)
+                        except Exception: pass
                 return
 
             if choice.startswith('art:customedit:'):
                 track_num = choice.split(':')[-1]
                 await query.answer(text=f"💬 Tell agent your custom edit for Track {track_num}...")
+                try:
+                    await query.edit_message_text(text=f"💬 <b>Custom Edit for Track {track_num}</b>\\nType your instructions in the chat, and the agent will apply them to the cover.", parse_mode="HTML", reply_markup=None)
+                except Exception:
+                    try: await query.edit_message_reply_markup(reply_markup=None)
+                    except Exception: pass
                 from gateway.session import SessionSource
                 from gateway.platforms.base import MessageEvent, MessageType
                 from datetime import datetime as _dt
@@ -748,8 +764,11 @@ PATCH_CODE = '''
 
             if choice == 'art:edit_cancel':
                 await query.answer(text="↩️ Edit cancelled")
-                try: await query.edit_message_reply_markup(reply_markup=None)
-                except Exception: pass
+                try:
+                    await query.edit_message_text(text="↩️ <i>Track cover edit cancelled.</i>", parse_mode="HTML", reply_markup=None)
+                except Exception:
+                    try: await query.edit_message_reply_markup(reply_markup=None)
+                    except Exception: pass
                 return
 
             # ── Final Review & Publishing Gate Handlers ──

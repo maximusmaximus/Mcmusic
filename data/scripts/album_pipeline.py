@@ -1602,6 +1602,9 @@ def phase_4_album_cover(proposal, tracklist, state=None, dashboard=None):
             edit_directive = content if content else "darker, heavier contrast, dramatic lighting"
             send_message(f"✏️ <b>Modifying cover visual:</b> <i>{html.escape(edit_directive)}</i>\nRunning Venice AI vision edit inference...")
 
+            if not os.path.exists(cover_bg) and os.path.exists(cover_path):
+                shutil.copy2(cover_path, cover_bg)
+
             edit_artwork_venice(cover_bg, edit_directive, cover_bg, state=state)
 
             if os.path.exists(OVERLAY_TITLE_SCRIPT):
@@ -2151,12 +2154,16 @@ def main():
     # Auto-discover existing completed masters and artwork on disk
     disc_tracks, disc_phase, disc_art = discover_existing_album_production(proposal)
     if len(disc_tracks) >= 5:
-        logger.info(f"Auto-discovery found {len(disc_tracks)} completed masters on disk for {proposal.get('album')}. Advancing to Phase {disc_phase}.")
+        logger.info(f"Auto-discovery found {len(disc_tracks)} completed masters on disk for {proposal.get('album')}.")
         tracklist = disc_tracks
-        current_phase = disc_phase
         state["completed_tracks"] = disc_tracks
         state["tracklist"] = disc_tracks
-        state["phase"] = disc_phase
+        if not (args.resume and state.get("phase")):
+            current_phase = disc_phase
+            state["phase"] = disc_phase
+        else:
+            current_phase = state.get("phase")
+        logger.info(f"Pipeline phase set to [{current_phase}/6]")
         save_state(state)
 
     # Internal status tracker (dashboard messages disabled)
