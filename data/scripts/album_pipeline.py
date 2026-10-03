@@ -1533,30 +1533,43 @@ def phase_4_album_cover(proposal, tracklist, state=None, dashboard=None):
     cover_path = os.path.join(art_dir, "album_cover.png")
     cover_bg = os.path.join(art_dir, "album_cover_bg.png")
 
-    send_message(f"🎨 <b>Designing album cover for {html.escape(album_name)}...</b>\nUpsampling visual prompt with K3 AI...")
+    force_regen = getattr(phase_4_album_cover, '_force_regen', False)
+    phase_4_album_cover._force_regen = False
 
-    core_concept = f"Album visual: {visual}. Musical brief: {brief}"
-    upsampled_prompt = upsample_image_prompt_k3(album_name, core_concept, subgenre=subgenre, is_album=True)
+    if not os.path.exists(cover_bg) or not os.path.exists(cover_path) or force_regen:
+        send_message(f"🎨 <b>Designing album cover for {html.escape(album_name)}...</b>\nUpsampling visual prompt with K3 AI...")
 
-    send_message("🖼️ <b>Synthesizing visual with Venice SOTA image engine (qwen-image-3-pro)...</b>")
-    raw_path = generate_artwork_venice(upsampled_prompt, album_name, state=state)
-    if not raw_path or not os.path.exists(raw_path):
-        send_message("❌ Failed to generate album cover.")
-        return "regen"
+        core_concept = f"Album visual: {visual}. Musical brief: {brief}"
+        upsampled_prompt = upsample_image_prompt_k3(album_name, core_concept, subgenre=subgenre, is_album=True)
 
-    shutil.copy2(raw_path, cover_bg)
+        send_message("🖼️ <b>Synthesizing visual with Venice SOTA image engine (qwen-image-3-pro)...</b>")
+        raw_path = generate_artwork_venice(upsampled_prompt, album_name, state=state)
+        if not raw_path or not os.path.exists(raw_path):
+            send_message("❌ Failed to generate album cover.")
+            return "regen"
 
-    if os.path.exists(OVERLAY_TITLE_SCRIPT):
+        shutil.copy2(raw_path, cover_bg)
+
+        send_message("⬆️ Upscaling clean background artwork to 3000×3000...")
+        upscale_artwork_venice(cover_bg)
+        if state:
+            add_cost(state, "cover_upscale", VENICE_UPSCALE_COST)
+
+    if os.path.exists(OVERLAY_TITLE_SCRIPT) and os.path.exists(cover_bg):
         styled_album = stylize_title(album_name)
+        logger.info(f"Overlaying title '{styled_album}' with chromatic opposite color onto 3000x3000 canvas...")
         subprocess.run(["/opt/hermes/.venv/bin/python3", OVERLAY_TITLE_SCRIPT,
                         "--image", cover_bg, "--title", styled_album, "--auto-color", "--output", cover_path], capture_output=True)
-    else:
+    elif os.path.exists(cover_bg) and not os.path.exists(cover_path):
         shutil.copy2(cover_bg, cover_path)
 
-    send_message("⬆️ Upscaling album cover to 3000×3000...")
-    upscale_artwork_venice(cover_path)
-    if state:
-        add_cost(state, "cover_upscale", VENICE_UPSCALE_COST)
+    jpg_path = os.path.splitext(cover_path)[0] + '.jpg'
+    try:
+        from PIL import Image
+        with Image.open(cover_path) as im:
+            im.convert('RGB').save(jpg_path, 'JPEG', quality=95)
+    except Exception as e:
+        logger.warning(f"Could not convert cover to jpg: {e}")
 
     def _send_album_review_card():
         buttons = [
@@ -1581,7 +1594,8 @@ def phase_4_album_cover(proposal, tracklist, state=None, dashboard=None):
             f"🌙 Phase: <i>{moon_phase}</i> | 📐 3000×3000 Ultra-HD\n"
             f"<i>Review cover below — tap Approve, Regenerate, or Edit:</i>"
         )
-        send_photo(cover_path, caption=caption, reply_markup={"inline_keyboard": buttons})
+        send_file = jpg_path if os.path.exists(jpg_path) else cover_path
+        send_photo(send_file, caption=caption, reply_markup={"inline_keyboard": buttons})
 
     _send_album_review_card()
 
@@ -1592,6 +1606,7 @@ def phase_4_album_cover(proposal, tracklist, state=None, dashboard=None):
             return "approved"
         elif flag == "albumcover_regen":
             send_message("🔄 <b>Regenerating album cover from scratch...</b>")
+            phase_4_album_cover._force_regen = True
             if state:
                 add_cost(state, "cover_regeneration", VENICE_IMAGE_GEN_COST)
                 costs = init_cost_tracker(state)
@@ -1607,17 +1622,26 @@ def phase_4_album_cover(proposal, tracklist, state=None, dashboard=None):
 
             edit_artwork_venice(cover_bg, edit_directive, cover_bg, state=state)
 
+            send_message("⬆️ Upscaling edited background to 3000×3000...")
+            upscale_artwork_venice(cover_bg)
+            if state:
+                add_cost(state, "cover_upscale", VENICE_UPSCALE_COST)
+
             if os.path.exists(OVERLAY_TITLE_SCRIPT):
                 styled_album = stylize_title(album_name)
+                logger.info(f"Overlaying title '{styled_album}' with chromatic opposite color onto 3000x3000 canvas...")
                 subprocess.run(["/opt/hermes/.venv/bin/python3", OVERLAY_TITLE_SCRIPT,
                                 "--image", cover_bg, "--title", styled_album, "--auto-color", "--output", cover_path], capture_output=True)
             else:
                 shutil.copy2(cover_bg, cover_path)
 
-            send_message("⬆️ Upscaling edited album cover to 3000×3000...")
-            upscale_artwork_venice(cover_path)
-            if state:
-                add_cost(state, "cover_upscale", VENICE_UPSCALE_COST)
+            jpg_path = os.path.splitext(cover_path)[0] + '.jpg'
+            try:
+                from PIL import Image
+                with Image.open(cover_path) as im:
+                    im.convert('RGB').save(jpg_path, 'JPEG', quality=95)
+            except Exception as e:
+                logger.warning(f"Could not convert cover to jpg: {e}")
 
             _send_album_review_card()
 
@@ -1657,29 +1681,40 @@ def phase_5_track_covers(proposal, tracklist, state=None, dashboard=None):
     track_art_dir = get_album_artwork_dir(album_name)
     os.makedirs(track_art_dir, exist_ok=True)
 
-    send_message(f"🎨 <b>Generating {len(tracklist)} track covers derived directly from song themes...</b>\nUpsampling each track's sonic DNA with K3 AI...")
+    force_regen_all = getattr(phase_5_track_covers, '_force_regen', False)
+    phase_5_track_covers._force_regen = False
+
     track_cover_paths = []
 
     for i, t in enumerate(tracklist):
         title = t.get('title', f'Track {i+1}')
         dna = _extract_track_dna(t, proposal)
 
-        send_message(f"🖌️ [{(i+1)}/{len(tracklist)}] Upsampling visual for <b>{html.escape(title)}</b> with K3...")
-        upsampled = upsample_image_prompt_k3(title, dna, subgenre=subgenre, is_album=False)
-
         cover_path = os.path.join(track_art_dir, f"{title}_cover.png")
         bg_backup = os.path.join(track_art_dir, f"{title}_cover_bg.png")
 
-        raw_path = generate_artwork_venice(upsampled, f"{album_name}/{title}", state=state)
-        if raw_path and os.path.exists(raw_path):
-            shutil.copy2(raw_path, bg_backup)
+        if not os.path.exists(bg_backup) or force_regen_all:
+            send_message(f"🖌️ [{(i+1)}/{len(tracklist)}] Upsampling visual for <b>{html.escape(title)}</b> with K3...")
+            upsampled = upsample_image_prompt_k3(title, dna, subgenre=subgenre, is_album=False)
+            raw_path = generate_artwork_venice(upsampled, f"{album_name}/{title}", state=state)
+            if raw_path and os.path.exists(raw_path):
+                shutil.copy2(raw_path, bg_backup)
 
+        if os.path.exists(bg_backup):
             if os.path.exists(OVERLAY_TITLE_SCRIPT):
                 styled_title = stylize_title(title)
                 subprocess.run(["/opt/hermes/.venv/bin/python3", OVERLAY_TITLE_SCRIPT,
                                 "--image", bg_backup, "--title", styled_title, "--bottom", "--auto-color", "--output", cover_path], capture_output=True)
             else:
                 shutil.copy2(bg_backup, cover_path)
+
+            jpg_cov = os.path.splitext(cover_path)[0] + '.jpg'
+            try:
+                from PIL import Image
+                with Image.open(cover_path) as im:
+                    im.convert('RGB').save(jpg_cov, 'JPEG', quality=95)
+            except Exception:
+                pass
 
             track_btn = [
                 [
@@ -1692,7 +1727,8 @@ def phase_5_track_covers(proposal, tracklist, state=None, dashboard=None):
                     {"text": "🗡️ Katana", "callback_data": f"ap:art:quickedit:{i+1}:katana"}
                 ]
             ]
-            send_photo(cover_path, caption=f"🎨 Track {i+1}: <b>{html.escape(title)}</b>", reply_markup={"inline_keyboard": track_btn})
+            send_file = jpg_cov if os.path.exists(jpg_cov) else cover_path
+            send_photo(send_file, caption=f"🎨 Track {i+1}: <b>{html.escape(title)}</b>", reply_markup={"inline_keyboard": track_btn})
             track_cover_paths.append(cover_path)
 
     buttons = [
@@ -1704,17 +1740,33 @@ def phase_5_track_covers(proposal, tracklist, state=None, dashboard=None):
     while True:
         flag, content = poll_flags()
         if flag == "trackcovers_approved":
-            send_message(f"⬆️ <b>Upscaling all {len(track_cover_paths)} track covers to 3000×3000...</b> (ETA ~15s per track)")
+            send_message(f"⬆️ <b>Upscaling all {len(track_cover_paths)} track covers to 3000×3000 with crisp inverted typography...</b>")
             for i, cp in enumerate(track_cover_paths):
                 track_title = os.path.basename(cp).replace('_cover.png', '').replace('_cover.jpg', '')
-                send_message(f"⚙️ [{(i+1)}/{len(track_cover_paths)}] Upscaling <b>{html.escape(track_title)}</b> to 3000×3000...")
-                upscale_artwork_venice(cp)
+                bg_path = os.path.join(track_art_dir, f"{track_title}_cover_bg.png")
+                send_message(f"⚙️ [{(i+1)}/{len(track_cover_paths)}] Upscaling clean background for <b>{html.escape(track_title)}</b>...")
+                if os.path.exists(bg_path):
+                    upscale_artwork_venice(bg_path)
+                    if os.path.exists(OVERLAY_TITLE_SCRIPT):
+                        styled_title = stylize_title(track_title)
+                        subprocess.run(["/opt/hermes/.venv/bin/python3", OVERLAY_TITLE_SCRIPT,
+                                        "--image", bg_path, "--title", styled_title, "--bottom", "--auto-color", "--output", cp], capture_output=True)
+                else:
+                    upscale_artwork_venice(cp)
                 if state:
                     add_cost(state, "cover_upscale", VENICE_UPSCALE_COST)
+                jpg_cp = os.path.splitext(cp)[0] + '.jpg'
+                try:
+                    from PIL import Image
+                    with Image.open(cp) as im:
+                        im.convert('RGB').save(jpg_cp, 'JPEG', quality=95)
+                except Exception:
+                    pass
             send_message("✅ <b>All track covers upscaled to 3000×3000!</b> Assembling final release package for your review & confirmation...")
             return "approved"
         elif flag == "trackcovers_regenall":
             send_message("🔄 <b>Regenerating all track covers...</b>")
+            phase_5_track_covers._force_regen = True
             if state:
                 add_cost(state, "cover_regeneration", VENICE_IMAGE_GEN_COST * len(tracklist))
                 costs = init_cost_tracker(state)

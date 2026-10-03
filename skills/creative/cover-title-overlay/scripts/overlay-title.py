@@ -1,22 +1,13 @@
 #!/usr/bin/env python3
 """
-Overlay a Unicode-styled song title onto a cover art image.
+Overlay a Unicode-styled song title onto a cover art image with high-voltage
+chromatic inverted typography and crisp black framing.
 
 Usage:
-    python3 overlay-title.py --image <bg_image> --title "<TITLE>" --color <hex> [--output <path>] [--no-glow] [--no-shadow]
+    python3 overlay-title.py --image <bg_image> --title "<TITLE>" [--color <hex>] [--auto-color] [--output <path>] [--no-glow] [--no-shadow] [--top] [--bottom]
 
-The title is centered vertically and scaled horizontally to fill ~90% of the image width.
-Font: Open Sans Bold.
-
-Examples:
-    # Basic overlay with neon glow + drop shadow
-    python3 overlay-title.py --image cover_bg.png --title "Ɇ₦†Ʀɏ₩ØɄ₦Đ" --color "#ff00ff"
-
-    # Without glow/shadow (flat text only)
-    python3 overlay-title.py --image cover_bg.png --title "₩ƦΔł†Ⱨ" --color "#00ff88" --no-glow --no-shadow
-
-    # Custom output path
-    python3 overlay-title.py --image cover_bg.png --title "฿ⱠΔϾҞ†ØƤ" --color "#ff3366" --output /tmp/final_cover.png
+The title is centered vertically (or placed at top/bottom) and scaled horizontally to fill ~90% of the image width.
+Font candidates include Segoe UI Bold/Black, Calibri Bold, Arial Bold with complete Unicode coverage.
 """
 
 import argparse
@@ -24,7 +15,7 @@ import os
 import shutil
 import sys
 import math
-
+import colorsys
 from PIL import Image, ImageDraw, ImageFont
 
 # Validated font paths with complete native Unicode glyph coverage (31/31 chars)
@@ -104,38 +95,50 @@ def find_font_size(draw, title, img_width, font_path, target_ratio=DEFAULT_TARGE
     return lo
 
 
-def detect_opposite_key_color(image_path):
+def detect_opposite_key_color(image_path, top=False, bottom=False):
     """
-    Extracts the key color (dominant chromatic lighting/accent hue) of the artwork
-    and returns its exact chromatic opposite (complementary color) as a high-voltage neon hex string.
+    Extracts the key color (dominant chromatic lighting/accent hue) of the artwork,
+    with targeted spatial weighting on the zone where the title will sit,
+    and returns its exact chromatic opposite (complementary color) at 100% saturation and vibrancy.
     """
     try:
-        import colorsys
         img = Image.open(image_path).convert("RGB")
-        # Resize to 128x128 for robust, fast pixel sampling
+        # Resize to 128x128 for fast, robust pixel sampling
         thumb = img.resize((128, 128), Image.Resampling.BOX if hasattr(Image, "Resampling") else Image.BOX)
-        pixels = list(thumb.getdata())
+        w, h = thumb.size
 
         weighted_cos = 0.0
         weighted_sin = 0.0
         total_weight = 0.0
         total_r, total_g, total_b = 0, 0, 0
 
-        for r, g, b in pixels:
-            total_r += r
-            total_g += g
-            total_b += b
-            rf, gf, bf = r / 255.0, g / 255.0, b / 255.0
-            h, s, v = colorsys.rgb_to_hsv(rf, gf, bf)
+        # Focus zone corresponding to text position
+        if top:
+            zone_min_y, zone_max_y = 0, int(h * 0.40)
+        elif bottom:
+            zone_min_y, zone_max_y = int(h * 0.60), h
+        else:
+            zone_min_y, zone_max_y = int(h * 0.25), int(h * 0.75)
 
-            # In nightride/noir artwork, most pixels are black or deep shadows.
-            # The key color is defined by the luminous, saturated lights and highlights.
-            if v > 0.12 and s > 0.18:
-                weight = (s ** 1.6) * (v ** 1.2)
-                angle = h * 2.0 * math.pi
-                weighted_cos += weight * math.cos(angle)
-                weighted_sin += weight * math.sin(angle)
-                total_weight += weight
+        for y in range(h):
+            in_zone = (zone_min_y <= y <= zone_max_y)
+            zone_multiplier = 2.5 if in_zone else 1.0
+
+            for x in range(w):
+                r, g, b = thumb.getpixel((x, y))
+                total_r += r
+                total_g += g
+                total_b += b
+                rf, gf, bf = r / 255.0, g / 255.0, b / 255.0
+                h_val, s_val, v_val = colorsys.rgb_to_hsv(rf, gf, bf)
+
+                # Focus on luminous, chromatic highlights and midtones
+                if v_val > 0.10 and s_val > 0.15:
+                    weight = (s_val ** 1.5) * (v_val ** 1.2) * zone_multiplier
+                    angle = h_val * 2.0 * math.pi
+                    weighted_cos += weight * math.cos(angle)
+                    weighted_sin += weight * math.sin(angle)
+                    total_weight += weight
 
         if total_weight > 0.05:
             mean_angle = math.atan2(weighted_sin, weighted_cos)
@@ -144,70 +147,33 @@ def detect_opposite_key_color(image_path):
             key_hue = (mean_angle / (2.0 * math.pi)) * 360.0
             opposite_hue = (key_hue + 180.0) % 360.0
         else:
-            avg_r = total_r / max(1, len(pixels))
-            avg_g = total_g / max(1, len(pixels))
-            avg_b = total_b / max(1, len(pixels))
-            opp_r = 255 - avg_r
-            opp_g = 255 - avg_g
-            opp_b = 255 - avg_b
-            h, s, v = colorsys.rgb_to_hsv(opp_r / 255.0, opp_g / 255.0, opp_b / 255.0)
-            key_hue = (h * 360.0 + 180.0) % 360.0
-            opposite_hue = h * 360.0
+            # Fallback for near-monochrome / grayscale scenes
+            avg_lum = (total_r * 0.299 + total_g * 0.587 + total_b * 0.114) / (max(1, w * h))
+            if avg_lum < 128:
+                chosen = "#00F0FF"
+            else:
+                chosen = "#000000"
+            print(f"[color] Low chromatic saturation (lum={avg_lum:.1f}) -> fallback {chosen}")
+            return chosen
 
-        # Map opposite_hue to our high-voltage neon palette for maximum legibility and contrast
-        opp_h = opposite_hue
-        if 15 <= opp_h < 45:
-            chosen = CMY_NEON_PALETTE["blaze_orange"]       # #FF6600
-        elif 45 <= opp_h < 85:
-            chosen = CMY_NEON_PALETTE["acid_yellow"]        # #FAFF00
-        elif 85 <= opp_h < 155:
-            chosen = CMY_NEON_PALETTE["neon_lime"]          # #39FF14
-        elif 155 <= opp_h < 205:
-            chosen = CMY_NEON_PALETTE["electric_cyan"]      # #00F0FF
-        elif 205 <= opp_h < 255:
-            chosen = CMY_NEON_PALETTE["ice_blue"]           # #38E5FF
-        elif 255 <= opp_h < 295:
-            chosen = CMY_NEON_PALETTE["electric_violet"]    # #D000FF
-        elif 295 <= opp_h < 345:
-            chosen = CMY_NEON_PALETTE["hyper_magenta"]      # #FF007F
-        else:
-            chosen = CMY_NEON_PALETTE["crimson_magenta"]    # #FF0055
+        # Exact chromatic complement at 100% saturation and maximum brightness
+        opp_rf, opp_gf, opp_bf = colorsys.hsv_to_rgb(opposite_hue / 360.0, 1.0, 1.0)
+        chosen = f"#{int(round(opp_rf * 255)):02X}{int(round(opp_gf * 255)):02X}{int(round(opp_bf * 255)):02X}"
 
-        print(f"[color] Analyzed image: Key Color Hue = {key_hue:.1f}°, Opposite Hue = {opposite_hue:.1f}°, Selected Title Color = {chosen}")
+        print(f"[color] Analyzed image: Key Hue = {key_hue:.1f}°, Inverted Opp Hue = {opposite_hue:.1f}°, Title Color = {chosen}")
         return chosen
     except Exception as e:
-        print(f"[color] Error detecting key color: {e}, falling back to electric cyan", file=sys.stderr)
-        return CMY_NEON_PALETTE["electric_cyan"]
+        print(f"[color] Error detecting key color: {e}, falling back to blaze orange", file=sys.stderr)
+        return "#FF6600"
 
 
 detect_harmonious_cmy_color = detect_opposite_key_color
 
 
-def draw_neon_glow(draw, x, y, title, font, color, glow_layers=None):
-    """Draw a smooth neon glow around the title."""
-    if glow_layers is None:
-        glow_layers = [(6, 25), (4, 55), (2, 95)]
-
-    for radius, alpha in glow_layers:
-        for dx in range(-radius, radius + 1, 2):
-            for dy in range(-radius, radius + 1, 2):
-                dist = math.sqrt(dx * dx + dy * dy)
-                if dist <= radius:
-                    draw.text((x + dx, y + dy), title, font=font, fill=(*color, alpha))
-
-
-def draw_drop_shadow(draw, x, y, title, font, shadow_layers=None):
-    """Draw an angled drop shadow."""
-    if shadow_layers is None:
-        shadow_layers = [(10, 10, 80), (8, 8, 150), (6, 6, 220)]
-
-    for ldx, ldy, alpha in shadow_layers:
-        draw.text((x + ldx, y + ldy), title, font=font, fill=(0, 0, 0, alpha))
-
-
 def overlay_title(image_path, title, color_hex=None, output_path=None, glow=True, shadow=True, top=False, bottom=False, auto_color=False):
-    """Main overlay function with multi-font fallback and expanded CMY palette."""
-
+    """
+    Renders 100% solid, fully opaque inverted title with crisp black outline/stroke and drop shadow.
+    """
     img = Image.open(image_path).convert("RGBA")
     w, h = img.size
 
@@ -216,7 +182,7 @@ def overlay_title(image_path, title, color_hex=None, output_path=None, glow=True
 
     # Resolve color
     if auto_color or not color_hex:
-        color_hex = detect_harmonious_cmy_color(image_path)
+        color_hex = detect_opposite_key_color(image_path, top=top, bottom=bottom)
     elif color_hex in CMY_NEON_PALETTE:
         color_hex = CMY_NEON_PALETTE[color_hex]
 
@@ -244,33 +210,46 @@ def overlay_title(image_path, title, color_hex=None, output_path=None, glow=True
     else:
         y = (h - text_h) // 2 - text_y_offset
 
-    # 1. Drop shadow (behind everything)
-    if shadow:
-        draw_drop_shadow(draw, x, y, title, font)
+    # Dynamic line metrics based on canvas resolution
+    stroke_w = max(3, int(w * 0.0035))
+    shadow_offset = max(5, int(w * 0.0055))
 
-    # 2. Neon glow
+    # 1. Subtle ambient neon halo behind the stroke
     if glow:
-        draw_neon_glow(draw, x, y, title, font, color)
+        glow_radius = max(6, int(w * 0.005))
+        for r, a in [(glow_radius * 2, 20), (glow_radius, 50)]:
+            step = max(2, r // 3)
+            for dx in range(-r, r + 1, step):
+                for dy in range(-r, r + 1, step):
+                    if dx * dx + dy * dy <= r * r:
+                        draw.text((x + dx, y + dy), title, font=font, fill=(*color, a))
 
-    # 3. Main text (max saturation)
-    draw.text((x, y), title, font=font, fill=(*color, 255))
+    # 2. Deep solid drop shadow
+    if shadow:
+        shadow_stroke = stroke_w + max(2, int(w * 0.001))
+        draw.text((x + shadow_offset, y + shadow_offset), title, font=font,
+                  fill=(0, 0, 0, 230), stroke_width=shadow_stroke, stroke_fill=(0, 0, 0, 230))
 
-    # 4. White-hot core highlight (slightly brighter, offset -1px)
-    bright_core = tuple(min(255, c + 130) for c in color) + (130,)
-    draw.text((x - 1, y - 1), title, font=font, fill=bright_core)
+    # 3. 100% solid, fully opaque main text framed with crisp black stroke
+    draw.text((x, y), title, font=font, fill=(*color, 255),
+              stroke_width=stroke_w, stroke_fill=(0, 0, 0, 255))
 
-    # Composite
+    # Composite onto background
     result = Image.alpha_composite(img, text_layer)
 
     if output_path is None:
         base, ext = os.path.splitext(image_path)
         output_path = f"{base}-titled{ext}"
 
-    if not output_path.lower().endswith(".png"):
-        output_path = os.path.splitext(output_path)[0] + ".png"
+    is_jpg = output_path.lower().endswith((".jpg", ".jpeg"))
+    if is_jpg:
+        result.convert("RGB").save(output_path, "JPEG", quality=95)
+    else:
+        if not output_path.lower().endswith(".png"):
+            output_path = os.path.splitext(output_path)[0] + ".png"
+        result.save(output_path, "PNG")
 
-    result.save(output_path, "PNG")
-    print(f"Saved: {output_path} (Color: #{color_hex})")
+    print(f"Saved: {output_path} (Color: #{color_hex}, Stroke: {stroke_w}px)")
 
     try:
         if os.path.exists(ARTWORK_COVERS_DIR):
@@ -287,8 +266,8 @@ def main():
     parser = argparse.ArgumentParser(description="Overlay Unicode title onto cover art image")
     parser.add_argument("--image", required=True, help="Path to background image (PNG/WebP/JPEG)")
     parser.add_argument("--title", required=True, help="Unicode-styled track title to overlay")
-    parser.add_argument("--color", default=None, help="Neon color in hex (e.g. #00f0ff, #ff007f, #faff00) or palette name (e.g. electric_cyan, hyper_magenta, acid_yellow)")
-    parser.add_argument("--auto-color", action="store_true", help="Automatically select highest-contrast CMY neon color based on background")
+    parser.add_argument("--color", default=None, help="Neon color in hex (e.g. #00f0ff, #ff007f, #faff00) or palette name")
+    parser.add_argument("--auto-color", action="store_true", help="Automatically select highest-contrast inverted color based on background")
     parser.add_argument("--output", default=None, help="Output file path (default: <input>-titled.png)")
     parser.add_argument("--no-glow", action="store_true", help="Skip neon glow effect")
     parser.add_argument("--no-shadow", action="store_true", help="Skip drop shadow effect")
