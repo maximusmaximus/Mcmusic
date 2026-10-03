@@ -368,7 +368,7 @@ def poll_flags(timeout_hours=24):
 
 # ── Live Status Dashboard ──────────────────────────────────────────────
 class LiveStatusDashboard:
-    """Maintains a single persistent Telegram message updated in-place."""
+    """Internal status tracker (Telegram UI messages disabled per user directive)."""
     def __init__(self, album_name, mode="full", duration=260, subgenre="", total_tracks=5):
         self.album_name = album_name
         self.mode = mode
@@ -393,17 +393,14 @@ class LiveStatusDashboard:
         self.last_update_time = 0
 
     def init_message(self):
-        text = self.render()
-        res = send_message(text)
-        if res and res.get("ok"):
-            self.message_id = res.get("result", {}).get("message_id")
-            self.last_render_text = text
-            self.last_update_time = time.time()
-        return self.message_id
+        # Silenced: The production dashboard is disabled per user directive to eliminate Telegram chat spam.
+        logger.info(f"Status tracking active for {self.album_name} (silent mode)")
+        self.message_id = None
+        return None
 
     def set_phase(self, phase_num):
         self.phase = phase_num
-        self.update(force=True)
+        logger.info(f"Pipeline phase set to [{phase_num}/6]: {self.phase_names.get(phase_num, 'Processing')}")
 
     def update_track(self, track_num, title, status, bpm=None, cost=None, progress_pct=None, sub_phase=None):
         if track_num not in self.track_statuses:
@@ -416,96 +413,135 @@ class LiveStatusDashboard:
             "progress_pct": progress_pct,
             "sub_phase": sub_phase
         })
-        self.update()
+        logger.debug(f"Track {track_num} ({title}): status={status} bpm={bpm} cost={cost}")
 
     def set_error(self, error_msg, track_num=None):
         self.error_state = {"error": error_msg, "track_num": track_num}
-        self.update(force=True)
+        logger.error(f"Pipeline error (track {track_num or ''}): {error_msg}")
 
     def clear_error(self):
         self.error_state = None
-        self.update(force=True)
 
     def render(self):
-        elapsed = int(time.time() - self.start_time)
-        el_m, el_s = divmod(elapsed, 60)
-        mode_desc = "🚀 Full Tracks (~4m 20s FLAC)" if self.mode == "full" else "⚡ 20s Sample Previews"
-        subg = self.subgenre[:45] + "..." if len(self.subgenre) > 45 else (self.subgenre or "dark nightride trap")
-
-        lines = [
-            f"📀 <b>VØIDRIDE — PRODUCTION DASHBOARD</b>",
-            f"━━━━━━━━━━━━━━━━━━━━━━",
-            f"<b>Album:</b> {self.album_name}",
-            f"<b>Genre:</b> <i>{subg}</i>",
-            f"<b>Mode:</b> {mode_desc}",
-            f"<b>Phase [{self.phase}/6]:</b> {self.phase_names.get(self.phase, 'Processing')}",
-            f"━━━━━━━━━━━━━━━━━━━━━━",
-            "<b>Track Progress:</b>"
-        ]
-
-        for i in range(1, self.total_tracks + 1):
-            ts = self.track_statuses.get(i, {"title": f"Track {i}", "status": "pending"})
-            title = ts.get("title", f"Track {i}")
-            status = ts.get("status", "pending")
-            bpm = f" ({ts.get('bpm')} BPM)" if ts.get("bpm") else ""
-            cost = f" · ${ts.get('cost')}" if ts.get("cost") else ""
-
-            if status == "complete":
-                lines.append(f"  {i}. ✅ <b>{title}</b>{bpm}{cost}")
-            elif status == "generating":
-                pct = ts.get("progress_pct", 50)
-                filled = max(0, min(10, int(pct / 10)))
-                bar = "█" * filled + "░" * (10 - filled)
-                lines.append(f"  {i}. ⚙️ <b>{title}</b> [{bar}] {pct}%")
-                if ts.get("sub_phase"):
-                    lines.append(f"     └─ <i>{ts.get('sub_phase')}</i>")
-            elif status == "failed":
-                lines.append(f"  {i}. ❌ <b>{title}</b> [FAILED]")
-            else:
-                lines.append(f"  {i}. ⏳ <i>{title}</i> (Queued)")
-
-        lines.append(f"━━━━━━━━━━━━━━━━━━━━━━")
-        lines.append(f"⏱ <b>Elapsed:</b> {el_m:02d}m {el_s:02d}s  |  💰 <b>Cost:</b> ${self.live_cost:.2f}")
-
-        next_hints = {
-            1: "Next: DAW Stem Mastering" if self.mode == "full" else "Next: Song Review",
-            2: "Next: Audio & FLAC Review",
-            3: "Next: Album Cover Art",
-            4: "Next: Track Cover Art (3000x3000)",
-            5: "Next: SoundCloud Release & Deliverables",
-            6: "Status: Live on SoundCloud"
-        }
-        lines.append(f"🔮 <i>{next_hints.get(self.phase, '')}</i>")
-
-        if self.error_state:
-            lines.append(f"\n🚨 <b>ERROR:</b> {self.error_state.get('error')[:250]}")
-
-        return "\n".join(lines)
+        return ""
 
     def update(self, force=False):
-        now = time.time()
-        if not force and (now - self.last_update_time < 5):
-            return
-        if not self.message_id:
-            return
-        text = self.render()
-        if text == self.last_render_text and not force:
-            return
+        # Silenced: The production dashboard is disabled per user directive to eliminate Telegram chat spam.
+        return
 
-        reply_markup = None
-        if self.error_state:
-            track_num = self.error_state.get("track_num")
-            reply_markup = {
-                "inline_keyboard": [
-                    [{"text": f"🔄 Retry Track {track_num or ''}", "callback_data": "ap:error:retry"}],
-                    [{"text": "⏭ Skip Track", "callback_data": "ap:error:skip"}],
-                    [{"text": "🛠 View Error Log", "callback_data": "ap:error:log"}]
-                ]
-            }
 
-        edit_message(self.message_id, text, reply_markup=reply_markup)
-        self.last_render_text = text
-        self.last_update_time = now
+# ── Album Asset Discovery ──────────────────────────────────────────────
+def discover_existing_album_production(proposal):
+    """
+    Checks disk for existing completed masters and artwork for the given album proposal.
+    Returns:
+        (tracklist, current_phase, has_all_artwork)
+    """
+    album_name = proposal.get("album", "release")
+    album_slug = album_name.lower().replace(" ", "-").replace("_", "-")
+    subgenre = proposal.get("subgenre", proposal.get("genre", "Dark Nightride Trap"))
+
+    # 1. Search for DAW masters in /opt/data/dawagent/exports and /opt/data/music/exports
+    exports_dirs = [
+        "/opt/data/dawagent/exports",
+        "/opt/data/music/exports"
+    ]
+
+    found_sessions = {}
+    for base_dir in exports_dirs:
+        if not os.path.isdir(base_dir):
+            continue
+        cands = sorted(glob.glob(os.path.join(base_dir, f"{album_slug}-*")))
+        for d in cands:
+            bname = os.path.basename(d)
+            if bname in found_sessions:
+                continue
+            flac = os.path.join(d, f"{bname}_MASTER.flac")
+            mp3 = os.path.join(d, f"{bname}_MASTER.mp3")
+            if os.path.exists(flac) and os.path.getsize(flac) > 10000:
+                rcpt_path = os.path.join(d, "production_receipt.json")
+                rcpt_data = {}
+                if os.path.exists(rcpt_path):
+                    try:
+                        with open(rcpt_path, "r", encoding="utf-8") as rf:
+                            rcpt_data = json.load(rf)
+                    except Exception:
+                        pass
+
+                track_slug = bname.replace(f"{album_slug}-", "")
+                title = track_slug.replace("_", " ").upper()
+                processed_at = rcpt_data.get("processed_at", "")
+                mtime = os.path.getmtime(flac)
+                bpm = rcpt_data.get("summary", {}).get("bpm") or proposal.get("bpm", 130)
+
+                found_sessions[bname] = {
+                    "session": bname,
+                    "title": title,
+                    "flac_path": flac,
+                    "mp3_path": mp3 if os.path.exists(mp3) else "",
+                    "master_path": flac,
+                    "master_mp3": mp3 if os.path.exists(mp3) else "",
+                    "bpm": bpm,
+                    "key": proposal.get("key", "Cm"),
+                    "genre": subgenre,
+                    "dawagent_mastered": True,
+                    "processed_at": processed_at,
+                    "mtime": mtime
+                }
+
+    sorted_sessions = sorted(
+        found_sessions.values(),
+        key=lambda x: (x.get("processed_at") or "", x.get("mtime", 0))
+    )
+
+    tracklist = []
+    for idx, s in enumerate(sorted_sessions, 1):
+        s["track"] = idx
+        tracklist.append(s)
+
+    # 2. Check artwork
+    art_dir = get_album_artwork_dir(album_name)
+    has_album_cover = False
+    has_all_track_covers = False
+
+    if os.path.isdir(art_dir):
+        for ext in [".png", ".jpg"]:
+            if os.path.exists(os.path.join(art_dir, f"album_cover{ext}")):
+                has_album_cover = True
+                break
+
+        if len(tracklist) >= 5:
+            track_covers_found = 0
+            for idx, t in enumerate(tracklist, 1):
+                title = t.get("title", f"Track {idx}")
+                clean_title = title.replace(" ", "_")
+                for ext in [".png", ".jpg"]:
+                    cands = [
+                        os.path.join(art_dir, f"{title}_cover{ext}"),
+                        os.path.join(art_dir, f"{clean_title}_cover{ext}"),
+                        os.path.join(art_dir, f"Track {idx}_cover{ext}"),
+                        os.path.join(art_dir, f"{title}{ext}"),
+                    ]
+                    if any(os.path.exists(c) for c in cands):
+                        track_covers_found += 1
+                        break
+            if track_covers_found >= len(tracklist):
+                has_all_track_covers = True
+
+    # 3. Determine phase
+    if len(tracklist) >= 5:
+        if has_album_cover and has_all_track_covers:
+            current_phase = 6
+        elif has_album_cover:
+            current_phase = 5
+        else:
+            current_phase = 4
+    elif len(tracklist) > 0:
+        current_phase = 1
+    else:
+        current_phase = 1
+
+    return tracklist, current_phase, (has_album_cover and has_all_track_covers)
 
 
 # ── Phase 1: Music Production (Granular Checkpoint & Resuming) ─────────
@@ -515,6 +551,12 @@ def phase_1_produce(proposal, profile, redo_track=None, redo_feedback=None, mode
 
     if logger_hub:
         logger_hub.log_event("PHASE_START", {"mode": mode, "duration": duration}, album=album_name, phase=1)
+
+    # Auto-discover existing completed masters on disk
+    disc_tracks, disc_phase, _ = discover_existing_album_production(proposal)
+    if len(disc_tracks) >= 5:
+        logger.info(f"All 5 tracks already completed on disk as DAW masters for {album_name}. Skipping Phase 1 production.")
+        return disc_tracks
 
     # Check granular checkpoint in state
     completed_tracks = []
@@ -873,6 +915,14 @@ def phase_2_daw_handoff(proposal, tracklist, mode="full", dashboard=None):
     subgenre = proposal.get('subgenre', proposal.get('genre', 'Electronic'))
     if dashboard:
         dashboard.set_phase(2)
+
+    all_mastered = all(
+        t.get('master_path') and os.path.exists(t.get('master_path')) and os.path.getsize(t.get('master_path')) > 10000
+        for t in tracklist
+    ) if tracklist else False
+    if len(tracklist) >= 5 and all_mastered:
+        logger.info(f"All {len(tracklist)} tracks already mastered by DAWAGENT on disk. Skipping Phase 2 DAW handoff.")
+        return
 
     logger.info(f"Phase 2: Running per-track DAWAGENT mastering for {album_name}...")
     if logger_hub:
@@ -1935,6 +1985,16 @@ def phase_6_final_review(proposal, tracklist=None, state=None, dashboard=None):
         except Exception as e:
             logger.error(f"Packaging error: {e}")
 
+    # 3b. Deliver all reference masters together for inline preview if available
+    for t in (tracklist or []):
+        track_num = t.get('track', '?')
+        title = t.get('title', f"Track {track_num}")
+        bpm = t.get('bpm', proposal.get('bpm', '?') if proposal else '?')
+        key = t.get('key', proposal.get('key', '?') if proposal else '?')
+        mp3 = t.get('master_mp3') or t.get('mp3_path')
+        if mp3 and os.path.exists(mp3):
+            send_audio(mp3, caption=f"🎵 [{track_num}/{len(tracklist)}] {title} (Mastered · {bpm} BPM · {key})")
+
     # 4. Build prompt message with download links & interactive buttons
     final_buttons = [
         [{"text": "🚀 Publish to SoundCloud", "callback_data": "ap:final:publish"}],
@@ -2085,7 +2145,18 @@ def main():
     acquire_lock(force=args.force)
     init_cost_tracker(state)
 
-    # Initialize Live Status Dashboard
+    # Auto-discover existing completed masters and artwork on disk
+    disc_tracks, disc_phase, disc_art = discover_existing_album_production(proposal)
+    if len(disc_tracks) >= 5:
+        logger.info(f"Auto-discovery found {len(disc_tracks)} completed masters on disk for {proposal.get('album')}. Advancing to Phase {disc_phase}.")
+        tracklist = disc_tracks
+        current_phase = disc_phase
+        state["completed_tracks"] = disc_tracks
+        state["tracklist"] = disc_tracks
+        state["phase"] = disc_phase
+        save_state(state)
+
+    # Internal status tracker (dashboard messages disabled)
     dashboard = LiveStatusDashboard(
         album_name=proposal.get("album", "Unknown Album"),
         mode=mode,
@@ -2093,7 +2164,6 @@ def main():
         subgenre=proposal.get("subgenre", ""),
         total_tracks=5
     )
-    dashboard.init_message()
 
     try:
         while True:
