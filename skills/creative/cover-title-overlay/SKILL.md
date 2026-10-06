@@ -73,11 +73,11 @@ VØIDRIDE cover art has two distinct generation patterns:
 
 **Track covers** — per-track scene art. One car (unique per track), the fedora/kimono/katana man, per-track sculptures, `--bottom` title position. The scene focuses on a single car as the hero element.
 
-**Album covers** — the playlist/album-level art. Use **centered** title position (no `--bottom`, no `--top`). The user's consistent preference is for album covers to feel like "the whole world" — track covers are close-ups of individual moments within that world. There are three established album cover composition styles:
+**Album covers** — the playlist/album-level art. Titles are **ALWAYS ON THE BOTTOM**, stacked line-by-line (`--stacked` or `--album`), with each line scaled and justified to fill out the width (~90%). The bottom margin exactly equals the vertical gap between lines/words ($S_{bottom} == S_{between}$). The user's consistent preference is for album covers to feel like "the whole world" — track covers are close-ups of individual moments within that world. There are three established album cover composition styles:
 
-1. **All-cars-together** (most common, user's default): All track cars parked together in a loose diagonal formation on wet asphalt, each facing different directions, headlights cutting through fog/smoke. Include the fedora/trench-coat + katana man standing as a silhouette. A towering full moon should dominate the sky, enormous and looming. Title centered vertically. Example prompt pattern: *"Six distinctive nightride cars parked together on wet asphalt in a loose diagonal formation, each facing different directions, huge dominating full moon, man in trench coat and fedora silhouette in fog."*
+1. **All-cars-together** (most common, user's default): All track cars parked together in a loose diagonal formation on wet asphalt, each facing different directions, headlights cutting through fog/smoke. Include the fedora/trench-coat + katana man standing as a silhouette. A towering full moon should dominate the sky, enormous and looming. Title stacked and justified at bottom. Example prompt pattern: *"Six distinctive nightride cars parked together on wet asphalt in a loose diagonal formation, each facing different directions, huge dominating full moon, man in trench coat and fedora silhouette in fog."*
 
-2. **Isometric overhead view**: 30-degree isometric 3D angle looking down at the scene — shows the entire layout from above. Works especially well for interior/cathedral scenes where multiple eras or elements need to be visible simultaneously. Title centered vertically.
+2. **Isometric overhead view**: 30-degree isometric 3D angle looking down at the scene — shows the entire layout from above. Works especially well for interior/cathedral scenes where multiple eras or elements need to be visible simultaneously. Title stacked and justified at bottom.
 
 3. **Epic sweeping vista**: Wide establishing shot of the entire world — distant car silhouettes, landscape features, atmospheric sweep. Use when the scene has a natural landscape to show off.
 
@@ -89,8 +89,8 @@ When the user says "use images from the album" or "only use the other track cove
 1. Locate all track cover PNGs (3000×3000) from `/opt/data/music/artwork/covers/`
 2. Arrange in a grid (3×2 for 6 tracks, etc.) with slight overlap for seamless blending
 3. Composite in Pillow (PIL): paste covers onto canvas, add dark vignette for cohesion, apply Gaussian blur blend at 30% for dreamy feel
-4. Darken overall by 30% so the centered title pops
-5. Overlay the album title **centered** (no `--bottom`) using `overlay-title.py`
+4. Darken overall by 30% so the title pops
+5. Overlay the album title with `--stacked --bottom` using `overlay-title.py`
 6. Save as PNG (3000×3000) and JPG (1500×1500 for Telegram preview)
 
 **Pillow approach** (use venv Python `/opt/hermes/.venv/bin/python3`):
@@ -103,7 +103,7 @@ from PIL import Image, ImageFilter, ImageEnhance, ImageDraw
 #   - Dark vignette overlay (radial, edges dark, center clear)
 #   - Blur blend at 0.3 alpha for dreamy composite
 #   - Darken by 0.7 brightness
-#   - Overlay title centered with album color
+#   - Overlay title stacked & justified at bottom with album color
 ```
 
 **When to use each method:**
@@ -116,7 +116,7 @@ from PIL import Image, ImageFilter, ImageEnhance, ImageDraw
 - Huge full moon dominating the sky when outdoor/night scene
 - Man in trench coat and fedora as silhouette
 - Fog, smoke, and headlight beams
-- Title centered vertically (never bottom-anchored for albums)
+- Title stacked and justified at bottom (`--stacked` / `--album`, $S_{bottom} == S_{between}$)
 
 Prompting tips for album covers:
 - Start with "An epic sweeping vista" or similar expansive framing
@@ -124,7 +124,7 @@ Prompting tips for album covers:
 - Mention multiple sculptures or elements in the distance
 - Use the album's neon color (not per-track colors)
 - The scene should capture the dominant time-of-day (night for most VØIDRIDE albums, day/night split if the album has both)
-- Title is overlaid centered, not at bottom
+- Title is overlaid stacked and justified at bottom (`--stacked --bottom`)
 
 ## How It Works
 
@@ -156,6 +156,7 @@ Prompting tips for album covers:
 | ₴ɏ₦ΔƤ₴Ɇ ₦ɆϾƦØƤØⱠł₴ | `#00ff66` green — accent: purple haze |
 | ꐃ₦₮ɄɌꐃɄɌɌɆ₦₵Ɇᵾ₦ | `#ff8800` amber/orange |
 | CRYOCLASTIC-ZERO | `#00ddff` ice cyan — track colors: `#00ddff`, `#88ccff`, `#00aacc`, `#44eeff`, `#0099bb` |
+| POSITRON-BLEED | `#ff00ff` neon magenta (particle beam) |
 
 ## VØIDRIDE Track Cover — Full Scene Pattern
 
@@ -236,6 +237,7 @@ If missing: `wget -q https://github.com/google/fonts/raw/main/ofl/opensans/OpenS
 - **Write scripts to files, don't inline Python with Unicode** — When generating multiple covers in a batch, write a `.py` script to `/tmp/` and run it via `terminal()`. Inline `python3 -c '...'` commands mangle Unicode characters in title strings and break f-templates. File-based scripts handle Unicode correctly.
 - **⚠️ `write_file` can corrupt `os.environ.get()` lines** — The `write_file` tool may mangle Python lines containing `os.environ.get("VENICE_API_KEY", "")`. The env var call gets corrupted (e.g. `API_KEY=*** "")`). When writing batch generation scripts via `write_file`, always use `terminal()` with a heredoc (`cat > /tmp/script.py << 'EOF'`) instead — heredocs preserve the content verbatim and avoid this corruption. After writing, verify the first few lines of the file before running.
 - **PIL is NOT in the system Python** — `/usr/bin/python3` does NOT have Pillow installed. The overlay script imports PIL, so always run it with the venv Python: `/opt/hermes/.venv/bin/python3 /opt/data/skills/creative/cover-title-overlay/scripts/overlay-title.py`. If you get `ModuleNotFoundError: No module named 'PIL'`, you used the system python3 — switch to the venv one. The `execute_code` sandbox also lacks PIL; use `terminal()` for any PIL-dependent code.
+- **gen_artwork.py also has this bug** — the script at `/opt/data/skills/artwork/artwork/scripts/gen_artwork.py` calls `overlay_title_on_cover()` with `"python3"` (hardcoded), so its title overlay step ALWAYS fails. Fix: after gen_artwork.py completes the background + upscale phases, run overlay-title.py manually with the venv Python (see the `artwork` skill's workaround section and `references/python3-pil-fix.md`).
 - **Venice API key env var** — Use `$VENICE_API_KEY` in shell commands or `os.environ.get("VENICE_API_KEY")` in Python. Do NOT use `VENICE_INFERENCE_KEY` — that's for audio models only.
 - **⚠️ VENICE_API_KEY is NOT available in `execute_code`** — The Python sandbox used by `execute_code` does NOT inherit shell environment variables. Calling `os.environ.get("VENICE_API_KEY")` returns empty string. **Always write your generation script to a `.py` file and run it via `terminal()`** (which inherits shell env). Alternatively, pass the key explicitly: `VENICE_API_KEY="$VENICE_API_KEY" python3 /tmp/gen_covers.py`. Do NOT use `execute_code` for Venice API calls — it will fail with 401 Authentication errors every time.
 - **Venice Image API endpoint** — The correct endpoint is `POST https://api.venice.ai/api/v1/image/generate` (singular "image", NOT "images"). Response format is `{ "images": ["<base64>"] }` at the top level — NOT `{ "data": [{ "url": "..." }] }`. Always decode `result["images"][0]` as base64.
@@ -251,6 +253,8 @@ If missing: `wget -q https://github.com/google/fonts/raw/main/ofl/opensans/OpenS
 - **Title must match the catalog exactly** — always pull the Unicode title from the producer profile's catalog, not from memory or guesswork. Characters like Ɍ vs Ʀ and ៛ vs Ⱡ look similar but are different code points.
 - **Scene prompts can be overridden per-album** — the default fog/car/night/lightning/moon scene is just one template. If the user describes a different setting (Burning Man, desert, Mars, city, parking lot, etc.), rewrite the entire scene prompt to match. See `references/voidride-track-covers.md` for three scene templates: Fog/Night (default), Burning Man Duststorm, and Mars/Planetary. See `references/parking-lot-sideshow-scene.md` for the parking lot sideshow template.
 - **When the scene includes intentional text elements** (license plates, neon signs, road signs), use a soft negation: `"NO TEXT EXCEPT THE NEON SIGN AND LICENSE PLATE, NO OTHER LETTERS..."` instead of the full ban. The full no-text ban will remove even text you want rendered.
+- **⚠️ CRITICAL: Overlay title at final canvas size, not before cropping** — `overlay-title.py` scales text to fill ~90% of image width. If you overlay on a large canvas (e.g. 4096×4096 after Venice upscale from gen_artwork.py) and THEN crop to 3000, the text will be chopped off both sides (the ~548px crop from each edge clips the ~3686px title). **Crop background to final size FIRST, then overlay.** The `_bg.png` from gen_artwork.py is 4096×4096 — never apply text at that size.
+
 - **⚠️ Telegram `send_photo` compresses PNG→JPEG** — When delivering covers via Telegram, ALWAYS send BOTH:
   1. As photo (inline preview — Telegram will JPEG-compress, that's OK for preview)
   2. As document with `--force-document` flag (preserves original PNG quality)
@@ -395,7 +399,7 @@ When a user asks to redo an album cover (e.g., new perspective, title reposition
 
 1. **Generate new background** with Venice `flux-2-max` (1024×1024, no-text prompt)
 2. **Upscale** to 3000×3000 with `ffmpeg` Lanczos + unsharp
-3. **Overlay title** with `overlay-title.py` (centered for albums, `--bottom` for tracks)
+3. **Overlay title** with `overlay-title.py` (`--stacked --bottom` for albums, `--bottom` for tracks)
 4. **Create Telegram JPG** at 1500×1500 for preview
 5. **Send to user for review** before updating SoundCloud
 6. **Update SC playlist artwork** via raw multipart PUT to `/playlists/{ID}` (see SoundCloud skill)
@@ -415,11 +419,12 @@ Key: Always send the new cover to the user FIRST and get approval before updatin
 - **`references/sideshow-parking-lot-scene.md`** — Empty parking lot with sideshow skid marks (no characters, no vehicles). Per-track neon color mapping, anti-graffiti negation prompts, playlist artwork update via raw API, generation pipeline.
 - **`references/parking-lot-sideshow-scene.md`** — Parking lot/sideshow scene template (no characters, just skid marks): per-track color mapping
 - **`references/cyberpunk-city-scene.md`** — Rain-slicked cyberpunk metropolis scene template: interceptor cars, neon reflections, brutalist cityscape. Per-track car/color/accent mapping for ₴ØɄ₦ĐĐɆ₴łǤ₵, comparison table with other scene types, playlist cover variant with overlapping colors, and regeneration workflow.
+- **`references/positron-bleed-pa-scene.md`** — Particle accelerator cyberpunk hybrid scene template: particle rings on buildings, subatomic particle trails, containment breach accents. POSITRON-BLEED 9-track mapping and per-track car/color table. Used for hyper-aggressive dark cyber phonk albums.
 - **`references/era-progression-scene.md`** — Same object aging across 5 historical eras: cathedral setting, hybrid computer-car always still on but progressively more overgrown. Per-era prompt structure (2077 holographic → 1983 CRT → 1967 mainframe → 1924 Art Deco → 1347 medieval). Used for SIGIL ENGINE and SYNAPSE NECROPOLIS.
 - **`references/cherenkov-reactor-scene.md`** — Flooded nuclear reactor containment vessel scene template (interior, Cherenkov blue glow, water, concrete, scaffolding). Per-track color mapping, prompt template, and key differences from other VØIDRIDE scene types. Used for CHERENKOV-HORIZON and future nuclear/industrial albums.
 - **`references/solar-dissolution-scene.md`** — Derelict satellite dissolving into violent ultraviolet solar flare over scorched horizon. Five stages of progressive dissolution (intact → debris → shadow). Per-stage prompts, UV/purple color palette. Used for HELIOS-DECAY.
 - **`references/cherenkov-reactor-scene.md`** — Flooded nuclear reactor containment vessel glowing with intense Cherenkov blue light beneath fractured concrete and corroded scaffolding. Five per-track variations (intense glow, core glow, fissure echo, ionized air, memorial stillness). Per-track neon color map (electric blue → toxic green-blue → cold cerulean). Used for CHERENKOV-HORIZON and future nuclear/industrial albums.
-- **`references/cryoclastic-zero-scene.md`** — Antarctic ice cavern scene template: crashed military transport, dying cyan flares, ice crystal fog, frozen scaffolding. Per-track car/color mapping for CRYOCLASTIC-ZERO and future glacial/frozen albums. Interior setting with cyan/cold-white palette.
+- **`references/katana-cyberpunk-alley-scene.md`** — Cyberpunk alley/ronin/plasma katana scene template for KATANA-PROTOCOL and future samurai-themed albums. Per-track framing, glow colors, and neon mapping. Replaces car scene with single-character alley focus.: crashed military transport, dying cyan flares, ice crystal fog, frozen scaffolding. Per-track car/color mapping for CRYOCLASTIC-ZERO and future glacial/frozen albums. Interior setting with cyan/cold-white palette.
 - **`references/sc-playlist-artwork-update.md`** — SoundCloud playlist artwork update via raw multipart PUT API. Use this when updating an existing playlist's cover image — `soundcloud_api.py` doesn't have a dedicated command for playlist artwork updates, so use the urllib multipart approach documented here.
 - **`scripts/pixelate-text.py`** — Generates no-text variants: auto-detects title text band and replaces it with a chunky pixel mosaic using colors extracted from the artwork. See "No-Text Variant" section above.
 - **`templates/batch-cover-gen.py`** — Copy-and-modify template for batch cover art generation (5 track covers + 1 album cover). Handles ideogram-v4 API calls, blank-image retries, 3000x3000 upscaling, title overlay, and Telegram downscaling. Edit the TRACKS list and run.

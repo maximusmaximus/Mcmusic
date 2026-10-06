@@ -73,11 +73,11 @@ VØIDRIDE cover art has two distinct generation patterns:
 
 **Track covers** — per-track scene art. One car (unique per track), the fedora/kimono/katana man, per-track sculptures, `--bottom` title position. The scene focuses on a single car as the hero element.
 
-**Album covers** — the playlist/album-level art. Use **centered** title position (no `--bottom`, no `--top`). The user's consistent preference is for album covers to feel like "the whole world" — track covers are close-ups of individual moments within that world. There are three established album cover composition styles:
+**Album covers** — the playlist/album-level art. Titles are **ALWAYS ON THE BOTTOM**, stacked line-by-line (`--stacked` or `--album`), with each line scaled and justified to fill out the width (~90%). The bottom margin exactly equals the vertical gap between lines/words ($S_{bottom} == S_{between}$). The user's consistent preference is for album covers to feel like "the whole world" — track covers are close-ups of individual moments within that world. There are three established album cover composition styles:
 
-1. **All-cars-together** (most common, user's default): All track cars parked together in a loose diagonal formation on wet asphalt, each facing different directions, headlights cutting through fog/smoke. Include the fedora/trench-coat + katana man standing as a silhouette. A towering full moon should dominate the sky, enormous and looming. Title centered vertically. Example prompt pattern: *"Six distinctive nightride cars parked together on wet asphalt in a loose diagonal formation, each facing different directions, huge dominating full moon, man in trench coat and fedora silhouette in fog."*
+1. **All-cars-together** (most common, user's default): All track cars parked together in a loose diagonal formation on wet asphalt, each facing different directions, headlights cutting through fog/smoke. Include the fedora/trench-coat + katana man standing as a silhouette. A towering full moon should dominate the sky, enormous and looming. Title stacked and justified at bottom. Example prompt pattern: *"Six distinctive nightride cars parked together on wet asphalt in a loose diagonal formation, each facing different directions, huge dominating full moon, man in trench coat and fedora silhouette in fog."*
 
-2. **Isometric overhead view**: 30-degree isometric 3D angle looking down at the scene — shows the entire layout from above. Works especially well for interior/cathedral scenes where multiple eras or elements need to be visible simultaneously. Title centered vertically.
+2. **Isometric overhead view**: 30-degree isometric 3D angle looking down at the scene — shows the entire layout from above. Works especially well for interior/cathedral scenes where multiple eras or elements need to be visible simultaneously. Title stacked and justified at bottom.
 
 3. **Epic sweeping vista**: Wide establishing shot of the entire world — distant car silhouettes, landscape features, atmospheric sweep. Use when the scene has a natural landscape to show off.
 
@@ -89,8 +89,8 @@ When the user says "use images from the album" or "only use the other track cove
 1. Locate all track cover PNGs (3000×3000) from `/opt/data/music/artwork/covers/`
 2. Arrange in a grid (3×2 for 6 tracks, etc.) with slight overlap for seamless blending
 3. Composite in Pillow (PIL): paste covers onto canvas, add dark vignette for cohesion, apply Gaussian blur blend at 30% for dreamy feel
-4. Darken overall by 30% so the centered title pops
-5. Overlay the album title **centered** (no `--bottom`) using `overlay-title.py`
+4. Darken overall by 30% so the title pops
+5. Overlay the album title with `--stacked --bottom` using `overlay-title.py`
 6. Save as PNG (3000×3000) and JPG (1500×1500 for Telegram preview)
 
 **Pillow approach** (use venv Python `/opt/hermes/.venv/bin/python3`):
@@ -103,7 +103,7 @@ from PIL import Image, ImageFilter, ImageEnhance, ImageDraw
 #   - Dark vignette overlay (radial, edges dark, center clear)
 #   - Blur blend at 0.3 alpha for dreamy composite
 #   - Darken by 0.7 brightness
-#   - Overlay title centered with album color
+#   - Overlay title stacked & justified at bottom with album color
 ```
 
 **When to use each method:**
@@ -116,7 +116,7 @@ from PIL import Image, ImageFilter, ImageEnhance, ImageDraw
 - Huge full moon dominating the sky when outdoor/night scene
 - Man in trench coat and fedora as silhouette
 - Fog, smoke, and headlight beams
-- Title centered vertically (never bottom-anchored for albums)
+- Title stacked and justified at bottom (`--stacked` / `--album`, $S_{bottom} == S_{between}$)
 
 Prompting tips for album covers:
 - Start with "An epic sweeping vista" or similar expansive framing
@@ -124,7 +124,7 @@ Prompting tips for album covers:
 - Mention multiple sculptures or elements in the distance
 - Use the album's neon color (not per-track colors)
 - The scene should capture the dominant time-of-day (night for most VØIDRIDE albums, day/night split if the album has both)
-- Title is overlaid centered, not at bottom
+- Title is overlaid stacked and justified at bottom (`--stacked --bottom`)
 
 ## How It Works
 
@@ -399,7 +399,7 @@ When a user asks to redo an album cover (e.g., new perspective, title reposition
 
 1. **Generate new background** with Venice `flux-2-max` (1024×1024, no-text prompt)
 2. **Upscale** to 3000×3000 with `ffmpeg` Lanczos + unsharp
-3. **Overlay title** with `overlay-title.py` (centered for albums, `--bottom` for tracks)
+3. **Overlay title** with `overlay-title.py` (`--stacked --bottom` for albums, `--bottom` for tracks)
 4. **Create Telegram JPG** at 1500×1500 for preview
 5. **Send to user for review** before updating SoundCloud
 6. **Update SC playlist artwork** via raw multipart PUT to `/playlists/{ID}` (see SoundCloud skill)

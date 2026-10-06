@@ -29,6 +29,23 @@ import requests
 
 # ── Configuration ──────────────────────────────────────────────
 VENICE_API_KEY = os.environ.get("VENICE_API_KEY", "")
+if not VENICE_API_KEY:
+    for conf_path in ["/opt/data/config.yaml", "D:/hermes-music/data/config.yaml", "/opt/data/.env", "D:/hermes-music/.env"]:
+        if os.path.exists(conf_path):
+            try:
+                with open(conf_path, "r", encoding="utf-8") as f:
+                    for line in f:
+                        if "api_key:" in line:
+                            VENICE_API_KEY = line.split(":", 1)[1].strip()
+                            break
+                        elif line.startswith("VENICE_API_KEY="):
+                            VENICE_API_KEY = line.split("=", 1)[1].strip()
+                            break
+            except Exception:
+                pass
+            if VENICE_API_KEY:
+                break
+
 VENICE_EDIT_URL = "https://api.venice.ai/api/v1/image/edit"
 
 # SoundCloud auth
@@ -39,7 +56,10 @@ SC_TOKEN_PATHS = [
 ]
 
 # Defaults
-DEFAULT_OUTPUT_DIR = "/app/music/artwork/waveforms"
+DEFAULT_OUTPUT_DIR = "/opt/data/music/artwork/waveforms"
+if not os.path.exists("/opt/data/music") and os.path.exists("D:/music"):
+    DEFAULT_OUTPUT_DIR = "D:/music/artwork/waveforms"
+
 TARGET_WIDTH = 1240
 TARGET_HEIGHT = 400
 
@@ -186,9 +206,27 @@ def extend_scene(artwork_source, prompt=SCENE_PROMPT):
         raise ValueError("Artwork source is missing. Fallback generation is disabled.")
 
     if os.path.exists(str(artwork_source)):
-        with open(artwork_source, "rb") as f:
-            b64_img = base64.b64encode(f.read()).decode("utf-8")
-        image_data = f"data:image/png;base64,{b64_img}"
+        try:
+            from PIL import Image
+            with Image.open(str(artwork_source)) as img:
+                w, h = img.size
+                if max(w, h) > 1500 or os.path.getsize(str(artwork_source)) > 2 * 1024 * 1024:
+                    resized = img.convert("RGB").resize((1024, 1024), Image.LANCZOS)
+                    buf = io.BytesIO()
+                    resized.save(buf, format="JPEG", quality=90)
+                    b64_img = base64.b64encode(buf.getvalue()).decode("utf-8")
+                    image_data = f"data:image/jpeg;base64,{b64_img}"
+                else:
+                    with open(artwork_source, "rb") as f:
+                        b64_img = base64.b64encode(f.read()).decode("utf-8")
+                    ext = Path(artwork_source).suffix.lower().replace(".", "")
+                    mime = "jpeg" if ext in ["jpg", "jpeg"] else "png"
+                    image_data = f"data:image/{mime};base64,{b64_img}"
+        except Exception as e:
+            log(f"Warning: Image preprocessing fallback ({e})")
+            with open(artwork_source, "rb") as f:
+                b64_img = base64.b64encode(f.read()).decode("utf-8")
+            image_data = f"data:image/png;base64,{b64_img}"
     elif str(artwork_source).startswith("http://") or str(artwork_source).startswith("https://"):
         image_data = str(artwork_source)
     else:

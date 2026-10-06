@@ -1545,6 +1545,87 @@ def upscale_artwork_venice(image_path, target_size=3000):
     return image_path
 
 
+def sanitize_filename(title):
+    clean = "".join(c if c.isalnum() or c in " -_" else "" for c in title)
+    return clean.strip().replace(" ", "_").upper()
+
+
+def generate_waveform_banner(bg_image_path, title_clean, out_dirs=None):
+    """
+    Generate clean 1240x400 panoramic waveform banner from clean background image
+    using Venice AI image edit endpoint. Absolutely NO text overlays.
+    Saves to each directory in out_dirs and to the master waveforms directory.
+    """
+    if not VENICE_API_KEY or not os.path.exists(bg_image_path):
+        return None
+    try:
+        from PIL import Image
+        import io
+        clean_name = sanitize_filename(title_clean)
+        master_dir = "/opt/data/music/artwork/waveforms"
+        if not os.path.exists("/opt/data/music") and os.path.exists("D:/music"):
+            master_dir = "D:/music/artwork/waveforms"
+        os.makedirs(master_dir, exist_ok=True)
+        master_file = os.path.join(master_dir, f"{clean_name}_waveform.png")
+
+        banner_bytes = None
+        if os.path.exists(master_file) and os.path.getsize(master_file) > 1000:
+            with open(master_file, "rb") as mf:
+                banner_bytes = mf.read()
+        else:
+            with Image.open(bg_image_path) as img:
+                resized = img.convert("RGB").resize((1024, 1024), Image.LANCZOS)
+                buf = io.BytesIO()
+                resized.save(buf, format="JPEG", quality=90)
+                b64_img = base64.b64encode(buf.getvalue()).decode("utf-8")
+
+            prompt = (
+                "Reimagine this artwork as an ultra-wide panoramic scene, seamlessly extending "
+                "the visual world of the original to the left and right. Keep the exact same "
+                "color palette, atmosphere, lighting, and mood. Create a cohesive, continuous "
+                "cinematic composition that expands the scene naturally. "
+                "Absolutely NO TEXT, NO WORDS, NO LETTERS, NO TYPOGRAPHY anywhere in the image."
+            )
+            url = "https://api.venice.ai/api/v1/image/edit"
+            headers = {"Authorization": f"Bearer {VENICE_API_KEY}", "Content-Type": "application/json"}
+            payload = {
+                "image": f"data:image/jpeg;base64,{b64_img}",
+                "prompt": prompt,
+                "aspect_ratio": "16:9"
+            }
+            req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers)
+            with urllib.request.urlopen(req, timeout=120) as resp:
+                data = resp.read()
+                if len(data) > 1000:
+                    banner_img = Image.open(io.BytesIO(data))
+                    w, h = banner_img.size
+                    target_w, target_h = 1240, 400
+                    target_ratio = target_w / target_h
+                    new_h = int(w / target_ratio)
+                    center_offset = int(h * 0.1)
+                    top = (h - new_h) // 2 + center_offset
+                    top = min(top, h - new_h)
+                    cropped = banner_img.crop((0, top, w, top + new_h))
+                    final = cropped.resize((target_w, target_h), Image.LANCZOS)
+                    out_buf = io.BytesIO()
+                    final.save(out_buf, "PNG")
+                    banner_bytes = out_buf.getvalue()
+
+        if banner_bytes:
+            target_dirs = set((out_dirs or []) + [master_dir])
+            for d in target_dirs:
+                if d:
+                    os.makedirs(d, exist_ok=True)
+                    dest = os.path.join(d, f"{clean_name}_waveform.png")
+                    with open(dest, "wb") as f:
+                        f.write(banner_bytes)
+            logger.info(f"Successfully generated/saved clean waveform banner for {clean_name}")
+            return True
+    except Exception as e:
+        logger.error(f"Failed to generate waveform banner for {title_clean}: {e}")
+    return False
+
+
 def phase_4_album_cover(proposal, tracklist, state=None, dashboard=None):
     if dashboard:
         dashboard.set_phase(4)
@@ -1582,9 +1663,9 @@ def phase_4_album_cover(proposal, tracklist, state=None, dashboard=None):
 
     if os.path.exists(OVERLAY_TITLE_SCRIPT) and os.path.exists(cover_bg):
         styled_album = stylize_title(album_name)
-        logger.info(f"Overlaying title '{styled_album}' with chromatic opposite color (60% opacity) onto 3000x3000 canvas...")
+        logger.info(f"Overlaying title '{styled_album}' stacked & justified onto bottom of 3000x3000 canvas...")
         subprocess.run(["/opt/hermes/.venv/bin/python3", OVERLAY_TITLE_SCRIPT,
-                        "--image", cover_bg, "--title", styled_album, "--auto-color", "--opacity", "0.60", "--output", cover_path], capture_output=True)
+                        "--image", cover_bg, "--title", styled_album, "--stacked", "--bottom", "--auto-color", "--opacity", "0.60", "--output", cover_path], capture_output=True)
     elif os.path.exists(cover_bg) and not os.path.exists(cover_path):
         shutil.copy2(cover_bg, cover_path)
 
@@ -1627,7 +1708,9 @@ def phase_4_album_cover(proposal, tracklist, state=None, dashboard=None):
     while True:
         flag, content = poll_flags()
         if flag == "albumcover_approved":
-            send_message("✅ Album cover approved!")
+            send_message("✅ Album cover approved! Generating clean panoramic waveform banner...")
+            alb_bg = cover_bg if os.path.exists(cover_bg) else cover_path
+            generate_waveform_banner(alb_bg, album_name, [art_dir, "/opt/data/music/artwork/waveforms"])
             return "approved"
         elif flag == "albumcover_regen":
             send_message("🔄 <b>Regenerating album cover from scratch...</b>")
@@ -1654,9 +1737,9 @@ def phase_4_album_cover(proposal, tracklist, state=None, dashboard=None):
 
             if os.path.exists(OVERLAY_TITLE_SCRIPT):
                 styled_album = stylize_title(album_name)
-                logger.info(f"Overlaying title '{styled_album}' with chromatic opposite color (60% opacity) onto 3000x3000 canvas...")
+                logger.info(f"Overlaying title '{styled_album}' stacked & justified onto bottom of 3000x3000 canvas...")
                 subprocess.run(["/opt/hermes/.venv/bin/python3", OVERLAY_TITLE_SCRIPT,
-                                "--image", cover_bg, "--title", styled_album, "--auto-color", "--opacity", "0.60", "--output", cover_path], capture_output=True)
+                                "--image", cover_bg, "--title", styled_album, "--stacked", "--bottom", "--auto-color", "--opacity", "0.60", "--output", cover_path], capture_output=True)
             else:
                 shutil.copy2(cover_bg, cover_path)
 
@@ -1775,12 +1858,15 @@ def phase_5_track_covers(proposal, tracklist, state=None, dashboard=None):
                 send_message(f"⚙️ [{(i+1)}/{len(track_cover_paths)}] Upscaling clean background for <b>{html.escape(track_title)}</b>...")
                 if os.path.exists(bg_path):
                     upscale_artwork_venice(bg_path)
+                    # Generate clean panoramic waveform banner from un-captioned background
+                    generate_waveform_banner(bg_path, track_title, [track_art_dir, "/opt/data/music/artwork/waveforms"])
                     if os.path.exists(OVERLAY_TITLE_SCRIPT):
                         styled_title = stylize_title(track_title)
                         subprocess.run(["/opt/hermes/.venv/bin/python3", OVERLAY_TITLE_SCRIPT,
                                         "--image", bg_path, "--title", styled_title, "--bottom", "--auto-color", "--opacity", "0.60", "--output", cp], capture_output=True)
                 else:
                     upscale_artwork_venice(cp)
+                    generate_waveform_banner(cp, track_title, [track_art_dir, "/opt/data/music/artwork/waveforms"])
                 if state:
                     add_cost(state, "cover_upscale", VENICE_UPSCALE_COST)
                 jpg_cp = os.path.splitext(cp)[0] + '.jpg'
@@ -1978,6 +2064,38 @@ def assemble_release(proposal, tracklist, album_slug):
                     ], capture_output=True, timeout=30)
                 except Exception as oe:
                     logger.warning(f"Re-overlay title error on {dest_cov}: {oe}")
+
+    # 2b. Waveform banners - copy album and track waveforms into covers/
+    master_waves_dir = "/opt/data/music/artwork/waveforms"
+    if not os.path.exists("/opt/data/music") and os.path.exists("D:/music"):
+        master_waves_dir = "D:/music/artwork/waveforms"
+
+    clean_alb_name = sanitize_filename(proposal.get("album", album_slug))
+    alb_wave_cands = [
+        os.path.join(art_dir, "album_waveform.png"),
+        os.path.join(art_dir, f"{clean_alb_name}_waveform.png"),
+        os.path.join(master_waves_dir, f"{clean_alb_name}_waveform.png"),
+    ]
+    for awc in alb_wave_cands:
+        if os.path.exists(awc):
+            shutil.copy2(awc, os.path.join(covers_dir, "album_waveform.png"))
+            shutil.copy2(awc, os.path.join(covers_dir, f"{clean_alb_name}_waveform.png"))
+            break
+
+    for idx, t in enumerate(tracklist, 1):
+        title = t.get("title", f"Track {idx}")
+        clean_title = sanitize_filename(title)
+        tr_wave_cands = [
+            os.path.join(art_dir, f"{clean_title}_waveform.png"),
+            os.path.join(art_dir, f"{title}_waveform.png"),
+            os.path.join(master_waves_dir, f"{clean_title}_waveform.png"),
+            os.path.join(master_waves_dir, f"{title}_waveform.png"),
+        ]
+        for twc in tr_wave_cands:
+            if os.path.exists(twc):
+                shutil.copy2(twc, os.path.join(covers_dir, f"{clean_title}_waveform.png"))
+                shutil.copy2(twc, os.path.join(covers_dir, f"{idx:02d}_{clean_title}_waveform.png"))
+                break
 
     # Clean any unwanted files from release_dir (ensure no MP3s and no loose images in root)
     for f in os.listdir(release_dir):
