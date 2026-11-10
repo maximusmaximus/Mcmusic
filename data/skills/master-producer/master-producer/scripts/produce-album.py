@@ -1077,9 +1077,34 @@ def main():
                     cost = rj.get("cost_report", {}).get("total_usd", 0)
                     mp3 = rj.get("files", {}).get("mp3", "")
                     flac = rj.get("files", {}).get("flac", "")
+                    primary_out = rj.get("file", "")
                     meta_path = rj.get("metadata", "")
                     plan_path = meta_path.replace("production_metadata.json", "production_plan.json") if meta_path else ""
                     prod_dir = os.path.dirname(meta_path) if meta_path else ""
+
+                    # Self-heal MP3/FLAC locally from premaster_mix.wav or primary_out rather than re-billing Venice!
+                    fallback_src = ""
+                    for cand_src in [primary_out, os.path.join(prod_dir, "premaster_mix.wav") if prod_dir else ""]:
+                        if cand_src and os.path.isfile(cand_src) and os.path.getsize(cand_src) > 10000:
+                            fallback_src = cand_src
+                            break
+                    if fallback_src and prod_dir:
+                        if not (flac and os.path.isfile(flac) and os.path.getsize(flac) > 1000):
+                            healed_flac = os.path.join(prod_dir, "master_recovered.flac")
+                            subprocess.run(
+                                ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-i", fallback_src, "-ar", "48000", "-ac", "2", "-sample_fmt", "s32", healed_flac],
+                                timeout=120,
+                            )
+                            if os.path.isfile(healed_flac) and os.path.getsize(healed_flac) > 1000:
+                                flac = healed_flac
+                        if not (mp3 and os.path.isfile(mp3) and os.path.getsize(mp3) > 1000):
+                            healed_mp3 = os.path.join(prod_dir, "master_recovered.mp3")
+                            subprocess.run(
+                                ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-i", flac or fallback_src, "-b:a", "320k", healed_mp3],
+                                timeout=120,
+                            )
+                            if os.path.isfile(healed_mp3) and os.path.getsize(healed_mp3) > 1000:
+                                mp3 = healed_mp3
 
                     # Verify that audio file actually exists and is non-empty
                     if not (mp3 and os.path.isfile(mp3) and os.path.getsize(mp3) > 1000):

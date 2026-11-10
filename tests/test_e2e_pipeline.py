@@ -456,6 +456,46 @@ class TestHermeticE2EPipeline(unittest.TestCase):
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
 
+    @unittest.skipUnless(shutil.which("ffmpeg") is not None, "ffmpeg not installed on PATH")
+    def test_05_master_producer_master_audio_flac_and_mp3_non_empty(self):
+        """Regression E2E: master-producer.py master_audio() must emit non-empty FLAC + MP3 (never 0B files)."""
+        tmp = Path(tempfile.mkdtemp(prefix="e2e_mp_master_"))
+        try:
+            mp_path = REPO_ROOT / "data" / "skills" / "master-producer" / "master-producer" / "scripts" / "master-producer.py"
+            mp_mod = _load_module("master_producer_e2e", mp_path)
+
+            in_wav = tmp / "premaster_mix.wav"
+            subprocess.run(
+                [
+                    "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+                    "-f", "lavfi", "-i", "sine=frequency=60:duration=6:sample_rate=48000",
+                    "-f", "lavfi", "-i", "sine=frequency=330:duration=6:sample_rate=48000",
+                    "-filter_complex", "[0:a][1:a]amix=inputs=2:weights=0.8 0.5,aformat=channel_layouts=stereo,volume=0.35",
+                    "-ar", "48000", "-ac", "2", str(in_wav),
+                ],
+                check=True,
+                timeout=30,
+            )
+
+            res = mp_mod.master_audio(
+                str(in_wav),
+                str(tmp),
+                skip_master=False,
+                target="streaming",
+                track_title="TELESCOPE BURN",
+                album="DOME STATIC",
+                track_num=1,
+                total_tracks=5,
+            )
+            flac_file = res.get("files", {}).get("flac", "")
+            mp3_file = res.get("files", {}).get("mp3", "")
+            self.assertTrue(flac_file and os.path.isfile(flac_file), f"FLAC output missing: {res}")
+            self.assertTrue(mp3_file and os.path.isfile(mp3_file), f"MP3 output missing: {res}")
+            self.assertGreater(os.path.getsize(flac_file), 15_000, "FLAC output was empty/truncated")
+            self.assertGreater(os.path.getsize(mp3_file), 15_000, "MP3 output was empty/truncated")
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
 
 if __name__ == "__main__":
     unittest.main()

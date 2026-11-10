@@ -3298,12 +3298,7 @@ def master_audio(input_path, output_dir, skip_master=False, target="streaming",
     hp_order = min(profile['hp_order'], 2)
     pre_filters.append(f"highpass=f={profile['hp_freq']}:p={hp_order}")
 
-    # 2. Mono fold below threshold (tight sub-90Hz center punch)
-    if profile.get("mono_fold_below"):
-        freq = profile["mono_fold_below"]
-        pre_filters.append(f"crossfeed=freq={freq}:slope=1")
-
-    # 3. Gentle glue compression (slow attack preserves kick/snare punch!)
+    # 2. Gentle glue compression (slow attack preserves kick/snare punch!)
     pre_filters.append(
         f"acompressor=threshold={profile['comp_threshold']}dB"
         f":ratio={profile['comp_ratio']}"
@@ -3312,11 +3307,11 @@ def master_audio(input_path, output_dir, skip_master=False, target="streaming",
         f":makeup={profile['comp_makeup']}dB"
     )
 
-    # 4. EQ bands
+    # 3. EQ bands
     for eq in profile["eq"]:
         pre_filters.append(f"equalizer=f={eq['f']}:t=q:w={eq['w']}:g={eq['g']}")
 
-    # 5. Stereo field optimization
+    # 4. Stereo field optimization
     if profile["stereo_mid"] != 1.0 or profile["stereo_side"] != 1.0:
         pre_filters.append(f"stereotools=mlev={profile['stereo_mid']}:slev={profile['stereo_side']}")
 
@@ -3400,36 +3395,66 @@ def master_audio(input_path, output_dir, skip_master=False, target="streaming",
         primary_fmt = profile["primary_format"]
         primary_file = os.path.join(output_dir, f"master_{timestamp}.{primary_fmt}")
 
-        cmd_primary = [
-            "ffmpeg", "-y", "-i", input_path,
-            "-af", mastering_filter,
-            "-ar", sr, "-ac", "2",
-        ]
-        # Codec depends on output format
+        codec_args = []
         if primary_fmt == "flac":
-            cmd_primary += ["-sample_fmt", "s32"]  # FLAC uses its own codec
+            codec_args = ["-sample_fmt", "s32"]
         elif primary_fmt == "aiff":
-            cmd_primary += ["-c:a", "pcm_s24be"]   # AIFF needs big-endian
+            codec_args = ["-c:a", "pcm_s24be"]
         elif primary_fmt in ("wav",):
-            cmd_primary += ["-c:a", "pcm_s24le"]   # WAV uses little-endian
-        cmd_primary += [*meta, primary_file]
+            codec_args = ["-c:a", "pcm_s24le"]
 
+        mono_freq = profile.get("mono_fold_below")
+        if mono_freq:
+            pre_chain_str = ",".join(pre_filters)
+            post_chain_str = ",".join([
+                loudnorm_stage,
+                "asoftclip=type=sin:param=0.82",
+                f"alimiter=limit={profile['true_peak']}dB:level=false",
+                "afade=t=in:ss=0:d=0.4",
+                f"afade=t=out:st={fade_out_start}:d={fade_out_dur}",
+            ])
+            fc_primary = (
+                f"[0:a]{pre_chain_str},acrossover=split={int(mono_freq)}[low][high];"
+                f"[low]pan=stereo|c0=0.5*c0+0.5*c1|c1=0.5*c0+0.5*c1[lowm];"
+                f"[lowm][high]amix=inputs=2:duration=longest:normalize=0:weights=1 1,"
+                f"{post_chain_str}[out]"
+            )
+            cmd_primary = [
+                "ffmpeg", "-y", "-i", input_path,
+                "-filter_complex", fc_primary,
+                "-map", "[out]",
+                "-ar", sr, "-ac", "2",
+                *codec_args, *meta, primary_file,
+            ]
+        else:
+            cmd_primary = [
+                "ffmpeg", "-y", "-i", input_path,
+                "-af", mastering_filter,
+                "-ar", sr, "-ac", "2",
+                *codec_args, *meta, primary_file,
+            ]
 
         result = subprocess.run(cmd_primary, capture_output=True, text=True, timeout=180)
-        if result.returncode != 0:
-            # Fallback: try without crossfeed if that caused the error
-            if profile.get("mono_fold_below"):
-                log(f"  ⚠️ Primary failed, retrying without crossfeed...")
-                filters_fallback = [f for f in filters if "crossfeed" not in f]
-                mastering_filter_fb = ",".join(filters_fallback)
-                cmd_fb = [
-                    "ffmpeg", "-y", "-i", input_path,
-                    "-af", mastering_filter_fb,
-                    "-ar", sr, "-ac", "2", "-c:a", "pcm_s24le",
-                    *meta, primary_file,
-                ]
-                result = subprocess.run(cmd_fb, capture_output=True, text=True, timeout=180)
-            if result.returncode != 0:
+        if result.returncode != 0 or not os.path.isfile(primary_file) or os.path.getsize(primary_file) < 1000:
+            log("  ⚠️ Primary filter_complex failed, retrying direct -af chain...")
+            if os.path.exists(primary_file):
+                try:
+                    os.remove(primary_file)
+                except OSError:
+                    pass
+            cmd_fb = [
+                "ffmpeg", "-y", "-i", input_path,
+                "-af", mastering_filter,
+                "-ar", sr, "-ac", "2",
+                *codec_args, *meta, primary_file,
+            ]
+            result = subprocess.run(cmd_fb, capture_output=True, text=True, timeout=180)
+            if result.returncode != 0 or not os.path.isfile(primary_file) or os.path.getsize(primary_file) < 1000:
+                if os.path.exists(primary_file):
+                    try:
+                        os.remove(primary_file)
+                    except OSError:
+                        pass
                 log(f"  ⛔ Primary mastering failed: {result.stderr[-300:]}")
                 return {"primary": input_path, "files": {}}
 

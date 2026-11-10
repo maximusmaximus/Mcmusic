@@ -299,7 +299,7 @@ def validate_params(model, prompt, lyrics, duration, instrumental):
     return prompt, lyrics, duration, instrumental
 
 
-def api_request(endpoint, payload, api_key, accept="application/json"):
+def api_request(endpoint, payload, api_key, accept="application/json", raise_on_network_error=False):
     """Make a POST request to the Venice API. Returns (response_bytes, content_type)."""
     url = f"{VENICE_API_BASE}{endpoint}"
     data = json.dumps(payload).encode("utf-8")
@@ -327,9 +327,14 @@ def api_request(endpoint, payload, api_key, accept="application/json"):
             error_msg = error_json.get("error", error_body)
         except json.JSONDecodeError:
             error_msg = error_body
+        if raise_on_network_error and e.code in (502, 503, 504):
+            raise RuntimeError(f"Transient HTTP {e.code}: {error_msg}")
         fail(f"API error ({e.code}): {error_msg}")
-    except urllib.error.URLError as e:
-        fail(f"Connection error: {e.reason}")
+    except (urllib.error.URLError, TimeoutError, OSError) as e:
+        if raise_on_network_error:
+            raise
+        reason = getattr(e, "reason", str(e))
+        fail(f"Connection/timeout error: {reason}")
 
 
 def quote_audio(api_key, model, duration=None):
@@ -405,16 +410,22 @@ def retrieve_audio(api_key, model, queue_id, output_dir, prompt=""):
         payload = {
             "model": model,
             "queue_id": queue_id,
-            "delete_media_on_completion": True,
+            "delete_media_on_completion": False,
         }
 
-        # Accept both JSON (status) and audio (completed)
-        body, content_type = api_request(
-            "/audio/retrieve",
-            payload,
-            api_key,
-            accept="audio/mpeg, audio/wav, audio/flac, application/json",
-        )
+        # Accept both JSON (status) and audio (completed); never abandon a paid queue_id on transient socket timeout
+        try:
+            body, content_type = api_request(
+                "/audio/retrieve",
+                payload,
+                api_key,
+                accept="audio/mpeg, audio/wav, audio/flac, application/json",
+                raise_on_network_error=True,
+            )
+        except Exception as poll_err:
+            log(f"Transient poll error on queue_id={queue_id} [poll #{poll_count}]: {poll_err} — retrying in {POLL_INTERVAL}s")
+            time.sleep(POLL_INTERVAL)
+            continue
 
         # If JSON, it's a status update
         if "application/json" in content_type:

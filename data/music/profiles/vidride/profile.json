@@ -2,7 +2,7 @@
   "name": "V\u00d8IDRIDE",
   "slug": "vidride",
   "created_at": "2026-07-13T22:30:20.516405+00:00Z",
-  "updated_at": "2026-10-08T01:02:22.375955+00:00Z",
+  "updated_at": "2026-11-10T20:38:24.249121+00:00Z",
   "description": "Dark melodic California bass and West Coast nightride producer. Heavy, resonant California 808 sub-bass glides, deep lowrider low-end saturation, detuned sine plucks, and silky nocturnal cruising vibes over crisp syncopated percussion. Hyperspatial 3D dynamic sound staging with holographic delays, wide spectral pads, and smooth psychological buildups leading into thundering bass-dominant drops.",
   "style": {
     "genres": [
@@ -8574,6 +8574,678 @@
           "true_peak_db": 0.0,
           "bpm_actual": null,
           "key_actual": null
+        }
+      }
+    },
+    {
+      "title": "TELESCOPE BURN",
+      "file": "/opt/data/music/productions/20261110_195058_dome-static-california-bass/mix_20261110_195336.wav",
+      "linked_at": "2026-11-10T19:53:51.081831+00:00Z",
+      "notes": "",
+      "plan": {
+        "genre": "West Coast Nightride Trap / Melodic Bass",
+        "bpm": 138,
+        "key": "Dm",
+        "energy": "Earworm sine-pluck melody with a slight detune and a rhythmic syncopation that locks into the 808 glide pattern",
+        "stems": {
+          "main": {
+            "model": "elevenlabs-music-v2-5",
+            "prompt": "West Coast Nightride Trap in D minor, 138 BPM. V\u00d8IDRIDE signature: heavy 808 slides, acoustic kicks, crisp snares. The foreground hook is a detuned sine-pluck melody with a catchy syncopated rhythm introduced at [0:00]. [0:00-0:14] Filtered hook tease with sub held back, only the pluck and a distant pad. [0:14-0:16] Pre-drop breath: a single reversed cymbal swell and a moment of silence. [0:16-0:58] Drop 1: full explosive drop with gliding 808, punchy kick, crisp clap, and the hook in full force. [0:58-1:30] Verse switch-up: syncopated counter-groove with a Reese bass growl underneath, hats become more intricate. [1:30-1:56] Tension bridge: drums and sub stripped back to just the pluck hook in a reverb-washed space, atmospheric pads swell. [1:56-2:36] Climax Drop 2: octave-lifted pluck hook, double-time hi-hat energy, heaviest 808 portamento slides. [2:36-2:54] Outro: hook fades into filtered decay, a final sub note rings out. All transitions are smooth, low-passed, and never harsh."
+          },
+          "texture": {
+            "model": "demucs-harmonic-synth",
+            "prompt": "Warm chord-locked analog chorus pad in Dm at 138 BPM for TELESCOPE BURN."
+          },
+          "atmosphere": {
+            "model": "demucs-harmonic-synth",
+            "prompt": "Cavernous cyber-noir spectral reverb wash in Dm at 138 BPM for TELESCOPE BURN."
+          },
+          "spatial": {
+            "model": "demucs-harmonic-synth",
+            "prompt": "Hyperspatial 3D binaural side-shimmer reflections in Dm at 138 BPM for TELESCOPE BURN."
+          },
+          "accent": {
+            "model": "voidride-sfx-vault",
+            "prompt": "Warm rounded subterranean sub-bass impact swell for TELESCOPE BURN."
+          },
+          "riser": {
+            "model": "voidride-sfx-vault",
+            "prompt": "Silky dark analog synth filter sweep into drop for TELESCOPE BURN."
+          },
+          "foley": {
+            "model": "elevenlabs-sound-effects-v2",
+            "prompt": "Warm low-passed cyber-noir ambient texture: distant electrical hum from an observatory dome, soft air circulation, a faint red glow panel buzz, and the rustle of a telescope mount rotating slowly, all muffled and reverb-washed."
+          }
+        },
+        "qc": {
+          "lufs": -16.74,
+          "true_peak_db": -0.6,
+          "bpm_actual": 137.2,
+          "key_actual": "Dm"
+        }
+      }
+    },
+    {
+      "title": "TELESCOPE BURN",
+      "file": "/opt/data/music/productions/20261110_195406_dome-static-california-bass/mix_20261110_195722.wav",
+      "linked_at": "2026-11-10T19:57:37.923011+00:00Z",
+      "notes": "",
+      "plan": {
+        "genre": "West Coast Nightride Trap / Melodic Bass",
+        "bpm": 138,
+        "key": "Dm",
+        "energy": "Earworm sine-pluck melody with a slight detune and a rhythmic syncopation that locks into the 808 glide pattern",
+        "stems": {
+          "main": {
+            "model": "elevenlabs-music-v2-5",
+            "prompt": "West Coast Nightride Trap in D minor, 138 BPM. V\u00d8IDRIDE signature: heavy 808 slides, acoustic kicks, crisp snares. The foreground hook is a detuned sine-pluck melody with a catchy syncopated rhythm introduced at [0:00]. [0:00-0:14] Filtered hook tease with sub held back, only the pluck and a distant pad. [0:14-0:16] Pre-drop breath: a single reversed cymbal swell and a moment of silence. [0:16-0:58] Drop 1: full explosive drop with gliding 808, punchy kick, crisp clap, and the hook in full force. [0:58-1:30] Verse switch-up: syncopated counter-groove with a Reese bass growl underneath, hats become more intricate. [1:30-1:56] Tension bridge: drums and sub stripped back to just the pluck hook in a reverb-washed space, atmospheric pads swell. [1:56-2:36] Climax Drop 2: octave-lifted pluck hook, double-time hi-hat energy, heaviest 808 portamento slides. [2:36-2:54] Outro: hook fades into filtered decay, a final sub note rings out. All transitions are smooth, low-passed, and never harsh."
+          },
+          "texture": {
+            "model": "demucs-harmonic-synth",
+            "prompt": "Warm chord-locked analog chorus pad in Dm at 138 BPM for TELESCOPE BURN."
+          },
+          "atmosphere": {
+            "model": "demucs-harmonic-synth",
+            "prompt": "Cavernous cyber-noir spectral reverb wash in Dm at 138 BPM for TELESCOPE BURN."
+          },
+          "spatial": {
+            "model": "demucs-harmonic-synth",
+            "prompt": "Hyperspatial 3D binaural side-shimmer reflections in Dm at 138 BPM for TELESCOPE BURN."
+          },
+          "accent": {
+            "model": "voidride-sfx-vault",
+            "prompt": "Warm rounded subterranean sub-bass impact swell for TELESCOPE BURN."
+          },
+          "riser": {
+            "model": "voidride-sfx-vault",
+            "prompt": "Silky dark analog synth filter sweep into drop for TELESCOPE BURN."
+          },
+          "foley": {
+            "model": "elevenlabs-sound-effects-v2",
+            "prompt": "Warm low-passed cyber-noir ambient texture: distant electrical hum from an observatory dome, soft air circulation, a faint red glow panel buzz, and the rustle of a telescope mount rotating slowly, all muffled and reverb-washed."
+          }
+        },
+        "qc": {
+          "lufs": -17.37,
+          "true_peak_db": 0.51,
+          "bpm_actual": 137.2,
+          "key_actual": "A"
+        }
+      }
+    },
+    {
+      "title": "STAR VOID",
+      "file": "/opt/data/music/productions/20261110_195743_dome-static-california-bass/mix_20261110_200109.wav",
+      "linked_at": "2026-11-10T20:01:22.954341+00:00Z",
+      "notes": "",
+      "plan": {
+        "genre": "Drift-Phonk / High-Octane Nightride Bass",
+        "bpm": 150,
+        "key": "Cm",
+        "energy": "Aggressive metallic bell/brass motif with a descending chromatic phrase, doubled with a distorted sub-bass",
+        "stems": {
+          "main": {
+            "model": "elevenlabs-music-v2-5",
+            "prompt": "Drift-Phonk / West Coast Bass in C minor, 150 BPM. V\u00d8IDRIDE nocturnal nightride identity: heavy 808 portamento, crisp snares, and double-time hi-hats. The foreground hook is a metallic bell/brass timbre playing a descending chromatic phrase, introduced at [0:08]. [0:00-0:14] Filtered intro: only the brass hook in a low-passed state with a distant sub rumble. [0:14-0:16] Pre-drop breath: a reversed crash cymbal and a sub drop. [0:16-0:58] Drop 1: full aggressive drop with sliding 808, punchy kick, layered snares, and the brass hook in the upper register. [0:58-1:30] Verse: double-time hi-hat velocity, a counter-melody from a Reese bass, and the brass hook answered by a chopped vocal chop. [1:30-1:56] Tension bridge: drums reduced to a half-time kick pattern, sub held on the root, atmospheric pads with a low-pass filter sweep. [1:56-2:36] Climax Drop 2: brass hook octave-lifted, double-time hats return with more velocity, 808 glides are the most extreme. [2:36-2:50] Outro: hook decays into a reverb tail, a final sub note fades. All transitions are warm and smooth, never jarring."
+          },
+          "texture": {
+            "model": "demucs-harmonic-synth",
+            "prompt": "Warm chord-locked analog chorus pad in Cm at 150 BPM for STAR VOID."
+          },
+          "atmosphere": {
+            "model": "demucs-harmonic-synth",
+            "prompt": "Cavernous cyber-noir spectral reverb wash in Cm at 150 BPM for STAR VOID."
+          },
+          "spatial": {
+            "model": "demucs-harmonic-synth",
+            "prompt": "Hyperspatial 3D binaural side-shimmer reflections in Cm at 150 BPM for STAR VOID."
+          },
+          "accent": {
+            "model": "voidride-sfx-vault",
+            "prompt": "Warm rounded subterranean sub-bass impact swell for STAR VOID."
+          },
+          "riser": {
+            "model": "voidride-sfx-vault",
+            "prompt": "Silky dark analog synth filter sweep into drop for STAR VOID."
+          },
+          "foley": {
+            "model": "elevenlabs-sound-effects-v2",
+            "prompt": "Warm low-passed cyber-noir ambient: the hum of a red-lit control panel, a distant cooling fan, the metallic creak of a telescope mount, and a faint low-frequency drone from the observatory dome, all blended with a soft wind layer."
+          }
+        },
+        "qc": {
+          "lufs": -16.25,
+          "true_peak_db": -1.12,
+          "bpm_actual": 152.0,
+          "key_actual": "Em"
+        }
+      }
+    },
+    {
+      "title": "STAR VOID",
+      "file": "/opt/data/music/productions/20261110_200133_dome-static-california-bass/mix_20261110_200433.wav",
+      "linked_at": "2026-11-10T20:04:46.359320+00:00Z",
+      "notes": "",
+      "plan": {
+        "genre": "Drift-Phonk / High-Octane Nightride Bass",
+        "bpm": 150,
+        "key": "Cm",
+        "energy": "Aggressive metallic bell/brass motif with a descending chromatic phrase, doubled with a distorted sub-bass",
+        "stems": {
+          "main": {
+            "model": "elevenlabs-music-v2-5",
+            "prompt": "Drift-Phonk / West Coast Bass in C minor, 150 BPM. V\u00d8IDRIDE nocturnal nightride identity: heavy 808 portamento, crisp snares, and double-time hi-hats. The foreground hook is a metallic bell/brass timbre playing a descending chromatic phrase, introduced at [0:08]. [0:00-0:14] Filtered intro: only the brass hook in a low-passed state with a distant sub rumble. [0:14-0:16] Pre-drop breath: a reversed crash cymbal and a sub drop. [0:16-0:58] Drop 1: full aggressive drop with sliding 808, punchy kick, layered snares, and the brass hook in the upper register. [0:58-1:30] Verse: double-time hi-hat velocity, a counter-melody from a Reese bass, and the brass hook answered by a chopped vocal chop. [1:30-1:56] Tension bridge: drums reduced to a half-time kick pattern, sub held on the root, atmospheric pads with a low-pass filter sweep. [1:56-2:36] Climax Drop 2: brass hook octave-lifted, double-time hats return with more velocity, 808 glides are the most extreme. [2:36-2:50] Outro: hook decays into a reverb tail, a final sub note fades. All transitions are warm and smooth, never jarring."
+          },
+          "texture": {
+            "model": "demucs-harmonic-synth",
+            "prompt": "Warm chord-locked analog chorus pad in Cm at 150 BPM for STAR VOID."
+          },
+          "atmosphere": {
+            "model": "demucs-harmonic-synth",
+            "prompt": "Cavernous cyber-noir spectral reverb wash in Cm at 150 BPM for STAR VOID."
+          },
+          "spatial": {
+            "model": "demucs-harmonic-synth",
+            "prompt": "Hyperspatial 3D binaural side-shimmer reflections in Cm at 150 BPM for STAR VOID."
+          },
+          "accent": {
+            "model": "voidride-sfx-vault",
+            "prompt": "Warm rounded subterranean sub-bass impact swell for STAR VOID."
+          },
+          "riser": {
+            "model": "voidride-sfx-vault",
+            "prompt": "Silky dark analog synth filter sweep into drop for STAR VOID."
+          },
+          "foley": {
+            "model": "elevenlabs-sound-effects-v2",
+            "prompt": "Warm low-passed cyber-noir ambient: the hum of a red-lit control panel, a distant cooling fan, the metallic creak of a telescope mount, and a faint low-frequency drone from the observatory dome, all blended with a soft wind layer."
+          }
+        },
+        "qc": {
+          "lufs": -17.36,
+          "true_peak_db": -0.22,
+          "bpm_actual": 148.0,
+          "key_actual": "Cm"
+        }
+      }
+    },
+    {
+      "title": "STAR VOID",
+      "file": "/opt/data/music/productions/20261110_200501_dome-static-california-bass/mix_20261110_200822.wav",
+      "linked_at": "2026-11-10T20:08:35.949036+00:00Z",
+      "notes": "",
+      "plan": {
+        "genre": "Drift-Phonk / High-Octane Nightride Bass",
+        "bpm": 150,
+        "key": "Cm",
+        "energy": "Aggressive metallic bell/brass motif with a descending chromatic phrase, doubled with a distorted sub-bass",
+        "stems": {
+          "main": {
+            "model": "elevenlabs-music-v2-5",
+            "prompt": "Drift-Phonk / West Coast Bass in C minor, 150 BPM. V\u00d8IDRIDE nocturnal nightride identity: heavy 808 portamento, crisp snares, and double-time hi-hats. The foreground hook is a metallic bell/brass timbre playing a descending chromatic phrase, introduced at [0:08]. [0:00-0:14] Filtered intro: only the brass hook in a low-passed state with a distant sub rumble. [0:14-0:16] Pre-drop breath: a reversed crash cymbal and a sub drop. [0:16-0:58] Drop 1: full aggressive drop with sliding 808, punchy kick, layered snares, and the brass hook in the upper register. [0:58-1:30] Verse: double-time hi-hat velocity, a counter-melody from a Reese bass, and the brass hook answered by a chopped vocal chop. [1:30-1:56] Tension bridge: drums reduced to a half-time kick pattern, sub held on the root, atmospheric pads with a low-pass filter sweep. [1:56-2:36] Climax Drop 2: brass hook octave-lifted, double-time hats return with more velocity, 808 glides are the most extreme. [2:36-2:50] Outro: hook decays into a reverb tail, a final sub note fades. All transitions are warm and smooth, never jarring."
+          },
+          "texture": {
+            "model": "demucs-harmonic-synth",
+            "prompt": "Warm chord-locked analog chorus pad in Cm at 150 BPM for STAR VOID."
+          },
+          "atmosphere": {
+            "model": "demucs-harmonic-synth",
+            "prompt": "Cavernous cyber-noir spectral reverb wash in Cm at 150 BPM for STAR VOID."
+          },
+          "spatial": {
+            "model": "demucs-harmonic-synth",
+            "prompt": "Hyperspatial 3D binaural side-shimmer reflections in Cm at 150 BPM for STAR VOID."
+          },
+          "accent": {
+            "model": "voidride-sfx-vault",
+            "prompt": "Warm rounded subterranean sub-bass impact swell for STAR VOID."
+          },
+          "riser": {
+            "model": "voidride-sfx-vault",
+            "prompt": "Silky dark analog synth filter sweep into drop for STAR VOID."
+          },
+          "foley": {
+            "model": "elevenlabs-sound-effects-v2",
+            "prompt": "Warm low-passed cyber-noir ambient: the hum of a red-lit control panel, a distant cooling fan, the metallic creak of a telescope mount, and a faint low-frequency drone from the observatory dome, all blended with a soft wind layer."
+          }
+        },
+        "qc": {
+          "lufs": -16.96,
+          "true_peak_db": 0.23,
+          "bpm_actual": 75.0,
+          "key_actual": "Cm"
+        }
+      }
+    },
+    {
+      "title": "MOUNTAIN FOG",
+      "file": "/opt/data/music/productions/20261110_200841_dome-static-california-bass/mix_20261110_201149.wav",
+      "linked_at": "2026-11-10T20:12:03.845634+00:00Z",
+      "notes": "",
+      "plan": {
+        "genre": "Witch House / Halftime Bass Roller",
+        "bpm": 126,
+        "key": "Fm",
+        "energy": "Haunting spectral vocal/synth lead with a slow, coiling melody that weaves around a Reese bass growl",
+        "stems": {
+          "main": {
+            "model": "elevenlabs-music-v2-5",
+            "prompt": "Dynamic hit-arranged West Coast nightride trap & California 808 bass, 126 BPM, Fm. Witch House / Halftime Bass in F minor, 126 BPM. V\u00d8IDRIDE nocturnal nightride: spacious halftime pocket, coiling Reese bass growl, and a haunting spectral vocal/synth lead. The foreground hook is a spectral, ethereal vocal-synth lead with a slow, coiling melody, introduced at [0:06] as a filtered whisper. [0:00-0:14] Haunted hook tease: the lead is low-passed with heavy reverb, sub held back. [0:14-0:16] Pre-drop breath: a reversed white noise sweep and a sub drop. [0:16-0:58] Drop 1: full drop with a deep Reese bass trading phrases with the spectral lead, crisp snare on beat 3, sub 808 glides. [0:58-1:30] Verse: the lead becomes more rhythmic, a counter-groove with a pluck synth and layered hats. [1:30-1:56] Tension bridge: drums stripped to a kick on beat 1, sub held, the spectral lead in a cavernous reverb, atmospheric pads swell. [1:56-2:36] Climax Drop 2: lead octave-lifted, Reese bass more aggressive, double-time hi-hats added for energy. [2:36-2:58] Outro: lead fades into a long reverb tail, sub sustains and decays. All transitions are smooth, low-passed, and never jarring."
+          },
+          "texture": {
+            "model": "demucs-harmonic-synth",
+            "prompt": "Warm chord-locked analog chorus pad in Fm at 126 BPM for MOUNTAIN FOG."
+          },
+          "atmosphere": {
+            "model": "demucs-harmonic-synth",
+            "prompt": "Cavernous cyber-noir spectral reverb wash in Fm at 126 BPM for MOUNTAIN FOG."
+          },
+          "spatial": {
+            "model": "demucs-harmonic-synth",
+            "prompt": "Hyperspatial 3D binaural side-shimmer reflections in Fm at 126 BPM for MOUNTAIN FOG."
+          },
+          "accent": {
+            "model": "voidride-sfx-vault",
+            "prompt": "Warm rounded subterranean sub-bass impact swell for MOUNTAIN FOG."
+          },
+          "riser": {
+            "model": "voidride-sfx-vault",
+            "prompt": "Silky dark analog synth filter sweep into drop for MOUNTAIN FOG."
+          },
+          "foley": {
+            "model": "elevenlabs-sound-effects-v2",
+            "prompt": "Warm low-passed cyber-noir ambient: a deep, distant foghorn-like tone, the hum of electronic equipment, a soft red light buzz, and the faint sound of air moving through an open observatory slit, all muffled and reverb-washed."
+          }
+        },
+        "qc": {
+          "lufs": -16.49,
+          "true_peak_db": -2.27,
+          "bpm_actual": 125.0,
+          "key_actual": "Fm"
+        }
+      }
+    },
+    {
+      "title": "MOUNTAIN FOG",
+      "file": "/opt/data/music/productions/20261110_201214_dome-static-california-bass/mix_20261110_201444.wav",
+      "linked_at": "2026-11-10T20:14:57.459170+00:00Z",
+      "notes": "",
+      "plan": {
+        "genre": "Witch House / Halftime Bass Roller",
+        "bpm": 126,
+        "key": "Fm",
+        "energy": "Haunting spectral vocal/synth lead with a slow, coiling melody that weaves around a Reese bass growl",
+        "stems": {
+          "main": {
+            "model": "elevenlabs-music-v2-5",
+            "prompt": "Dynamic hit-arranged West Coast nightride trap & California 808 bass, 126 BPM, Fm. Witch House / Halftime Bass in F minor, 126 BPM. V\u00d8IDRIDE nocturnal nightride: spacious halftime pocket, coiling Reese bass growl, and a haunting spectral vocal/synth lead. The foreground hook is a spectral, ethereal vocal-synth lead with a slow, coiling melody, introduced at [0:06] as a filtered whisper. [0:00-0:14] Haunted hook tease: the lead is low-passed with heavy reverb, sub held back. [0:14-0:16] Pre-drop breath: a reversed white noise sweep and a sub drop. [0:16-0:58] Drop 1: full drop with a deep Reese bass trading phrases with the spectral lead, crisp snare on beat 3, sub 808 glides. [0:58-1:30] Verse: the lead becomes more rhythmic, a counter-groove with a pluck synth and layered hats. [1:30-1:56] Tension bridge: drums stripped to a kick on beat 1, sub held, the spectral lead in a cavernous reverb, atmospheric pads swell. [1:56-2:36] Climax Drop 2: lead octave-lifted, Reese bass more aggressive, double-time hi-hats added for energy. [2:36-2:58] Outro: lead fades into a long reverb tail, sub sustains and decays. All transitions are smooth, low-passed, and never jarring."
+          },
+          "texture": {
+            "model": "demucs-harmonic-synth",
+            "prompt": "Warm chord-locked analog chorus pad in Fm at 126 BPM for MOUNTAIN FOG."
+          },
+          "atmosphere": {
+            "model": "demucs-harmonic-synth",
+            "prompt": "Cavernous cyber-noir spectral reverb wash in Fm at 126 BPM for MOUNTAIN FOG."
+          },
+          "spatial": {
+            "model": "demucs-harmonic-synth",
+            "prompt": "Hyperspatial 3D binaural side-shimmer reflections in Fm at 126 BPM for MOUNTAIN FOG."
+          },
+          "accent": {
+            "model": "voidride-sfx-vault",
+            "prompt": "Warm rounded subterranean sub-bass impact swell for MOUNTAIN FOG."
+          },
+          "riser": {
+            "model": "voidride-sfx-vault",
+            "prompt": "Silky dark analog synth filter sweep into drop for MOUNTAIN FOG."
+          },
+          "foley": {
+            "model": "elevenlabs-sound-effects-v2",
+            "prompt": "Warm low-passed cyber-noir ambient: a deep, distant foghorn-like tone, the hum of electronic equipment, a soft red light buzz, and the faint sound of air moving through an open observatory slit, all muffled and reverb-washed."
+          }
+        },
+        "qc": {
+          "lufs": -15.91,
+          "true_peak_db": -0.64,
+          "bpm_actual": 125.0,
+          "key_actual": "Fm"
+        }
+      }
+    },
+    {
+      "title": "MOUNTAIN FOG",
+      "file": "/opt/data/music/productions/20261110_201513_dome-static-california-bass/mix_20261110_201735.wav",
+      "linked_at": "2026-11-10T20:17:47.847108+00:00Z",
+      "notes": "",
+      "plan": {
+        "genre": "Witch House / Halftime Bass Roller",
+        "bpm": 126,
+        "key": "Fm",
+        "energy": "Haunting spectral vocal/synth lead with a slow, coiling melody that weaves around a Reese bass growl",
+        "stems": {
+          "main": {
+            "model": "elevenlabs-music-v2-5",
+            "prompt": "Dynamic hit-arranged West Coast nightride trap & California 808 bass, 126 BPM, Fm. Witch House / Halftime Bass in F minor, 126 BPM. V\u00d8IDRIDE nocturnal nightride: spacious halftime pocket, coiling Reese bass growl, and a haunting spectral vocal/synth lead. The foreground hook is a spectral, ethereal vocal-synth lead with a slow, coiling melody, introduced at [0:06] as a filtered whisper. [0:00-0:14] Haunted hook tease: the lead is low-passed with heavy reverb, sub held back. [0:14-0:16] Pre-drop breath: a reversed white noise sweep and a sub drop. [0:16-0:58] Drop 1: full drop with a deep Reese bass trading phrases with the spectral lead, crisp snare on beat 3, sub 808 glides. [0:58-1:30] Verse: the lead becomes more rhythmic, a counter-groove with a pluck synth and layered hats. [1:30-1:56] Tension bridge: drums stripped to a kick on beat 1, sub held, the spectral lead in a cavernous reverb, atmospheric pads swell. [1:56-2:36] Climax Drop 2: lead octave-lifted, Reese bass more aggressive, double-time hi-hats added for energy. [2:36-2:58] Outro: lead fades into a long reverb tail, sub sustains and decays. All transitions are smooth, low-passed, and never jarring."
+          },
+          "texture": {
+            "model": "demucs-harmonic-synth",
+            "prompt": "Warm chord-locked analog chorus pad in Fm at 126 BPM for MOUNTAIN FOG."
+          },
+          "atmosphere": {
+            "model": "demucs-harmonic-synth",
+            "prompt": "Cavernous cyber-noir spectral reverb wash in Fm at 126 BPM for MOUNTAIN FOG."
+          },
+          "spatial": {
+            "model": "demucs-harmonic-synth",
+            "prompt": "Hyperspatial 3D binaural side-shimmer reflections in Fm at 126 BPM for MOUNTAIN FOG."
+          },
+          "accent": {
+            "model": "voidride-sfx-vault",
+            "prompt": "Warm rounded subterranean sub-bass impact swell for MOUNTAIN FOG."
+          },
+          "riser": {
+            "model": "voidride-sfx-vault",
+            "prompt": "Silky dark analog synth filter sweep into drop for MOUNTAIN FOG."
+          },
+          "foley": {
+            "model": "elevenlabs-sound-effects-v2",
+            "prompt": "Warm low-passed cyber-noir ambient: a deep, distant foghorn-like tone, the hum of electronic equipment, a soft red light buzz, and the faint sound of air moving through an open observatory slit, all muffled and reverb-washed."
+          }
+        },
+        "qc": {
+          "lufs": -16.36,
+          "true_peak_db": -2.21,
+          "bpm_actual": 125.0,
+          "key_actual": "Fm"
+        }
+      }
+    },
+    {
+      "title": "RED PANEL",
+      "file": "/opt/data/music/productions/20261110_201753_dome-static-california-bass/mix_20261110_202040.wav",
+      "linked_at": "2026-11-10T20:20:53.425483+00:00Z",
+      "notes": "",
+      "plan": {
+        "genre": "Minimalist West Coast Sub-Bounce / Negative-Space Trap",
+        "bpm": 134,
+        "key": "Gm",
+        "energy": "Call-and-response minor pluck hook with rhythmic gaps where the 808 sub takes center stage",
+        "stems": {
+          "main": {
+            "model": "elevenlabs-music-v2-5",
+            "prompt": "Minimalist West Coast Sub-Bounce in G minor, 134 BPM. V\u00d8IDRIDE signature: surgical pocket percussion, bold rhythmic pauses, and a gliding 808 sub that commands the room. The foreground hook is a call-and-response minor pluck: a short melodic phrase answered by a sub drop, introduced at [0:00]. [0:00-0:14] Hook tease: only the pluck in a dry state with a filtered sub, no drums. [0:14-0:16] Pre-drop breath: a single kick and a reversed cymbal. [0:16-0:58] Drop 1: full drop with crisp snare, tight hi-hats, and the pluck hook answered by a sliding 808 sub. [0:58-1:30] Verse: syncopated counter-groove with a Reese bass, hats become more sparse, the pluck hook repeats with variations. [1:30-1:56] Tension bridge: drums removed except a kick on beat 1, sub held, the pluck hook in a reverb-washed space. [1:56-2:36] Climax Drop 2: pluck octave-lifted, 808 glides more exaggerated, double-time hats added. [2:36-2:52] Outro: hook and sub fade together, a final reverb tail. All transitions are smooth and never jarring."
+          },
+          "texture": {
+            "model": "demucs-harmonic-synth",
+            "prompt": "Warm chord-locked analog chorus pad in Gm at 134 BPM for RED PANEL."
+          },
+          "atmosphere": {
+            "model": "demucs-harmonic-synth",
+            "prompt": "Cavernous cyber-noir spectral reverb wash in Gm at 134 BPM for RED PANEL."
+          },
+          "spatial": {
+            "model": "demucs-harmonic-synth",
+            "prompt": "Hyperspatial 3D binaural side-shimmer reflections in Gm at 134 BPM for RED PANEL."
+          },
+          "accent": {
+            "model": "voidride-sfx-vault",
+            "prompt": "Warm rounded subterranean sub-bass impact swell for RED PANEL."
+          },
+          "riser": {
+            "model": "voidride-sfx-vault",
+            "prompt": "Silky dark analog synth filter sweep into drop for RED PANEL."
+          },
+          "foley": {
+            "model": "elevenlabs-sound-effects-v2",
+            "prompt": "Warm low-passed cyber-noir ambient: the steady hum of a red LED panel, a soft electrical crackle, the whir of a cooling fan, and a distant low-frequency drone from the observatory dome, all blended with a warm reverb."
+          }
+        },
+        "qc": {
+          "lufs": -17.16,
+          "true_peak_db": 0.44,
+          "bpm_actual": 133.9,
+          "key_actual": "Gm"
+        }
+      }
+    },
+    {
+      "title": "RED PANEL",
+      "file": "/opt/data/music/productions/20261110_202104_dome-static-california-bass/mix_20261110_202335.wav",
+      "linked_at": "2026-11-10T20:23:50.369916+00:00Z",
+      "notes": "",
+      "plan": {
+        "genre": "Minimalist West Coast Sub-Bounce / Negative-Space Trap",
+        "bpm": 134,
+        "key": "Gm",
+        "energy": "Call-and-response minor pluck hook with rhythmic gaps where the 808 sub takes center stage",
+        "stems": {
+          "main": {
+            "model": "elevenlabs-music-v2-5",
+            "prompt": "Minimalist West Coast Sub-Bounce in G minor, 134 BPM. V\u00d8IDRIDE signature: surgical pocket percussion, bold rhythmic pauses, and a gliding 808 sub that commands the room. The foreground hook is a call-and-response minor pluck: a short melodic phrase answered by a sub drop, introduced at [0:00]. [0:00-0:14] Hook tease: only the pluck in a dry state with a filtered sub, no drums. [0:14-0:16] Pre-drop breath: a single kick and a reversed cymbal. [0:16-0:58] Drop 1: full drop with crisp snare, tight hi-hats, and the pluck hook answered by a sliding 808 sub. [0:58-1:30] Verse: syncopated counter-groove with a Reese bass, hats become more sparse, the pluck hook repeats with variations. [1:30-1:56] Tension bridge: drums removed except a kick on beat 1, sub held, the pluck hook in a reverb-washed space. [1:56-2:36] Climax Drop 2: pluck octave-lifted, 808 glides more exaggerated, double-time hats added. [2:36-2:52] Outro: hook and sub fade together, a final reverb tail. All transitions are smooth and never jarring."
+          },
+          "texture": {
+            "model": "demucs-harmonic-synth",
+            "prompt": "Warm chord-locked analog chorus pad in Gm at 134 BPM for RED PANEL."
+          },
+          "atmosphere": {
+            "model": "demucs-harmonic-synth",
+            "prompt": "Cavernous cyber-noir spectral reverb wash in Gm at 134 BPM for RED PANEL."
+          },
+          "spatial": {
+            "model": "demucs-harmonic-synth",
+            "prompt": "Hyperspatial 3D binaural side-shimmer reflections in Gm at 134 BPM for RED PANEL."
+          },
+          "accent": {
+            "model": "voidride-sfx-vault",
+            "prompt": "Warm rounded subterranean sub-bass impact swell for RED PANEL."
+          },
+          "riser": {
+            "model": "voidride-sfx-vault",
+            "prompt": "Silky dark analog synth filter sweep into drop for RED PANEL."
+          },
+          "foley": {
+            "model": "elevenlabs-sound-effects-v2",
+            "prompt": "Warm low-passed cyber-noir ambient: the steady hum of a red LED panel, a soft electrical crackle, the whir of a cooling fan, and a distant low-frequency drone from the observatory dome, all blended with a warm reverb."
+          }
+        },
+        "qc": {
+          "lufs": -16.47,
+          "true_peak_db": -3.49,
+          "bpm_actual": 133.9,
+          "key_actual": "Gm"
+        }
+      }
+    },
+    {
+      "title": "RED PANEL",
+      "file": "/opt/data/music/productions/20261110_202406_dome-static-california-bass/mix_20261110_202626.wav",
+      "linked_at": "2026-11-10T20:26:40.514084+00:00Z",
+      "notes": "",
+      "plan": {
+        "genre": "Minimalist West Coast Sub-Bounce / Negative-Space Trap",
+        "bpm": 134,
+        "key": "Gm",
+        "energy": "Call-and-response minor pluck hook with rhythmic gaps where the 808 sub takes center stage",
+        "stems": {
+          "main": {
+            "model": "elevenlabs-music-v2-5",
+            "prompt": "Minimalist West Coast Sub-Bounce in G minor, 134 BPM. V\u00d8IDRIDE signature: surgical pocket percussion, bold rhythmic pauses, and a gliding 808 sub that commands the room. The foreground hook is a call-and-response minor pluck: a short melodic phrase answered by a sub drop, introduced at [0:00]. [0:00-0:14] Hook tease: only the pluck in a dry state with a filtered sub, no drums. [0:14-0:16] Pre-drop breath: a single kick and a reversed cymbal. [0:16-0:58] Drop 1: full drop with crisp snare, tight hi-hats, and the pluck hook answered by a sliding 808 sub. [0:58-1:30] Verse: syncopated counter-groove with a Reese bass, hats become more sparse, the pluck hook repeats with variations. [1:30-1:56] Tension bridge: drums removed except a kick on beat 1, sub held, the pluck hook in a reverb-washed space. [1:56-2:36] Climax Drop 2: pluck octave-lifted, 808 glides more exaggerated, double-time hats added. [2:36-2:52] Outro: hook and sub fade together, a final reverb tail. All transitions are smooth and never jarring."
+          },
+          "texture": {
+            "model": "demucs-harmonic-synth",
+            "prompt": "Warm chord-locked analog chorus pad in Gm at 134 BPM for RED PANEL."
+          },
+          "atmosphere": {
+            "model": "demucs-harmonic-synth",
+            "prompt": "Cavernous cyber-noir spectral reverb wash in Gm at 134 BPM for RED PANEL."
+          },
+          "spatial": {
+            "model": "demucs-harmonic-synth",
+            "prompt": "Hyperspatial 3D binaural side-shimmer reflections in Gm at 134 BPM for RED PANEL."
+          },
+          "accent": {
+            "model": "voidride-sfx-vault",
+            "prompt": "Warm rounded subterranean sub-bass impact swell for RED PANEL."
+          },
+          "riser": {
+            "model": "voidride-sfx-vault",
+            "prompt": "Silky dark analog synth filter sweep into drop for RED PANEL."
+          },
+          "foley": {
+            "model": "elevenlabs-sound-effects-v2",
+            "prompt": "Warm low-passed cyber-noir ambient: the steady hum of a red LED panel, a soft electrical crackle, the whir of a cooling fan, and a distant low-frequency drone from the observatory dome, all blended with a warm reverb."
+          }
+        },
+        "qc": {
+          "lufs": -16.51,
+          "true_peak_db": -1.07,
+          "bpm_actual": 133.9,
+          "key_actual": "Gm"
+        }
+      }
+    },
+    {
+      "title": "LENS GHOST",
+      "file": "/opt/data/music/productions/20261110_202646_dome-static-california-bass/mix_20261110_203026.wav",
+      "linked_at": "2026-11-10T20:30:42.391512+00:00Z",
+      "notes": "",
+      "plan": {
+        "genre": "Darkwave-Trap / Cinematic Nightride Anthem",
+        "bpm": 124,
+        "key": "Ebm",
+        "energy": "Soaring detuned analog lead melody with emotional minor chord progression, introduced as a filtered pad then revealed fully",
+        "stems": {
+          "main": {
+            "model": "elevenlabs-music-v2-5",
+            "prompt": "Dynamic hit-arranged West Coast nightride trap & California 808 bass, 124 BPM, Ebm. Darkwave-Trap / Cinematic Nightride Anthem in E-flat minor, 124 BPM. V\u00d8IDRIDE nocturnal nightride: emotional minor chord progression, soaring detuned analog lead, and a towering finale. The foreground hook is a detuned analog lead melody with a wide, emotional sweep, introduced at [0:00] as a filtered pad. [0:00-0:14] Haunted hook tease: the lead is low-passed with heavy reverb, sub held back, a distant pad chord. [0:14-0:16] Pre-drop breath: a reversed cymbal swell and a sub drop. [0:16-1:00] Drop 1: full drop with punchy kick, crisp snare, and the lead in full force with a warm 808 glide. [1:00-1:40] Verse: syncopated counter-groove with a Reese bass, hats, and the lead answered by a chopped vocal chop. [1:40-2:10] Tension bridge: drums stripped to a kick on beat 1, sub held, the lead in a cavernous reverb, atmospheric pads swell. [2:10-3:10] Climax Drop 2: lead octave-lifted, double-time hats, heaviest 808 glides, and a layered synth pad. [3:10-3:35] Outro: lead fades into a long reverb tail, sub sustains and decays. All transitions are smooth, low-passed, and never jarring."
+          },
+          "texture": {
+            "model": "demucs-harmonic-synth",
+            "prompt": "Warm chord-locked analog chorus pad in Ebm at 124 BPM for LENS GHOST."
+          },
+          "atmosphere": {
+            "model": "demucs-harmonic-synth",
+            "prompt": "Cavernous cyber-noir spectral reverb wash in Ebm at 124 BPM for LENS GHOST."
+          },
+          "spatial": {
+            "model": "demucs-harmonic-synth",
+            "prompt": "Hyperspatial 3D binaural side-shimmer reflections in Ebm at 124 BPM for LENS GHOST."
+          },
+          "accent": {
+            "model": "voidride-sfx-vault",
+            "prompt": "Warm rounded subterranean sub-bass impact swell for LENS GHOST."
+          },
+          "riser": {
+            "model": "voidride-sfx-vault",
+            "prompt": "Silky dark analog synth filter sweep into drop for LENS GHOST."
+          },
+          "foley": {
+            "model": "elevenlabs-sound-effects-v2",
+            "prompt": "Warm low-passed cyber-noir ambient: the hum of a telescope motor, a soft red glow panel buzz, distant mountain wind, and the faint creak of a dome rotating, all blended with a warm reverb and a low-frequency drone."
+          }
+        },
+        "qc": {
+          "lufs": -15.5,
+          "true_peak_db": -1.63,
+          "bpm_actual": 82.7,
+          "key_actual": "G#m"
+        }
+      }
+    },
+    {
+      "title": "LENS GHOST",
+      "file": "/opt/data/music/productions/20261110_203053_dome-static-california-bass/mix_20261110_203418.wav",
+      "linked_at": "2026-11-10T20:34:34.729212+00:00Z",
+      "notes": "",
+      "plan": {
+        "genre": "Darkwave-Trap / Cinematic Nightride Anthem",
+        "bpm": 124,
+        "key": "Ebm",
+        "energy": "Soaring detuned analog lead melody with emotional minor chord progression, introduced as a filtered pad then revealed fully",
+        "stems": {
+          "main": {
+            "model": "elevenlabs-music-v2-5",
+            "prompt": "Dynamic hit-arranged West Coast nightride trap & California 808 bass, 124 BPM, Ebm. Darkwave-Trap / Cinematic Nightride Anthem in E-flat minor, 124 BPM. V\u00d8IDRIDE nocturnal nightride: emotional minor chord progression, soaring detuned analog lead, and a towering finale. The foreground hook is a detuned analog lead melody with a wide, emotional sweep, introduced at [0:00] as a filtered pad. [0:00-0:14] Haunted hook tease: the lead is low-passed with heavy reverb, sub held back, a distant pad chord. [0:14-0:16] Pre-drop breath: a reversed cymbal swell and a sub drop. [0:16-1:00] Drop 1: full drop with punchy kick, crisp snare, and the lead in full force with a warm 808 glide. [1:00-1:40] Verse: syncopated counter-groove with a Reese bass, hats, and the lead answered by a chopped vocal chop. [1:40-2:10] Tension bridge: drums stripped to a kick on beat 1, sub held, the lead in a cavernous reverb, atmospheric pads swell. [2:10-3:10] Climax Drop 2: lead octave-lifted, double-time hats, heaviest 808 glides, and a layered synth pad. [3:10-3:35] Outro: lead fades into a long reverb tail, sub sustains and decays. All transitions are smooth, low-passed, and never jarring."
+          },
+          "texture": {
+            "model": "demucs-harmonic-synth",
+            "prompt": "Warm chord-locked analog chorus pad in Ebm at 124 BPM for LENS GHOST."
+          },
+          "atmosphere": {
+            "model": "demucs-harmonic-synth",
+            "prompt": "Cavernous cyber-noir spectral reverb wash in Ebm at 124 BPM for LENS GHOST."
+          },
+          "spatial": {
+            "model": "demucs-harmonic-synth",
+            "prompt": "Hyperspatial 3D binaural side-shimmer reflections in Ebm at 124 BPM for LENS GHOST."
+          },
+          "accent": {
+            "model": "voidride-sfx-vault",
+            "prompt": "Warm rounded subterranean sub-bass impact swell for LENS GHOST."
+          },
+          "riser": {
+            "model": "voidride-sfx-vault",
+            "prompt": "Silky dark analog synth filter sweep into drop for LENS GHOST."
+          },
+          "foley": {
+            "model": "elevenlabs-sound-effects-v2",
+            "prompt": "Warm low-passed cyber-noir ambient: the hum of a telescope motor, a soft red glow panel buzz, distant mountain wind, and the faint creak of a dome rotating, all blended with a warm reverb and a low-frequency drone."
+          }
+        },
+        "qc": {
+          "lufs": -15.6,
+          "true_peak_db": -1.48,
+          "bpm_actual": 125.0,
+          "key_actual": "G"
+        }
+      }
+    },
+    {
+      "title": "LENS GHOST",
+      "file": "/opt/data/music/productions/20261110_203450_dome-static-california-bass/mix_20261110_203808.wav",
+      "linked_at": "2026-11-10T20:38:24.247887+00:00Z",
+      "notes": "",
+      "plan": {
+        "genre": "Darkwave-Trap / Cinematic Nightride Anthem",
+        "bpm": 124,
+        "key": "Ebm",
+        "energy": "Soaring detuned analog lead melody with emotional minor chord progression, introduced as a filtered pad then revealed fully",
+        "stems": {
+          "main": {
+            "model": "elevenlabs-music-v2-5",
+            "prompt": "Dynamic hit-arranged West Coast nightride trap & California 808 bass, 124 BPM, Ebm. Darkwave-Trap / Cinematic Nightride Anthem in E-flat minor, 124 BPM. V\u00d8IDRIDE nocturnal nightride: emotional minor chord progression, soaring detuned analog lead, and a towering finale. The foreground hook is a detuned analog lead melody with a wide, emotional sweep, introduced at [0:00] as a filtered pad. [0:00-0:14] Haunted hook tease: the lead is low-passed with heavy reverb, sub held back, a distant pad chord. [0:14-0:16] Pre-drop breath: a reversed cymbal swell and a sub drop. [0:16-1:00] Drop 1: full drop with punchy kick, crisp snare, and the lead in full force with a warm 808 glide. [1:00-1:40] Verse: syncopated counter-groove with a Reese bass, hats, and the lead answered by a chopped vocal chop. [1:40-2:10] Tension bridge: drums stripped to a kick on beat 1, sub held, the lead in a cavernous reverb, atmospheric pads swell. [2:10-3:10] Climax Drop 2: lead octave-lifted, double-time hats, heaviest 808 glides, and a layered synth pad. [3:10-3:35] Outro: lead fades into a long reverb tail, sub sustains and decays. All transitions are smooth, low-passed, and never jarring."
+          },
+          "texture": {
+            "model": "demucs-harmonic-synth",
+            "prompt": "Warm chord-locked analog chorus pad in Ebm at 124 BPM for LENS GHOST."
+          },
+          "atmosphere": {
+            "model": "demucs-harmonic-synth",
+            "prompt": "Cavernous cyber-noir spectral reverb wash in Ebm at 124 BPM for LENS GHOST."
+          },
+          "spatial": {
+            "model": "demucs-harmonic-synth",
+            "prompt": "Hyperspatial 3D binaural side-shimmer reflections in Ebm at 124 BPM for LENS GHOST."
+          },
+          "accent": {
+            "model": "voidride-sfx-vault",
+            "prompt": "Warm rounded subterranean sub-bass impact swell for LENS GHOST."
+          },
+          "riser": {
+            "model": "voidride-sfx-vault",
+            "prompt": "Silky dark analog synth filter sweep into drop for LENS GHOST."
+          },
+          "foley": {
+            "model": "elevenlabs-sound-effects-v2",
+            "prompt": "Warm low-passed cyber-noir ambient: the hum of a telescope motor, a soft red glow panel buzz, distant mountain wind, and the faint creak of a dome rotating, all blended with a warm reverb and a low-frequency drone."
+          }
+        },
+        "qc": {
+          "lufs": -17.23,
+          "true_peak_db": 0.0,
+          "bpm_actual": 125.0,
+          "key_actual": "D#"
         }
       }
     }

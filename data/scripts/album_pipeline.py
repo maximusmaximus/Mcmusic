@@ -1097,17 +1097,21 @@ def extract_root_cause_error(stderr_text, stdout_errors=None, exit_code=None):
     elif not root_line:
         root_line = f"Subprocess exited with code {exit_code}" if exit_code is not None else "Unknown pipeline error"
 
+    recent_err_text = (raw + " " + " ".join((stdout_errors or [])[-4:])).lower()
     combined = (raw + " " + " ".join(stdout_errors or [])).lower()
     if "invalid choice" in combined or "unrecognized arguments" in combined or "argument --" in combined:
         category = "CLI_ARG_MISMATCH"
         hint = "Script CLI arguments out of sync between pipeline and producer skill."
-    elif "429" in combined or "rate limit" in combined:
+    elif "missing or empty" in recent_err_text or "ffmpeg" in recent_err_text or "pedalboard" in recent_err_text or "soundfile" in recent_err_text:
+        category = "AUDIO_DSP_ERROR"
+        hint = "Audio stem mixing or FFmpeg master export produced an empty output file."
+    elif "429" in recent_err_text or "rate limit" in recent_err_text:
         category = "VENICE_RATE_LIMIT"
         hint = "Venice AI API rate limit reached; retry after a short pause."
-    elif "401" in combined or "403" in combined or "api_key" in combined:
+    elif "401" in recent_err_text or "403" in recent_err_text or "api_key" in recent_err_text:
         category = "API_AUTH_ERROR"
         hint = "API authentication or key quota issue."
-    elif "timeout" in combined or "timed out" in combined:
+    elif "timeout" in recent_err_text or "timed out" in recent_err_text:
         category = "API_TIMEOUT"
         hint = "Upstream model inference timed out."
     elif "ffmpeg" in combined or "pedalboard" in combined or "soundfile" in combined:
@@ -1342,6 +1346,7 @@ def phase_1_produce(proposal, profile, redo_track=None, redo_feedback=None, mode
 
     tracklist = list(completed_tracks)
     track_num = resume_count
+    active_track_num = resume_count + 1
     stdout_error_lines = []
 
     # Monitor stdout for progress and track completions
@@ -1358,6 +1363,7 @@ def phase_1_produce(proposal, profile, redo_track=None, redo_feedback=None, mode
                         prog = json.load(pf)
                     cur_num = prog.get("track_num")
                     if cur_num:
+                        active_track_num = int(cur_num)
                         dashboard.update_track(cur_num, f"Track {cur_num}", "generating", progress_pct=prog.get("elapsed_sec", 10) % 100, sub_phase=prog.get("phase_name"))
                         dashboard.live_cost = prog.get("total_cost", dashboard.live_cost)
                 except Exception:
@@ -1366,6 +1372,13 @@ def phase_1_produce(proposal, profile, redo_track=None, redo_feedback=None, mode
             continue
 
         logger.info(f"Produce output: {line}")
+
+        step_match = re.search(r'\[produce-album\]\s+\[(\d+)/(\d+)\]', line)
+        if step_match:
+            active_track_num = int(step_match.group(1))
+            if dashboard:
+                step_title = prop_tracks[active_track_num - 1] if prop_tracks and (active_track_num - 1) < len(prop_tracks) else f"Track {active_track_num}"
+                dashboard.update_track(active_track_num, step_title, "generating", progress_pct=15)
 
         # Capture sub-step failure / warning lines from produce-album.py
         if any(marker in line for marker in ["❌", "⚠️", "Error:", "failed:"]):
@@ -1474,23 +1487,26 @@ def phase_1_produce(proposal, profile, redo_track=None, redo_feedback=None, mode
                 logger.info(f"User aborted pipeline for {album_name} at error gate.")
                 sys.exit(0)
 
-    # Locate actual MP3 and FLAC files (only match production dirs that actually contain master audio files)
+    # Locate actual non-empty MP3 and FLAC files (>1KB)
     album_slug = proposal.get('album', '').lower().replace(' ', '-').replace('_', '-')
     raw_prod_dirs = sorted(glob.glob(f"/opt/data/music/productions/*{album_slug}*"))
+    def _non_empty_audio(folder, pattern):
+        return [f for f in sorted(glob.glob(os.path.join(folder, pattern))) if os.path.isfile(f) and os.path.getsize(f) > 1000]
+
     prod_dirs = [
         d for d in raw_prod_dirs
-        if glob.glob(os.path.join(d, "*.mp3")) or glob.glob(os.path.join(d, "*.flac"))
+        if _non_empty_audio(d, "*.mp3") or _non_empty_audio(d, "*.flac")
     ]
     for i, t in enumerate(tracklist):
         existing_d = t.get("production_dir")
-        if existing_d and os.path.isdir(existing_d) and (glob.glob(os.path.join(existing_d, "*.mp3")) or glob.glob(os.path.join(existing_d, "*.flac"))):
+        if existing_d and os.path.isdir(existing_d) and (_non_empty_audio(existing_d, "*.mp3") or _non_empty_audio(existing_d, "*.flac")):
             d = existing_d
         elif i < len(prod_dirs):
             d = prod_dirs[i]
         else:
             continue
-        mp3s = sorted(glob.glob(os.path.join(d, "*.mp3")))
-        flacs = sorted(glob.glob(os.path.join(d, "*.flac")))
+        mp3s = _non_empty_audio(d, "*.mp3")
+        flacs = _non_empty_audio(d, "*.flac")
         if mp3s:
             t["mp3_path"] = mp3s[-1]
         if flacs:
@@ -1505,15 +1521,17 @@ def phase_1_produce(proposal, profile, redo_track=None, redo_feedback=None, mode
         logger.error(f"Phase 1 for {album_name} completed with 0 tracks! Halting.")
         diag = extract_root_cause_error("", stdout_errors=stdout_error_lines, exit_code=0)
         diag["root_line"] = diag["root_line"] if stdout_error_lines else "0 audio tracks were produced across all attempts."
+        err_track_num = active_track_num if active_track_num else 1
+        err_track_title = prop_tracks[err_track_num - 1] if prop_tracks and (err_track_num - 1) < len(prop_tracks) else None
         if dashboard:
-            dashboard.set_error(f"0 tracks produced: {diag['root_line']}", track_num=1)
+            dashboard.set_error(f"0 tracks produced: {diag['root_line']}", track_num=err_track_num)
         send_pipeline_error_card(
             album_name=album_name,
             phase_num=1,
             phase_name="Music Production",
             diag=diag,
-            track_num=1,
-            track_title=prop_tracks[0] if prop_tracks else None,
+            track_num=err_track_num,
+            track_title=err_track_title,
             stdout_errors=stdout_error_lines,
             include_buttons=True,
         )
