@@ -72,6 +72,8 @@ def find_cover_for_track(target_dir, release_name, track_title, track_num=None):
         search_dirs.append(td)
         if (td / "artwork").exists():
             search_dirs.append(td / "artwork")
+        if (td / "covers").exists():
+            search_dirs.append(td / "covers")
     
     if release_name:
         alb_art = ALBUMS_DIR / slug_hyphen / "artwork"

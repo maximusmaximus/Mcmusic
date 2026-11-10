@@ -9,7 +9,7 @@ from pathlib import Path
 import subprocess
 
 PORT = 8124
-BASE_URL = f"http://localhost:{PORT}"
+BASE_URL = f"http://127.0.0.1:{PORT}"
 
 if sys.platform == "win32":
     SHARED_DIR = Path(os.environ.get("SHARED_DIR", r"D:\music\shared_files"))
@@ -36,9 +36,10 @@ def get_public_url():
     return None
 
 def ensure_server_running():
-    url = get_public_url()
-    if is_port_open(PORT) and url:
-        return url
+    if is_port_open(PORT):
+        url = get_public_url()
+        if url:
+            return url
 
     server_script = Path(__file__).parent / "server.py"
     if server_script.exists():
@@ -49,15 +50,23 @@ def ensure_server_running():
                 public_url_file.unlink()
             except Exception:
                 pass
+        if LEGACY_URL_FILE and LEGACY_URL_FILE.exists():
+            try:
+                LEGACY_URL_FILE.unlink()
+            except Exception:
+                pass
         flags = 0
         if sys.platform == "win32":
             flags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) | getattr(subprocess, "DETACHED_PROCESS", 0)
+        log_file = open(SHARED_DIR / "server.log", "a", encoding="utf-8")
         subprocess.Popen(
             [sys.executable, str(server_script)],
             creationflags=flags,
+            stdout=log_file,
+            stderr=log_file,
             close_fds=(sys.platform != "win32")
         )
-        for _ in range(30):
+        for _ in range(40):
             time.sleep(0.5)
             url = get_public_url()
             if url and is_port_open(PORT):

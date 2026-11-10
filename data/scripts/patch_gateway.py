@@ -136,6 +136,79 @@ PATCH_CODE = '''
                         except Exception: pass
                     return
 
+            # ── Weekly Venice Model PR Gate Handlers (sp2:model_pr:merge|status|close) ──
+            if choice.startswith("sp2:model_pr:"):
+                mp_parts = choice.split(":")
+                mp_action = mp_parts[2] if len(mp_parts) > 2 else ""
+                mp_pr_num = mp_parts[3] if len(mp_parts) > 3 else ""
+                mp_extra = mp_parts[4] if len(mp_parts) > 4 else ""
+                import subprocess as _sub
+                import json as _j
+
+                if mp_action == "status":
+                    await query.answer(text=f"🔍 Checking GitHub Actions CI for PR #{mp_pr_num}...")
+                    _st = _sub.run(
+                        ["/opt/hermes/.venv/bin/python3", "/opt/data/scripts/model_pr_manager.py", "status", mp_pr_num],
+                        capture_output=True, text=True, timeout=35
+                    )
+                    try:
+                        _st_obj = _j.loads(_st.stdout.strip()) if _st.stdout.strip() else {}
+                        _st_msg = _st_obj.get("message") or _st.stderr or "Unknown status"
+                    except Exception:
+                        _st_msg = _st.stdout or _st.stderr or "Status check error"
+                    await query.message.reply_text(f"🔎 <b>PR #{mp_pr_num} CI Status:</b>\\n{_st_msg}", parse_mode="HTML")
+                    return
+
+                elif mp_action == "merge":
+                    await query.answer(text=f"⚙️ Verifying CI & merging PR #{mp_pr_num}...")
+                    _mg = _sub.run(
+                        ["/opt/hermes/.venv/bin/python3", "/opt/data/scripts/model_pr_manager.py", "merge", mp_pr_num],
+                        capture_output=True, text=True, timeout=90
+                    )
+                    try:
+                        _mg_obj = _j.loads(_mg.stdout.strip()) if _mg.stdout.strip() else {}
+                    except Exception:
+                        _mg_obj = {"merged": False, "error": _mg.stderr or _mg.stdout}
+
+                    if _mg_obj.get("merged"):
+                        _snap = _mg_obj.get("snapshot_id") or ""
+                        _rb_kb = [[{"text": f"↩️ Rollback Snapshot ({_snap})", "callback_data": f"sp2:patch:rollback:{_snap}"}]] if _snap else None
+                        try:
+                            await query.edit_message_text(
+                                text=(
+                                    f"✅ <b>Merged PR #{mp_pr_num} &amp; Deployed Live!</b>\\n"
+                                    f"• <b>CI Gate:</b> {_mg_obj.get('ci_summary', 'Passed')}\\n"
+                                    f"• <b>Commit:</b> <code>{str(_mg_obj.get('sha', ''))[:7]}</code>\\n"
+                                    f"• <b>Live Env Verify:</b> {'✅ Passed' if _mg_obj.get('verify_ok') else '⚠️ Check logs'}"
+                                ),
+                                parse_mode="HTML",
+                                reply_markup={"inline_keyboard": _rb_kb} if _rb_kb else None,
+                            )
+                        except Exception:
+                            pass
+                    else:
+                        await query.message.reply_text(
+                            f"⚠️ <b>Merge Blocked for PR #{mp_pr_num}:</b>\\n{_mg_obj.get('error', 'CI checks not green yet')}",
+                            parse_mode="HTML",
+                        )
+                    return
+
+                elif mp_action == "close":
+                    await query.answer(text=f"❌ Closing PR #{mp_pr_num}...")
+                    _cmd = ["/opt/hermes/.venv/bin/python3", "/opt/data/scripts/model_pr_manager.py", "close", mp_pr_num]
+                    if mp_extra:
+                        _cmd.extend(["--reject-models", mp_extra])
+                    _sub.run(_cmd, capture_output=True, text=True, timeout=35)
+                    try:
+                        await query.edit_message_text(
+                            text=f"❌ <b>PR #{mp_pr_num} closed.</b> Candidate(s) recorded in <code>rejected_candidates</code>.",
+                            parse_mode="HTML",
+                            reply_markup=None,
+                        )
+                    except Exception:
+                        pass
+                    return
+
             # ── Skip All Proposals ──
             if choice == "skip":
                 await query.answer(text="⏭ Skipped — next batch in 2 days")
@@ -489,27 +562,53 @@ PATCH_CODE = '''
             # ── Error Recovery Handlers ──
             if choice == 'error:retry':
                 os.makedirs('/tmp/pipeline_flags', exist_ok=True)
-                with open('/tmp/pipeline_flags/error:retry', 'w') as f:
+                with open('/tmp/pipeline_flags/error_retry', 'w') as f:
                     f.write('retry')
+                try:
+                    import subprocess as _sub
+                    _chk = _sub.run(["pgrep", "-f", "album_pipeline.py"], capture_output=True)
+                    if _chk.returncode != 0 and os.path.exists("/opt/data/music/pipeline_state.json"):
+                        _cmd = "nohup /opt/hermes/.venv/bin/python3 -B /opt/data/scripts/album_pipeline.py --resume >> /opt/data/logs/pipeline.log 2>&1 &"
+                        _sub.Popen(_cmd, shell=True, env={**dict(os.environ)})
+                except Exception:
+                    pass
                 await query.answer(text='🔄 Retrying production...')
+                try:
+                    await query.message.reply_text("🔄 <b>Retrying production step...</b>", parse_mode="HTML")
+                except Exception: pass
                 try: await query.edit_message_reply_markup(reply_markup=None)
                 except: pass
                 return
 
             if choice == 'error:skip':
                 os.makedirs('/tmp/pipeline_flags', exist_ok=True)
-                with open('/tmp/pipeline_flags/error:skip', 'w') as f:
+                with open('/tmp/pipeline_flags/error_skip', 'w') as f:
                     f.write('skip')
-                await query.answer(text='⏭ Skipping error...')
+                await query.answer(text='⏭ Skipping failed step...')
+                try:
+                    await query.message.reply_text("⏭ <b>Skipping failed step and continuing pipeline...</b>", parse_mode="HTML")
+                except Exception: pass
                 try: await query.edit_message_reply_markup(reply_markup=None)
                 except: pass
                 return
 
             if choice == 'error:log':
                 os.makedirs('/tmp/pipeline_flags', exist_ok=True)
-                with open('/tmp/pipeline_flags/error:log', 'w') as f:
+                with open('/tmp/pipeline_flags/error_log', 'w') as f:
                     f.write('log')
-                await query.answer(text='📋 Displaying error log...')
+                await query.answer(text='📋 Fetching full error log...')
+                return
+
+            if choice == 'error:abort':
+                os.makedirs('/tmp/pipeline_flags', exist_ok=True)
+                with open('/tmp/pipeline_flags/error_abort', 'w') as f:
+                    f.write('abort')
+                await query.answer(text='🛑 Aborting pipeline...')
+                try:
+                    await query.message.reply_text("🛑 <b>Pipeline aborted by user.</b>", parse_mode="HTML")
+                except Exception: pass
+                try: await query.edit_message_reply_markup(reply_markup=None)
+                except: pass
                 return
 
             # ── DAW Mastering Handlers ──
@@ -832,6 +931,203 @@ PATCH_CODE = '''
                 except: pass
                 return
 
+            # ── Venice Credit Warning Gate Handlers (credit:added & credit:pause) ──
+            def _query_venice_budget_live(_mode="full"):
+                import json as _j, urllib.request as _ur
+                _key = os.environ.get("VENICE_API_KEY", "")
+                if not _key and os.path.exists("/opt/data/.env"):
+                    try:
+                        for _ln in open("/opt/data/.env"):
+                            if _ln.strip().startswith("VENICE_API_KEY="):
+                                _key = _ln.strip().split("=", 1)[1].strip().strip('"').strip("'")
+                                break
+                    except Exception:
+                        pass
+                _avg_track = 0.48 if _mode == "sample" else 2.24
+                _avg_tracks_total = round(_avg_track * 5, 2) if _mode == "sample" else 11.18
+                _avg_covers = 0.0 if _mode == "sample" else 0.52
+                _avg_album = round(_avg_tracks_total + _avg_covers, 2)
+                if not _key:
+                    return {"ok": False, "total_usd": 0.0, "usd": 0.0, "diem": 0.0, "avg_track": _avg_track, "avg_album": _avg_album, "completable": 5, "shortfall": 0.0, "sufficient": True}
+                try:
+                    _req = _ur.Request(
+                        "https://api.venice.ai/api/v1/api_keys/rate_limits",
+                        headers={"Authorization": f"Bearer {_key}", "User-Agent": "Mozilla/5.0"},
+                    )
+                    with _ur.urlopen(_req, timeout=10) as _resp:
+                        _data = _j.loads(_resp.read().decode("utf-8")).get("data", {})
+                    _bal = _data.get("balances", {})
+                    _usd = float(_bal.get("USD", 0.0) or 0.0)
+                    _diem = float(_bal.get("DIEM", 0.0) or 0.0)
+                    _bundled = float(_bal.get("BUNDLED_CREDITS", 0.0) or 0.0)
+                    _tot = round(_usd + _diem + _bundled, 2)
+                    _comp = min(5, int(_tot // _avg_track)) if _avg_track > 0 else 5
+                    _short = round(max(0.0, _avg_album - _tot), 2)
+                    _suff = _tot >= _avg_album
+                    return {
+                        "ok": True,
+                        "total_usd": _tot,
+                        "usd": round(_usd, 2),
+                        "diem": round(_diem, 2),
+                        "avg_track": _avg_track,
+                        "avg_tracks_total": _avg_tracks_total,
+                        "avg_covers": _avg_covers,
+                        "avg_album": _avg_album,
+                        "completable": _comp,
+                        "shortfall": _short,
+                        "sufficient": _suff,
+                    }
+                except Exception as _e:
+                    return {"ok": False, "total_usd": 0.0, "usd": 0.0, "diem": 0.0, "avg_track": _avg_track, "avg_album": _avg_album, "completable": 5, "shortfall": 0.0, "sufficient": True, "error": str(_e)}
+
+            if choice == 'credit:added':
+                import json as _json
+                os.makedirs('/tmp/pipeline_flags', exist_ok=True)
+                # Clear any pause flag
+                for _pf in ('/tmp/pipeline_flags/credit_paused', '/tmp/credit_paused'):
+                    if os.path.exists(_pf):
+                        try: os.remove(_pf)
+                        except Exception: pass
+
+                # Check if there is a pending album selection saved
+                _pending_file = '/tmp/pending_album_selection.json'
+                _pending = None
+                if os.path.exists(_pending_file):
+                    try:
+                        with open(_pending_file) as _f:
+                            _pending = _json.load(_f)
+                    except Exception:
+                        _pending = None
+
+                _check_mode = (_pending or {}).get("mode", "full")
+                _b = _query_venice_budget_live(_check_mode)
+                _tot = _b.get("total_usd", 0.0)
+                _avg_alb = _b.get("avg_album", 11.70)
+                _comp = _b.get("completable", 0)
+                _short = _b.get("shortfall", 0.0)
+
+                # If an active pipeline is currently waiting on a balance gate, signal retry
+                if os.path.exists('/tmp/album_pipeline.lock') and (_b.get("sufficient") or _comp >= 1):
+                    with open('/tmp/pipeline_flags/error_retry', 'w') as _f:
+                        _f.write('credit_added')
+                    await query.answer(text=f'💳 Balance: ${_tot:.2f} USD — Resuming pipeline!')
+                    try:
+                        await query.message.reply_text(
+                            f"✅ <b>Venice Credits Verified: ${_tot:.2f} USD!</b>\\n"
+                            f"Resuming album production pipeline now...",
+                            parse_mode="HTML",
+                        )
+                    except Exception:
+                        pass
+                    try: await query.edit_message_reply_markup(reply_markup=None)
+                    except Exception: pass
+                    return
+
+                # If sufficient (or can complete all 5 tracks) and a pending album was selected, launch it now!
+                if _b.get("sufficient") or _tot >= _b.get("avg_tracks_total", 11.18):
+                    await query.answer(text=f'✅ Verified: ${_tot:.2f} USD available!')
+                    if _pending and _pending.get("idx"):
+                        _p_idx = int(_pending["idx"])
+                        _p_mode = _pending.get("mode", "full")
+                        _p_album = _pending.get("album", "SELECTED ALBUM")
+                        try: os.remove(_pending_file)
+                        except Exception: pass
+                        try:
+                            await query.message.reply_text(
+                                f"✅ <b>Venice Credits Verified: ${_tot:.2f} USD!</b>\\n"
+                                f"Avg Full Album Cost: <b>~${_avg_alb:.2f} USD</b> (5/5 tracks funded — Option 1B).\\n"
+                                f"🚀 Launching <b>{_p_album}</b> ({_p_mode} mode) now...",
+                                parse_mode="HTML",
+                            )
+                        except Exception:
+                            pass
+                        try: await query.edit_message_reply_markup(reply_markup=None)
+                        except Exception: pass
+                        import subprocess as _subprocess
+                        _zero_idx = _p_idx - 1
+                        _cmd = (
+                            f'nohup /opt/hermes/.venv/bin/python3 -B '
+                            f'/opt/data/scripts/album_pipeline.py '
+                            f'--proposal-index {_zero_idx} '
+                            f'--mode {_p_mode} '
+                            f'--force '
+                            f'>> /opt/data/logs/pipeline.log 2>&1 &'
+                        )
+                        _subprocess.Popen(_cmd, shell=True, env={**dict(os.environ)})
+                        return
+                    else:
+                        try:
+                            await query.message.reply_text(
+                                f"✅ <b>Venice Credits Verified: ${_tot:.2f} USD!</b>\\n"
+                                f"• Avg Full Album Cost: <b>~${_avg_alb:.2f} USD</b> ($11.18 tracks + $0.52 artwork)\\n"
+                                f"• Capacity: <b>5/5 tracks funded</b>\\n\\n"
+                                f"👆 Tap any album proposal button above to begin production!",
+                                parse_mode="HTML",
+                            )
+                        except Exception:
+                            pass
+                        return
+                else:
+                    # Still below average album cost
+                    await query.answer(text=f'⚠️ Balance: ${_tot:.2f} USD (still need +${_short:.2f} USD)')
+                    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+                    _warn_btns = [
+                        [
+                            InlineKeyboardButton("💳 Credit Added", callback_data="ap:credit:added"),
+                            InlineKeyboardButton("⏸ Pause", callback_data="ap:credit:pause"),
+                        ]
+                    ]
+                    if _pending and _pending.get("idx") and _comp >= 1:
+                        _warn_btns.append([
+                            InlineKeyboardButton(
+                                f"▶️ Produce Partial ({_comp}/5 Tracks Anyway)",
+                                callback_data=f"ap:prod_force:{_pending['idx']}:{_pending.get('mode', 'full')}",
+                            )
+                        ])
+                    try:
+                        await query.message.reply_text(
+                            f"⚠️ <b>Venice Credits Still Below Full Album Cost</b>\\n"
+                            f"• Current Balance: <b>${_tot:.2f} USD</b> (${_b.get('usd', 0.0):.2f} USD / {_b.get('diem', 0.0):.2f} DIEM)\\n"
+                            f"• Avg Full Album Cost: <b>~${_avg_alb:.2f} USD</b> ($11.18 tracks + $0.52 covers)\\n"
+                            f"• Capacity: Can complete <b>{_comp}/5 tracks</b> (shortfall: <b>${_short:.2f} USD</b>)\\n\\n"
+                            f"Add at least <b>${_short:.2f} USD</b> and tap <b>💳 Credit Added</b>, or tap <b>⏸ Pause</b>.",
+                            parse_mode="HTML",
+                            reply_markup=InlineKeyboardMarkup(_warn_btns),
+                        )
+                    except Exception:
+                        pass
+                    return
+
+            if choice == 'credit:pause':
+                os.makedirs('/tmp/pipeline_flags', exist_ok=True)
+                with open('/tmp/pipeline_flags/credit_paused', 'w') as _f:
+                    _f.write('paused')
+                with open('/tmp/credit_paused', 'w') as _f:
+                    _f.write('paused')
+                _b = _query_venice_budget_live("full")
+                _tot = _b.get("total_usd", 0.0)
+                _avg_alb = _b.get("avg_album", 11.70)
+                _comp = _b.get("completable", 0)
+                _short = _b.get("shortfall", 0.0)
+                await query.answer(text='⏸ Production paused until credits are added.')
+                from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+                _resume_kb = InlineKeyboardMarkup([
+                    [InlineKeyboardButton("💳 Credit Added", callback_data="ap:credit:added")]
+                ])
+                try:
+                    await query.message.reply_text(
+                        f"⏸ <b>Paused — Waiting for Venice Credits</b>\\n"
+                        f"• Available Balance: <b>${_tot:.2f} USD</b>\\n"
+                        f"• Avg Full Album Cost: <b>~${_avg_alb:.2f} USD</b> ($11.18 tracks + $0.52 covers)\\n"
+                        f"• Current Capacity: <b>{_comp}/5 tracks</b> (shortfall: <b>${_short:.2f} USD</b>)\\n\\n"
+                        f"Pipeline is safely paused. Once you add credits, tap <b>💳 Credit Added</b> below to verify and continue!",
+                        parse_mode="HTML",
+                        reply_markup=_resume_kb,
+                    )
+                except Exception:
+                    pass
+                return
+
             # ── Select N (prompt for Full vs Sample) ──
             if choice.isdigit():
                 try:
@@ -858,15 +1154,40 @@ PATCH_CODE = '''
                 album_name = chosen.get("album", "UNKNOWN")
                 await query.answer(text=f"Selected: {album_name}")
 
+                _b = _query_venice_budget_live("full")
+                _low = bool(_b.get("ok") and not _b.get("sufficient"))
+
                 mode_buttons = [
-                    [{"text": "🚀 Full Album (4m 20s / track)", "callback_data": f"ap:prod:{idx}:full"}],
+                    [{"text": "🚀 Full Album (4 Singles ~3m + 3m35s Closer)", "callback_data": f"ap:prod:{idx}:full"}],
                     [{"text": "⚡ Sample Previews (20s / track)", "callback_data": f"ap:prod:{idx}:sample"}],
-                    [{"text": "↩️ Cancel", "callback_data": "ap:prod:cancel"}]
                 ]
+                if _low:
+                    mode_buttons.append([
+                        {"text": "💳 Credit Added", "callback_data": "ap:credit:added"},
+                        {"text": "⏸ Pause", "callback_data": "ap:credit:pause"},
+                    ])
+                mode_buttons.append([{"text": "↩️ Cancel", "callback_data": "ap:prod:cancel"}])
+
+                _credit_note = ""
+                if _low:
+                    # Save as pending selection so tapping "Credit Added" can launch it directly
+                    try:
+                        with open("/tmp/pending_album_selection.json", "w") as _pf:
+                            _json.dump({"idx": idx, "mode": "full", "album": album_name}, _pf)
+                    except Exception:
+                        pass
+                    _credit_note = (
+                        f"\\n\\n⚠️ *Low Venice Credits Warning:*\\n"
+                        f"• Available: *${_b['total_usd']:.2f} USD* vs Avg Full Album: *~${_b['avg_album']:.2f} USD*\\n"
+                        f"• Capacity: *{_b['completable']}/5 tracks* (shortfall: *${_b['shortfall']:.2f} USD*)\\n"
+                        f"Tap *💳 Credit Added* after topping up, or *⏸ Pause*."
+                    )
+                elif _b.get("ok"):
+                    _credit_note = f"\\n\\n💳 *Venice Credits:* ${_b['total_usd']:.2f} USD _(Avg Album: ~${_b['avg_album']:.2f} — ✅ Ready)_"
 
                 try:
                     await query.edit_message_text(
-                        text=f"📀 *{album_name}*\\n\\nChoose production mode:\\n• *Full Album:* Full songs (4m 20s per track)\\n• *Sample Previews:* Quick snippets (20s per track)",
+                        text=f"📀 *{album_name}*\\n\\nChoose production mode:\\n• *Full Album (Option 1B):* 4 punchy ~3m singles + 3m35s closer (~$11.70 avg)\\n• *Sample Previews:* Quick snippets (20s per track, ~$2.40 avg){_credit_note}",
                         parse_mode="Markdown",
                         reply_markup={"inline_keyboard": mode_buttons},
                     )
@@ -874,8 +1195,9 @@ PATCH_CODE = '''
                     logger.error("[Telegram] Failed to show mode buttons: %s", _e)
                 return
 
-            # ── Execute Production with Selected Mode (0-INDEX FIX) ──
-            if choice.startswith("prod:"):
+            # ── Execute Production with Selected Mode (0-INDEX FIX + Credit Gate) ──
+            if choice.startswith("prod:") or choice.startswith("prod_force:"):
+                _force_start = choice.startswith("prod_force:")
                 parts = choice.split(":")
                 if len(parts) >= 2 and parts[1] == "cancel":
                     await query.answer(text="↩️ Cancelled")
@@ -912,7 +1234,51 @@ PATCH_CODE = '''
 
                 album_name = chosen.get("album", "UNKNOWN")
                 album_slug = album_name.lower().replace(" ", "-")
-                desc_mode = "Full Album (4m 20s / track)" if prod_mode == "full" else "Sample Previews (20s / track)"
+                desc_mode = "Full Album (4 Singles ~3m + 3m35s Closer)" if prod_mode == "full" else "Sample Previews (20s / track)"
+
+                # Pre-launch Venice credit gate (unless user explicitly forced partial production)
+                if not _force_start:
+                    _b = _query_venice_budget_live(prod_mode)
+                    if _b.get("ok") and not _b.get("sufficient"):
+                        try:
+                            with open("/tmp/pending_album_selection.json", "w") as _pf:
+                                _json.dump({"idx": idx, "mode": prod_mode, "album": album_name}, _pf)
+                        except Exception:
+                            pass
+                        await query.answer(text=f"⚠️ Insufficient Venice credits (${_b['total_usd']:.2f} / ~${_b['avg_album']:.2f} USD)")
+                        _gate_buttons = [
+                            [
+                                {"text": "💳 Credit Added", "callback_data": "ap:credit:added"},
+                                {"text": "⏸ Pause", "callback_data": "ap:credit:pause"},
+                            ],
+                        ]
+                        if _b.get("completable", 0) >= 1:
+                            _gate_buttons.append([
+                                {"text": f"▶️ Start Anyway ({_b['completable']}/5 Tracks)", "callback_data": f"ap:prod_force:{idx}:{prod_mode}"}
+                            ])
+                        _gate_buttons.append([{"text": "↩️ Cancel", "callback_data": "ap:prod:cancel"}])
+                        try:
+                            await query.edit_message_text(
+                                text=(
+                                    f"⚠️ *Insufficient Venice Credits for {album_name}*\\n"
+                                    f"━━━━━━━━━━━━━━━━━━━━━━\\n"
+                                    f"• *Available Credits:* ${_b['total_usd']:.2f} USD (${_b['usd']:.2f} USD / {_b['diem']:.2f} DIEM)\\n"
+                                    f"• *Avg Full Album Cost:* ~${_b['avg_album']:.2f} USD (${_b['avg_tracks_total']:.2f} for 5 tracks + ${_b['avg_covers']:.2f} artwork)\\n"
+                                    f"• *Track Capacity:* Can only complete *{_b['completable']}/5 tracks* (*${_b['shortfall']:.2f} USD needed*)\\n\\n"
+                                    f"Top up credits at `venice.ai/settings/api` and tap *💳 Credit Added* to launch *{album_name}*, or tap *⏸ Pause*."
+                                ),
+                                parse_mode="Markdown",
+                                reply_markup={"inline_keyboard": _gate_buttons},
+                            )
+                        except Exception as _ge:
+                            logger.error("[Telegram] Failed to show credit gate: %s", _ge)
+                        return
+
+                try:
+                    if os.path.exists("/tmp/pending_album_selection.json"):
+                        os.remove("/tmp/pending_album_selection.json")
+                except Exception:
+                    pass
                 await query.answer(text=f"🚀 Starting {desc_mode}...")
 
                 # Record as a like in taste profile

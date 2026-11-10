@@ -311,11 +311,21 @@ def send_proposal_to_telegram(proposal: dict):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="SP2 Autonomous Weekly Evolution Engine")
+    parser = argparse.ArgumentParser(description="SP2 Autonomous Weekly Evolution & Venice Model Scout Engine")
     parser.add_argument("--test", action="store_true", help="Dry run without API execution")
     parser.add_argument("--force", action="store_true", help="Run analysis even if no failures")
     args = parser.parse_args()
 
+    # Step 1: Weekly Venice AI Multi-Modal Catalog Scout, Feedback Check & PR Gate
+    try:
+        import venice_model_scout
+        print("[recursive_sp2_update] Running weekly Venice AI model catalog & feedback scout...")
+        scout_res = venice_model_scout.run_weekly_scout(dry_run=args.test, open_pr=not args.test, notify_telegram=not args.test)
+        print(f"[recursive_sp2_update] Model scout status: {scout_res.get('status')}")
+    except Exception as e:
+        print(f"[recursive_sp2_update] Model scout error: {e}")
+
+    # Step 2: Weekly Failure Journal Self-Healing Reflection
     print(f"[recursive_sp2_update] Starting weekly self-healing reflection (Model: {PRIMARY_MODEL}, Budget: ${TOTAL_BUDGET_USD:.2f})...")
     res = analyze_weekly_failures(dry_run=args.test)
     print(f"[recursive_sp2_update] Finished with result: {res.get('action') or res.get('reason') or 'complete'}")

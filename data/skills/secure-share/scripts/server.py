@@ -35,10 +35,26 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(DIRECTORY), **kwargs)
 
+    def log_message(self, format, *args):
+        try:
+            if sys.stderr and not sys.stderr.closed:
+                sys.stderr.write("%s - - [%s] %s\n" % (self.address_string(), self.log_date_time_string(), format % args))
+        except Exception:
+            pass
+
+    def copyfile(self, source, outputfile):
+        try:
+            super().copyfile(source, outputfile)
+        except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError):
+            pass
+
+class ThreadedHTTPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
+    allow_reuse_address = True
+    daemon_threads = True
+
 def start_server():
-    socketserver.TCPServer.allow_reuse_address = True
-    with socketserver.TCPServer(("", PORT), Handler) as httpd:
-        print(f"Secure File Service running at http://localhost:{PORT}")
+    with ThreadedHTTPServer(("0.0.0.0", PORT), Handler) as httpd:
+        print(f"Secure File Service running at http://127.0.0.1:{PORT}")
         print(f"Serving directory: {DIRECTORY}")
         httpd.serve_forever()
 
@@ -52,7 +68,7 @@ def start_tunnel():
     
     print("Starting Cloudflare tunnel...")
     process = subprocess.Popen(
-        [str(exe_path), "tunnel", "--url", f"http://localhost:{PORT}"],
+        [str(exe_path), "tunnel", "--url", f"http://127.0.0.1:{PORT}"],
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
@@ -61,22 +77,29 @@ def start_tunnel():
     
     url_pattern = re.compile(r"https://[a-zA-Z0-9-]+\.trycloudflare\.com")
     
-    for line in process.stdout:
-        match = url_pattern.search(line)
-        if match:
-            public_url = match.group(0)
-            print(f"\n[PUBLIC URL] Internet URL established: {public_url}\n", flush=True)
-            PUBLIC_URL_FILE.write_text(public_url, encoding="utf-8")
-            if LEGACY_URL_FILE:
-                try:
-                    LEGACY_URL_FILE.parent.mkdir(parents=True, exist_ok=True)
-                    LEGACY_URL_FILE.write_text(public_url, encoding="utf-8")
-                except Exception:
-                    pass
-            break
+    try:
+        for line in process.stdout:
+            match = url_pattern.search(line)
+            if match:
+                public_url = match.group(0)
+                print(f"\n[PUBLIC URL] Internet URL established: {public_url}\n", flush=True)
+                PUBLIC_URL_FILE.write_text(public_url, encoding="utf-8")
+                if LEGACY_URL_FILE:
+                    try:
+                        LEGACY_URL_FILE.parent.mkdir(parents=True, exist_ok=True)
+                        LEGACY_URL_FILE.write_text(public_url, encoding="utf-8")
+                    except Exception:
+                        pass
+                break
 
-    for line in process.stdout:
-        pass
+        for line in process.stdout:
+            pass
+        process.wait()
+    finally:
+        try:
+            process.terminate()
+        except Exception:
+            pass
 
 if __name__ == "__main__":
     t_server = threading.Thread(target=start_server, daemon=True)

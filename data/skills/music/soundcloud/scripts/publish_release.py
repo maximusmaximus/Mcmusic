@@ -26,10 +26,14 @@ from datetime import datetime
 from pathlib import Path
 
 # ── Paths ──
-RELEASES_DIR = Path(os.environ.get("RELEASES_DIR", "/opt/data/music/releases"))
-ARTWORK_DIR = Path(os.environ.get("ARTWORK_DIR", "/opt/data/music/artwork/covers"))
-SC_SCRIPT = Path(os.environ.get("SC_SCRIPT",
-    "/opt/data/skills/music/soundcloud/scripts/soundcloud_api.py"))
+if sys.platform == "win32":
+    RELEASES_DIR = Path(os.environ.get("RELEASES_DIR", r"D:\music\releases"))
+    ARTWORK_DIR = Path(os.environ.get("ARTWORK_DIR", r"D:\music\artwork\covers"))
+    SC_SCRIPT = Path(os.environ.get("SC_SCRIPT", r"D:\sp2\data\skills\music\soundcloud\scripts\soundcloud_api.py"))
+else:
+    RELEASES_DIR = Path(os.environ.get("RELEASES_DIR", "/opt/data/music/releases"))
+    ARTWORK_DIR = Path(os.environ.get("ARTWORK_DIR", "/opt/data/music/artwork/covers"))
+    SC_SCRIPT = Path(os.environ.get("SC_SCRIPT", "/opt/data/skills/music/soundcloud/scripts/soundcloud_api.py"))
 def get_env_var(name, default=None):
     val = os.environ.get(name)
     if not val:
@@ -54,7 +58,7 @@ CHAT_ID = get_env_var("TELEGRAM_CHAT_ID", "8293122782")
 # Default metadata
 DEFAULT_LABEL = "VØIDRIDE"
 DEFAULT_GENRE = "Electronic"
-STYLIZE_SCRIPT = Path("/opt/data/scripts/stylize_title.py")
+STYLIZE_SCRIPT = Path(r"D:\sp2\data\scripts\stylize_title.py") if sys.platform == "win32" else Path("/opt/data/scripts/stylize_title.py")
 
 
 def stylize_title(title):
@@ -65,11 +69,22 @@ def stylize_title(title):
                 [sys.executable, str(STYLIZE_SCRIPT), title],
                 capture_output=True, text=True, timeout=10
             )
-            if res.returncode == 0 and '-> ' in res.stdout:
+            if res.returncode == 0 and res.stdout.strip():
                 return res.stdout.strip().split('-> ')[-1]
         except Exception:
             pass
-    return title
+    return title.upper() if title else ""
+
+
+def get_canonical_track_title(i, flac, manifest=None, tracks_meta=None):
+    """Return uppercase canonical track title from manifest or metadata, falling back to clean flac stem."""
+    if manifest and manifest.get("tracks") and i < len(manifest["tracks"]):
+        return str(manifest["tracks"][i]).strip().upper()
+    if tracks_meta and i < len(tracks_meta) and tracks_meta[i].get("title"):
+        return str(tracks_meta[i]["title"]).strip().upper()
+    import re
+    clean = re.sub(r'^\d+[\s_\-]*', '', flac.stem.replace("_MASTER", "").replace("_", " "))
+    return clean.strip().upper()
 
 
 def log(msg):
@@ -209,6 +224,156 @@ def build_tags(track_meta, manifest):
     return list(tags)[:10]
 
 
+def ensure_uploadable_artwork(artwork_path):
+    """Ensure artwork is <= 9.5MB for SoundCloud/Telegram upload. Auto-converts large PNG to high-quality JPG."""
+    if not artwork_path or not Path(artwork_path).exists():
+        return None
+    p = Path(artwork_path)
+    # Check if a sibling .jpg already exists under 9.5MB
+    sibling_jpg = p.with_suffix(".jpg")
+    if sibling_jpg.exists() and sibling_jpg.stat().st_size < 9.5 * 1024 * 1024:
+        return sibling_jpg
+    if p.stat().st_size < 9.5 * 1024 * 1024 and p.suffix.lower() in [".jpg", ".jpeg"]:
+        return p
+    # Convert/compress to JPG
+    try:
+        from PIL import Image
+        out_jpg = p.with_suffix(".jpg")
+        im = Image.open(p).convert("RGB")
+        im.save(out_jpg, "JPEG", quality=95, optimize=True)
+        if out_jpg.stat().st_size < 9.5 * 1024 * 1024:
+            return out_jpg
+    except Exception as e:
+        log(f"Warning: could not auto-compress artwork {p}: {e}")
+    if p.stat().st_size < 10 * 1024 * 1024:
+        return p
+    return None
+
+
+def ensure_release_waveforms(release_name, manifest=None, flacs=None):
+    """Ensure release_dir/waveforms exists and contains waveform banners for all tracks and album."""
+    release_dir = RELEASES_DIR / release_name
+    if not release_dir.is_dir():
+        return False
+
+    waves_dir = release_dir / "waveforms"
+    covers_dir = release_dir / "covers"
+    waves_dir.mkdir(parents=True, exist_ok=True)
+    covers_dir.mkdir(parents=True, exist_ok=True)
+
+    master_waves_dir = Path("/opt/data/music/artwork/waveforms")
+    if not master_waves_dir.exists() and Path("D:/music/artwork/waveforms").exists():
+        master_waves_dir = Path("D:/music/artwork/waveforms")
+    master_waves_dir.mkdir(parents=True, exist_ok=True)
+
+    # Album waveform
+    clean_alb = release_name.replace("-", "_").upper()
+    alb_wave = waves_dir / "album_waveform.png"
+    if not alb_wave.exists() or alb_wave.stat().st_size < 1000:
+        cand = next((p for p in [
+            covers_dir / "album_waveform.png",
+            covers_dir / f"{clean_alb}_waveform.png",
+            master_waves_dir / f"{clean_alb}_waveform.png",
+            master_waves_dir / "album_waveform.png",
+        ] if p.exists() and p.stat().st_size > 1000), None)
+        if cand:
+            import shutil
+            shutil.copy2(cand, alb_wave)
+            shutil.copy2(cand, waves_dir / f"{clean_alb}_waveform.png")
+            shutil.copy2(cand, covers_dir / "album_waveform.png")
+        else:
+            alb_art = find_artwork(release_name)
+            if alb_art:
+                log(f"Auto-generating missing album waveform banner for {release_name}...")
+                _gen_waveform_banner(alb_art, clean_alb, [waves_dir, covers_dir, master_waves_dir])
+
+    # Track waveforms
+    if flacs:
+        for idx, flac in enumerate(flacs, 1):
+            title = get_canonical_track_title(idx - 1, flac, manifest)
+            clean_title = "".join(c if c.isalnum() or c in " -_" else "" for c in title).strip().replace(" ", "_").upper()
+            tw = waves_dir / f"{idx:02d}_{clean_title}_waveform.png"
+            if not tw.exists() or tw.stat().st_size < 1000:
+                cand = next((p for p in [
+                    covers_dir / f"{idx:02d}_{clean_title}_waveform.png",
+                    covers_dir / f"{clean_title}_waveform.png",
+                    master_waves_dir / f"{idx:02d}_{clean_title}_waveform.png",
+                    master_waves_dir / f"{clean_title}_waveform.png",
+                ] if p.exists() and p.stat().st_size > 1000), None)
+                if cand:
+                    import shutil
+                    shutil.copy2(cand, tw)
+                    shutil.copy2(cand, waves_dir / f"{clean_title}_waveform.png")
+                    shutil.copy2(cand, covers_dir / f"{idx:02d}_{clean_title}_waveform.png")
+                else:
+                    tr_art = find_artwork(release_name, title)
+                    if tr_art:
+                        log(f"Auto-generating missing waveform banner for Track {idx} ({title})...")
+                        _gen_waveform_banner(tr_art, f"{idx:02d}_{clean_title}", [waves_dir, covers_dir, master_waves_dir])
+    return True
+
+
+def _gen_waveform_banner(src_img, title, out_dirs):
+    """Generate 1240x400 waveform banner using gen_waveform_art or fallback crop."""
+    src_p = Path(src_img)
+    if not src_p.exists():
+        return False
+    wave_script = Path("/opt/data/skills/waveform-artwork/waveform-artwork/scripts/gen_waveform_art.py")
+    if not wave_script.exists():
+        for cand in [
+            Path("D:/sp2/data/skills/waveform-artwork/waveform-artwork/scripts/gen_waveform_art.py"),
+            Path("D:/hermes-music/data/skills/waveform-artwork/waveform-artwork/scripts/gen_waveform_art.py"),
+        ]:
+            if cand.exists():
+                wave_script = cand
+                break
+    generated = False
+    if wave_script.exists():
+        try:
+            r = subprocess.run([
+                sys.executable, str(wave_script),
+                "--image", str(src_p), "--title", title,
+                "--output-dir", str(out_dirs[0])
+            ], capture_output=True, text=True, timeout=120)
+            if r.returncode == 0:
+                generated = True
+        except Exception as e:
+            log(f"Waveform generator error: {e}")
+
+    # Fallback to PIL crop if script failed
+    if not generated:
+        try:
+            from PIL import Image
+            import io
+            with Image.open(src_p) as img:
+                w, h = img.size
+                target_w, target_h = 1240, 400
+                target_ratio = target_w / target_h
+                new_h = int(w / target_ratio)
+                center_offset = int(h * 0.1)
+                top = (h - new_h) // 2 + center_offset
+                top = min(top, max(0, h - new_h))
+                cropped = img.crop((0, max(0, top), w, min(h, top + new_h)))
+                final = cropped.resize((target_w, target_h), Image.LANCZOS)
+                for od in out_dirs:
+                    od.mkdir(parents=True, exist_ok=True)
+                    final.save(od / f"{title}_waveform.png", "PNG")
+                return True
+        except Exception as fe:
+            log(f"Fallback crop error: {fe}")
+            return False
+
+    src_res = out_dirs[0] / f"{title}_waveform.png"
+    if src_res.exists():
+        import shutil
+        for od in out_dirs[1:]:
+            od.mkdir(parents=True, exist_ok=True)
+            try: shutil.copy2(src_res, od / f"{title}_waveform.png")
+            except Exception: pass
+        return True
+    return False
+
+
 def sc_upload(flac_path, title, tags, genre, artwork=None, label=DEFAULT_LABEL):
     """Upload a single track to SoundCloud. Returns dict {"track_id": id, "url": permalink_url, "title": title} or None."""
     cmd = [
@@ -221,13 +386,15 @@ def sc_upload(flac_path, title, tags, genre, artwork=None, label=DEFAULT_LABEL):
         "--downloadable",
         "--label", label,
     ]
-    if artwork and artwork.exists():
-        cmd.extend(["--artwork", str(artwork)])
+    valid_art = ensure_uploadable_artwork(artwork)
+    if valid_art:
+        cmd.extend(["--artwork", str(valid_art)])
 
     log(f"  Uploading: {title}")
     r = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
     if r.returncode != 0:
-        log(f"  ✗ Upload failed: {r.stderr[-200:]}")
+        err_detail = (r.stdout.strip() + " " + r.stderr.strip()).strip()[-300:]
+        log(f"  ✗ Upload failed: {err_detail}")
         return None
     try:
         result = json.loads(r.stdout)
@@ -251,13 +418,15 @@ def sc_create_playlist(title, track_ids, artwork=None, description="", label=DEF
     ]
     if description:
         cmd.extend(["--description", description])
-    if artwork and artwork.exists() and artwork.stat().st_size < 10 * 1024 * 1024:
-        cmd.extend(["--artwork", str(artwork)])
+    valid_art = ensure_uploadable_artwork(artwork)
+    if valid_art:
+        cmd.extend(["--artwork", str(valid_art)])
 
     log(f"  Creating playlist: {title} ({len(track_ids)} tracks)")
     r = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
     if r.returncode != 0:
-        log(f"  ✗ Playlist creation failed: {r.stderr[-200:]}")
+        err_detail = (r.stdout.strip() + " " + r.stderr.strip()).strip()[-300:]
+        log(f"  ✗ Playlist creation failed: {err_detail}")
         return None, None
     try:
         result = json.loads(r.stdout)
@@ -309,8 +478,7 @@ def review_gate(release_name, manifest, tracks_meta, flacs, dry_run=False):
 
     track_lines = []
     for i, flac in enumerate(flacs):
-        import re
-        title = re.sub(r'^\d+[\s_\-]*', '', flac.stem.replace("_MASTER", "").replace("_", " "))
+        title = get_canonical_track_title(i, flac, manifest, tracks_meta)
         meta = tracks_meta[i] if i < len(tracks_meta) else {}
         bpm = meta.get("bpm", "?")
         key = meta.get("key", "?")
@@ -323,12 +491,18 @@ def review_gate(release_name, manifest, tracks_meta, flacs, dry_run=False):
     artwork = find_artwork(release_name)
     art_status = "✅ Found" if artwork else "⚠️ Missing"
 
+    ensure_release_waveforms(release_name, manifest, flacs)
+    waves_dir = RELEASES_DIR / release_name / "waveforms"
+    waves_count = len(list(waves_dir.glob("*_waveform.png"))) if waves_dir.exists() else 0
+    wave_status = f"✅ {waves_count} banners ready" if waves_count else "⚠️ Missing"
+
     msg = (
         f"📦 <b>Ready to publish: {html.escape(album)}</b>\n\n"
         f"🎵 <b>{track_count} tracks:</b>\n"
         + "\n".join(track_lines) + "\n\n"
         f"🏷️ <b>Tags:</b> {html.escape(', '.join(tags_sample[:5]))}...\n"
         f"🎨 <b>Cover art:</b> {art_status}\n"
+        f"🌊 <b>Waveforms:</b> {wave_status}\n"
         f"🔒 <b>Sharing:</b> public\n"
         f"📛 <b>Label:</b> {html.escape(DEFAULT_LABEL)}"
     )
@@ -341,7 +515,10 @@ def review_gate(release_name, manifest, tracks_meta, flacs, dry_run=False):
     ]
 
     if dry_run:
-        print(msg)
+        try:
+            print(msg)
+        except UnicodeEncodeError:
+            print(msg.encode("ascii", errors="replace").decode("ascii"))
         print(f"\nButtons: {json.dumps(buttons, indent=2)}")
         return True
 
@@ -371,16 +548,56 @@ def preview_gate(release_name, flacs):
     )
 
 
+def cleanup_pipeline_state(release_name):
+    """Purge pipeline state if it matches this published album to avoid rogue watchdog resume loops."""
+    rel_clean = str(release_name).lower().replace(" ", "-").replace("_", "-")
+    for sp in ["/opt/data/music/pipeline_state.json", "D:/music/pipeline_state.json"]:
+        if os.path.exists(sp):
+            try:
+                with open(sp, "r", encoding="utf-8") as sf:
+                    sdata = json.load(sf)
+                st_album = sdata.get("proposal", {}).get("album", "").lower().replace(" ", "-").replace("_", "-")
+                if not st_album or st_album == rel_clean:
+                    os.remove(sp)
+                    log(f"Cleaned up pipeline state at {sp} for published release {release_name}")
+            except Exception as e:
+                log(f"Warning checking/cleaning pipeline state at {sp}: {e}")
+
+
+def _fetch_existing_sc_tracks():
+    """Fetch recent tracks on SoundCloud so retries reuse already-uploaded tracks instead of duplicating."""
+    existing = {}
+    try:
+        r = subprocess.run(
+            [sys.executable, "-c",
+             f"import sys, json; sys.path.insert(0, '{SC_SCRIPT.parent}'); import soundcloud_api as sc; s, tr = sc.api_request('GET', '/me/tracks?limit=30'); print(json.dumps(tr if isinstance(tr, list) else []))"],
+            capture_output=True, text=True, timeout=20
+        )
+        if r.returncode == 0 and r.stdout.strip():
+            for t in json.loads(r.stdout.strip()):
+                t_title = (t.get("title") or "").strip().upper()
+                if t_title and t.get("id") and t_title not in existing:
+                    existing[t_title] = {
+                        "track_id": t["id"],
+                        "url": t.get("permalink_url") or t.get("permalink", ""),
+                        "title": t.get("title") or t_title,
+                    }
+    except Exception as e:
+        log(f"  Warning checking existing SC tracks: {e}")
+    return existing
+
+
 def publish(release_name, manifest, tracks_meta, flacs, force=False):
     """Execute the full publish: tag files, upload tracks, create playlist, add artwork."""
     album_plain = manifest.get("album", release_name.upper()).replace("-", " ")
-    album = stylize_title(album_plain)
+    album = album_plain.upper()
 
     # ── Duplicate guard ──
     if not force and manifest.get("status") == "published" and manifest.get("soundcloud", {}).get("track_ids"):
         sc = manifest["soundcloud"]
         log(f"⚠ {album_plain} is already published (playlist {sc.get('playlist_id')}) — use --force to re-publish")
         send_telegram(f"⚠ <b>{html.escape(album_plain)}</b> is already published on SoundCloud.")
+        cleanup_pipeline_state(release_name)
         return False
 
     log(f"Publishing {album} ({len(flacs)} tracks)...")
@@ -391,7 +608,10 @@ def publish(release_name, manifest, tracks_meta, flacs, force=False):
         f"• Tagging metadata & synchronizing cover art..."
     )
 
-    # 0. Ensure all files are tagged with metadata + cover art
+    # 0. Ensure waveform banners are ready
+    ensure_release_waveforms(release_name, manifest, flacs)
+
+    # 0b. Ensure all files are tagged with metadata + cover art
     tag_script = Path("/opt/data/skills/delivery-receipt/delivery-receipt/scripts/tag_metadata.py")
     if tag_script.exists():
         log("Tagging metadata + cover art...")
@@ -405,16 +625,22 @@ def publish(release_name, manifest, tracks_meta, flacs, force=False):
         else:
             log(f"  ⚠ Tagging failed (non-fatal): {result.stderr[-100:]}")
 
-    # 1. Upload all tracks
+    # 1. Upload all tracks (reusing any already-uploaded track from a prior attempt)
+    existing_sc_tracks = _fetch_existing_sc_tracks()
     uploaded_tracks = []
     for i, flac in enumerate(flacs):
-        import re
-        title_plain = re.sub(r'^\d+[\s_\-]*', '', flac.stem.replace("_MASTER", "").replace("_", " "))
-        title = stylize_title(title_plain)
+        title = get_canonical_track_title(i, flac, manifest, tracks_meta)
         meta = tracks_meta[i] if i < len(tracks_meta) else {}
         tags = build_tags(meta, manifest)
         genre = meta.get("genre", DEFAULT_GENRE).split("/")[0].strip()
-        artwork = find_artwork(release_name, title_plain)
+        artwork = find_artwork(release_name, title)
+
+        if title.upper() in existing_sc_tracks:
+            track_res = existing_sc_tracks[title.upper()]
+            log(f"  ✓ Reusing already-uploaded track: {title} → ID {track_res['track_id']}")
+            uploaded_tracks.append(track_res)
+            send_telegram(f"✅ <i>[{i+1}/{len(flacs)}]</i> <b>{html.escape(title)}</b> verified on SoundCloud!")
+            continue
 
         send_telegram(f"📤 <i>[{i+1}/{len(flacs)}]</i> Uploading <b>{html.escape(title)}</b> (24-bit studio FLAC)...")
 
@@ -457,13 +683,17 @@ def publish(release_name, manifest, tracks_meta, flacs, force=False):
             )
             try:
                 status = json.loads(r.stdout)
+                st_val = status.get("state")
+                dur_sec = status.get("duration_seconds") or 0
                 if not status.get("success", True) or "404" in str(status.get("error", "")):
                     flagged_tracks.append((tid, "404 Not Found / Content ID Removal"))
                     all_ready = False
-                elif status.get("state") == "failed":
+                elif st_val == "failed":
                     flagged_tracks.append((tid, "Transcode Failed"))
                     all_ready = False
-                elif status.get("state") != "finished":
+                elif st_val == "finished" or (st_val == "unknown" and dur_sec > 0):
+                    pass
+                else:
                     all_ready = False
             except (json.JSONDecodeError, KeyError):
                 all_ready = False
@@ -552,6 +782,7 @@ def publish(release_name, manifest, tracks_meta, flacs, force=False):
     manifest_path = RELEASES_DIR / release_name / "release.json"
     with open(manifest_path, "w") as f:
         json.dump(manifest, f, indent=2)
+    cleanup_pipeline_state(release_name)
 
     # 6. Comprehensive, clear publication receipt
     uploaded = len(uploaded_tracks)
@@ -600,13 +831,11 @@ def repair_track(release_name, manifest, tracks_meta, flacs, track_idx):
 
     i = track_idx - 1
     flac = flacs[i]
-    import re
-    title_plain = re.sub(r'^\d+[\s_\-]*', '', flac.stem.replace("_MASTER", "").replace("_", " "))
-    title = stylize_title(title_plain)
+    title = get_canonical_track_title(i, flac, manifest, tracks_meta)
     meta = tracks_meta[i] if i < len(tracks_meta) else {}
     tags = build_tags(meta, manifest)
     genre = meta.get("genre", DEFAULT_GENRE).split("/")[0].strip()
-    artwork = find_artwork(release_name, title_plain)
+    artwork = find_artwork(release_name, title)
 
     send_telegram(f"🔧 <b>Repairing Track {track_idx}/{len(flacs)}:</b> Uploading <b>{html.escape(title)}</b> (24-bit studio FLAC)...")
     track_res = sc_upload(flac, title, tags, genre, artwork)
@@ -676,6 +905,7 @@ def repair_track(release_name, manifest, tracks_meta, flacs, track_idx):
     manifest_path = RELEASES_DIR / release_name / "release.json"
     with open(manifest_path, "w") as f:
         json.dump(manifest, f, indent=2)
+    cleanup_pipeline_state(release_name)
 
     send_telegram(f"✅ <b>Track {track_idx} ({html.escape(title)}) successfully repaired and synced to playlist!</b>")
     return True

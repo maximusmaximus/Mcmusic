@@ -1,0 +1,44 @@
+name: VØIDRIDE Pipeline CI & E2E
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+  schedule:
+    # Weekly Sunday verification pass at 09:15 UTC
+    - cron: "15 9 * * 0"
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci-and-e2e:
+    name: Static Contracts, Hermetic E2E & Mastering QC
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install FFmpeg & Python test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg
+          python -m pip install --upgrade pip
+          python -m pip install pytest pillow
+
+      - name: Validate Model Registry Schema
+        run: python data/scripts/model_registry.py
+
+      - name: Run Tier 1 (Static/AST/Secret/Registry) + Tier 2 (Hermetic E2E + Audio Mastering) + Tier 3 (Live Smoke if Secret Set)
+        env:
+          VENICE_API_KEY: ${{ secrets.VENICE_API_KEY }}
+        run: pytest -v tests/

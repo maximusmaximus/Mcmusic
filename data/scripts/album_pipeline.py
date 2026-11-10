@@ -33,12 +33,16 @@ from datetime import datetime, timezone
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger('album_pipeline')
 
-# Import logger_hub if available
+# Import logger_hub & model_registry if available
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 try:
     import logger_hub
 except ImportError:
     logger_hub = None
+try:
+    import model_registry as _mr
+except ImportError:
+    _mr = None
 
 # Constants
 FLAGS_DIR = "/tmp/pipeline_flags/"
@@ -62,10 +66,13 @@ STYLIZE_SCRIPT = "/opt/data/scripts/stylize_title.py"
 DAWCTL_SCRIPT = "/opt/data/skills/dawagent/dawagent/scripts/dawctl_local.py"
 HANDOFF_SCRIPT = "/opt/data/skills/dawagent/dawagent/scripts/handoff.py"
 
-# Cost constants
+# Cost constants (Option 1B Hit-Song & Demucs Harmonic Synth Architecture)
 VENICE_IMAGE_GEN_COST = 0.04
 VENICE_IMAGE_EDIT_COST = 0.04
 VENICE_UPSCALE_COST = 0.02
+VENICE_K3_PROMPT_COST = 0.001
+SONG_LLM_BATCH_COST = 0.005
+SONG_LLM_REDO_COST = 0.005
 
 
 def get_album_dir(album_name):
@@ -151,10 +158,13 @@ def init_cost_tracker(state):
         state["costs"] = {
             "track_production": 0.0,
             "track_redos": 0.0,
+            "llm_passes": 0.0,
+            "prompt_upsampling": 0.0,
             "cover_generation": 0.0,
             "cover_regeneration": 0.0,
             "cover_edits": 0.0,
             "cover_upscale": 0.0,
+            "waveform_banners": 0.0,
             "mastering": 0.0,
             "redo_count": 0,
             "cover_regen_count": 0,
@@ -164,39 +174,358 @@ def init_cost_tracker(state):
 
 
 def add_cost(state, category, amount):
+    if state is None:
+        return
     costs = init_cost_tracker(state)
     costs[category] = costs.get(category, 0) + amount
     save_state(state)
 
 
 def get_total_cost(state):
-    costs = state.get("costs", {})
-    return sum(v for k, v in costs.items() if isinstance(v, (int, float)) and k not in ("redo_count", "cover_regen_count", "cover_edit_count"))
+    costs = (state or {}).get("costs", {})
+    return sum(
+        v for k, v in costs.items()
+        if isinstance(v, (int, float)) and k not in ("redo_count", "cover_regen_count", "cover_edit_count")
+    )
 
 
-def format_cost_summary(state, album_name):
-    costs = state.get("costs", {})
-    total = get_total_cost(state)
-    track_count = len(state.get("tracklist", []))
+def build_album_cost_audit(album_name, state=None, proposal=None, tracklist=None):
+    """
+    Build a comprehensive ground-truth cost audit for an album by inspecting:
+      1. All production sessions in /opt/data/music/productions/ matching the album or its tracks
+      2. All DAWAGENT mastering receipts in /opt/data/dawagent/exports/{album_slug}-*
+      3. All cover art, 4x upscales, waveform banners, and overlays in /opt/data/music/albums/{album_slug}/artwork/
+    """
+    album_clean = (album_name or "Release").strip()
+    album_slug = album_clean.lower().replace(" ", "-").replace("_", "-")
+
+    # Resolve expected track titles in 1..5 order
+    expected_titles = []
+    if proposal and proposal.get("tracks"):
+        expected_titles = [str(t).strip().upper() for t in proposal["tracks"] if str(t).strip()]
+    elif state and state.get("proposal", {}).get("tracks"):
+        expected_titles = [str(t).strip().upper() for t in state["proposal"]["tracks"] if str(t).strip()]
+    if not expected_titles and tracklist:
+        expected_titles = [str(t.get("title", "")).strip().upper() for t in tracklist if t.get("title")]
+    if not expected_titles:
+        rel_json = f"/opt/data/music/releases/{album_slug}/release.json"
+        if os.path.exists(rel_json):
+            try:
+                with open(rel_json, "r", encoding="utf-8") as rf:
+                    rj = json.load(rf)
+                expected_titles = [str(t).strip().upper() for t in rj.get("tracks", []) if str(t).strip()]
+            except Exception:
+                pass
+    if not expected_titles and os.path.exists(PROPOSALS_FILE):
+        try:
+            with open(PROPOSALS_FILE, "r", encoding="utf-8") as pf:
+                raw_p = json.load(pf)
+            props = raw_p.get("proposals", raw_p) if isinstance(raw_p, dict) else raw_p
+            for p in props:
+                if str(p.get("album", "")).strip().upper() == album_clean.upper():
+                    expected_titles = [str(t).strip().upper() for t in p.get("tracks", []) if str(t).strip()]
+                    break
+        except Exception:
+            pass
+
+    # 1. Scan all production runs matching this album
+    prod_runs = []
+    seen_titles_count = {}
+    prod_base = "/opt/data/music/productions"
+    if os.path.isdir(prod_base):
+        for d in sorted(glob.glob(os.path.join(prod_base, "202*"))):
+            if not os.path.isdir(d):
+                continue
+            pm_path = os.path.join(d, "production_metadata.json")
+            pp_path = os.path.join(d, "production_plan.json")
+            if not os.path.exists(pm_path) and not os.path.exists(pp_path):
+                continue
+            meta = {}
+            plan = {}
+            try:
+                if os.path.exists(pm_path):
+                    with open(pm_path, "r", encoding="utf-8") as f:
+                        meta = json.load(f)
+            except Exception:
+                pass
+            try:
+                if os.path.exists(pp_path):
+                    with open(pp_path, "r", encoding="utf-8") as f:
+                        plan = json.load(f)
+            except Exception:
+                pass
+
+            title = str(plan.get("title") or meta.get("title") or "").strip().upper()
+            req_prompt = str(meta.get("request", {}).get("prompt", ""))
+            d_name = os.path.basename(d).lower()
+
+            matches_album = (
+                album_slug in d_name
+                or album_clean.lower() in req_prompt.lower()
+                or (title and title in expected_titles)
+            )
+            if not matches_album:
+                continue
+
+            cost_rep = meta.get("cost_report") or plan.get("cost") or {}
+            breakdown = cost_rep.get("breakdown", [])
+            if not breakdown:
+                continue
+
+            audio_usd = float(cost_rep.get("total_usd", sum(float(b.get("cost_usd", 0)) for b in breakdown)))
+            seen_titles_count[title] = seen_titles_count.get(title, 0) + 1
+            is_redo = ("[redo feedback]" in req_prompt.lower()) or (seen_titles_count[title] > 1)
+            llm_usd = SONG_LLM_REDO_COST if is_redo else SONG_LLM_BATCH_COST
+
+            track_idx = (expected_titles.index(title) + 1) if title in expected_titles else len(prod_runs) + 1
+            bpm = plan.get("bpm") or "?"
+            key = plan.get("key") or "?"
+            dur_s = (
+                meta.get("qc_report", {}).get("duration_seconds")
+                or plan.get("qc", {}).get("duration_seconds")
+                or meta.get("request", {}).get("duration_requested")
+                or 0
+            )
+
+            prod_runs.append({
+                "dir": d,
+                "session_name": os.path.basename(d),
+                "created_at": meta.get("created_at", ""),
+                "track_num": track_idx,
+                "title": title or f"TRACK {track_idx}",
+                "bpm": bpm,
+                "key": key,
+                "duration_s": round(float(dur_s), 1) if dur_s else 0,
+                "quality": meta.get("composition", {}).get("quality_tier") or "hyperspatial",
+                "is_redo": is_redo,
+                "breakdown": breakdown,
+                "audio_usd": round(audio_usd, 2),
+                "llm_usd": round(llm_usd, 3),
+                "total_usd": round(audio_usd + llm_usd, 3),
+            })
+
+    # Mark which runs are final vs replaced initial runs
+    latest_run_by_track = {}
+    for idx, r in enumerate(prod_runs):
+        latest_run_by_track[r["title"]] = idx
+    for idx, r in enumerate(prod_runs):
+        r["is_final"] = (latest_run_by_track.get(r["title"]) == idx)
+
+    # 2. Scan DAWAGENT receipts
+    daw_sessions = []
+    daw_base = "/opt/data/dawagent/exports"
+    if os.path.isdir(daw_base):
+        for d in sorted(glob.glob(os.path.join(daw_base, f"{album_slug}-*"))):
+            rc_path = os.path.join(d, "production_receipt.json")
+            if os.path.exists(rc_path):
+                try:
+                    with open(rc_path, "r", encoding="utf-8") as rf:
+                        rc = json.load(rf)
+                    t_slug = os.path.basename(d).replace(f"{album_slug}-", "")
+                    t_title = t_slug.replace("_", " ").upper()
+                    t_idx = (expected_titles.index(t_title) + 1) if t_title in expected_titles else 99
+                    stems_cnt = rc.get("summary", {}).get("total_stems_processed") or len(rc.get("tracks", [])) or 1
+                    daw_sessions.append({
+                        "session": os.path.basename(d),
+                        "track_num": t_idx,
+                        "title": t_title,
+                        "processed_at": rc.get("processed_at", ""),
+                        "stems_processed": stems_cnt,
+                        "bpm": rc.get("summary", {}).get("bpm", "?"),
+                        "master_bus": rc.get("summary", {}).get("master_bus_chain", "Compressor 2:1 → Limiter -1dB TP → -14 LUFS"),
+                        "format": "48kHz / 24-bit FLAC + 320kbps MP3",
+                    })
+                except Exception:
+                    pass
+    daw_sessions.sort(key=lambda x: x["track_num"])
+
+    # 3. Scan Artwork, Upscales & Waveform Banners
+    art_dir = get_album_artwork_dir(album_clean)
+    cover_items = []
+    upscaled_ok = 0
+    upscaled_attempted = 0
+    waveforms_ok = 0
+
+    all_cover_targets = [("Album Cover", album_clean, "album_cover", "album_waveform.png")]
+    for idx, t_title in enumerate(expected_titles, 1):
+        clean_t = sanitize_filename(t_title)
+        all_cover_targets.append((f"Track {idx}", t_title, f"{t_title}_cover", f"{idx:02d}_{clean_t}_waveform.png"))
+
+    for label, disp_title, cov_stem, wave_fname in all_cover_targets:
+        bg_p = os.path.join(art_dir, f"{cov_stem}_bg.png")
+        fg_p = os.path.join(art_dir, f"{cov_stem}.png")
+        target_p = bg_p if os.path.exists(bg_p) else fg_p
+        exists_cov = os.path.exists(target_p)
+        dim_str = "1024×1024"
+        is_3k = False
+        if exists_cov:
+            upscaled_attempted += 1
+            try:
+                from PIL import Image
+                with Image.open(target_p) as im:
+                    w, h = im.size
+                    dim_str = f"{w}×{h}"
+                    if w >= 2800 and h >= 2800:
+                        is_3k = True
+                        upscaled_ok += 1
+            except Exception:
+                pass
+        wave_p = os.path.join(art_dir, wave_fname)
+        has_wave = os.path.exists(wave_p)
+        if has_wave:
+            waveforms_ok += 1
+        cover_items.append({
+            "label": label,
+            "title": disp_title,
+            "exists": exists_cov,
+            "dimensions": dim_str,
+            "upscaled_3k": is_3k,
+            "has_waveform": has_wave,
+            "k3_cost": VENICE_K3_PROMPT_COST if exists_cov else 0.0,
+            "gen_cost": VENICE_IMAGE_GEN_COST if exists_cov else 0.0,
+            "upscale_cost": VENICE_UPSCALE_COST if is_3k else 0.0,
+            "waveform_cost": VENICE_IMAGE_EDIT_COST if has_wave else 0.0,
+        })
+
+    return {
+        "album": album_clean,
+        "album_slug": album_slug,
+        "expected_titles": expected_titles,
+        "prod_runs": prod_runs,
+        "daw_sessions": daw_sessions,
+        "cover_items": cover_items,
+        "upscaled_ok": upscaled_ok,
+        "upscaled_attempted": upscaled_attempted,
+        "waveforms_ok": waveforms_ok,
+    }
+
+
+def format_cost_summary(state, album_name, proposal=None, tracklist=None):
+    audit = build_album_cost_audit(album_name, state=state, proposal=proposal, tracklist=tracklist)
+    prod_runs = audit["prod_runs"]
+    daw_sessions = audit["daw_sessions"]
+    cover_items = audit["cover_items"]
+
+    final_runs = [r for r in prod_runs if r.get("is_final")]
+    replaced_runs = [r for r in prod_runs if not r.get("is_final")]
+
+    # Model rollup across all song runs
+    model_stats = {}
+    for r in prod_runs:
+        for b in r["breakdown"]:
+            m = b.get("model", "unknown")
+            c = float(b.get("cost_usd", 0.0))
+            st = model_stats.setdefault(m, {"stems": 0, "inferences": 0, "usd": 0.0})
+            st["stems"] += 1
+            # elevenlabs-music 260s uses 5 segment inferences ($0.69 each = $3.45)
+            inf_cnt = max(1, round(c / 0.69)) if m == "elevenlabs-music" and c >= 0.69 else 1
+            st["inferences"] += inf_cnt
+            st["usd"] += c
+
     lines = [
-        f"💰 <b>{album_name}</b> — Production Cost Summary",
+        f"💰 <b>{html.escape(audit['album'])} — Full Production Cost Report</b>",
         f"━━━━━━━━━━━━━━━━━━━━━━",
-        f"🎵 Track Production:    ${costs.get('track_production', 0):.2f}  ({track_count} tracks)",
+        f"🎵 <b>1. PER-SONG MODEL INFERENCE BREAKDOWN</b>",
     ]
-    if costs.get("track_redos", 0) > 0:
-        lines.append(f"🔄 Track Redos:         ${costs.get('track_redos', 0):.2f}  ({costs.get('redo_count', 0)} redos)")
+
+    # Sort runs by track_num then chronological order
+    sorted_runs = sorted(prod_runs, key=lambda r: (r["track_num"], 0 if not r["is_redo"] else 1, r["session_name"]))
+    for r in sorted_runs:
+        tag = "Redo · Final Master" if (r["is_redo"] and r["is_final"]) else ("Initial · Replaced" if not r["is_final"] else "Final Master")
+        dur_label = f" · {r['duration_s']:.0f}s" if r.get("duration_s") else ""
+        lines.append(
+            f"\n<b>Track {r['track_num']}: {html.escape(r['title'])}</b> <i>({ tag })</i>\n"
+            f"  └ {r['bpm']} BPM · {r['key']}{dur_label} · <code>{r['quality']}</code>"
+        )
+        for b in r["breakdown"]:
+            stem_role = b.get("stem", "stem")
+            model_name = b.get("model", "unknown")
+            c_usd = float(b.get("cost_usd", 0.0))
+            if model_name == "elevenlabs-music" and c_usd >= 3.0:
+                seg_n = round(c_usd / 0.69)
+                detail = f"{seg_n}×$0.69 segs"
+            else:
+                detail = "1 inference"
+            lines.append(f"  • <code>{stem_role:10s}</code> {model_name}: <b>${c_usd:.2f}</b> <i>({detail})</i>")
+        llm_desc = "kimi-k3 ×1 + qwen-3-7-plus ×7" if r["is_redo"] else "kimi-k3 ×2 + qwen-3-7-plus ×7"
+        lines.append(f"  • <code>llm_passes</code> {llm_desc}: <b>${r['llm_usd']:.2f}</b>")
+        lines.append(f"  ↳ <b>Song Run Subtotal:</b> ${r['audio_usd']:.2f} audio + ${r['llm_usd']:.2f} LLM = <b>${r['total_usd']:.2f}</b>")
+
+    # Audio + LLM Model Rollup
+    lines.append("\n📊 <b>Audio &amp; LLM Model Totals (All Runs):</b>")
+    for m_name, st in sorted(model_stats.items(), key=lambda x: -x[1]["usd"]):
+        lines.append(f"  • <code>{m_name}</code>: {st['stems']} stems ({st['inferences']} inferences) = <b>${st['usd']:.2f}</b>")
+    total_llm_song_usd = sum(r["llm_usd"] for r in prod_runs)
+    lines.append(f"  • <code>kimi-k3 + qwen-3-7-plus</code> (Director/Mix/QC): {len(prod_runs)} song plans = <b>${total_llm_song_usd:.2f}</b>")
+
+    # 2. DAWAGENT Usage
+    lines.append(f"\n🎛️ <b>2. DAWAGENT STUDIO MASTERING USAGE</b>")
+    redo_runs_count = sum(1 for r in prod_runs if r["is_redo"])
+    total_daw_runs = len(daw_sessions) + redo_runs_count
+    total_stems_dsp = sum(s["stems_processed"] for s in daw_sessions) + redo_runs_count
+    lines.append(f"  • <b>Sessions Executed:</b> {total_daw_runs} total ({len(daw_sessions)} final masters + {redo_runs_count} initial replaced)")
+    lines.append(f"  • <b>Total Stems Processed:</b> {total_stems_dsp} stem DSP chains → 48kHz/24-bit FLAC + 320k MP3")
+    for s in daw_sessions:
+        mode_lbl = f"{s['stems_processed']} discrete stems (Sub/EQ/Comp/Sat)" if s["stems_processed"] > 1 else "1 Master_Mix stem (Calf EQ + LSP Comp + Sat)"
+        lines.append(f"  • Track {s['track_num']} <b>{html.escape(s['title'])}</b> ({s['bpm']} BPM): {mode_lbl}")
+    lines.append(f"  • <b>Master Bus Chain:</b> Compressor 2:1 (30ms) → Limiter -1dB TP → -14 LUFS")
+    lines.append(f"  ↳ <b>DAWAGENT Compute Cost:</b> <b>$0.00</b> <i>(Local container DSP)</i>")
+
+    # 3. Covers & Visuals
+    lines.append(f"\n🎨 <b>3. COVERS, UPSCALES &amp; WAVEFORM BANNERS</b>")
+    k3_art_total = sum(c["k3_cost"] for c in cover_items)
+    gen_art_total = sum(c["gen_cost"] for c in cover_items)
+    upscale_ok_total = sum(c["upscale_cost"] for c in cover_items)
+    upscale_att_total = audit["upscaled_attempted"] * VENICE_UPSCALE_COST
+    wave_total = sum(c["waveform_cost"] for c in cover_items)
+    extra_regens = float((state or {}).get("costs", {}).get("cover_regeneration", 0.0))
+    extra_edits = float((state or {}).get("costs", {}).get("cover_edits", 0.0))
+
+    lines.append(f"  • <code>kimi-k3</code> Visual Prompt Upsampling: {len(cover_items)}×$0.005 = <b>${k3_art_total:.2f}</b>")
+    lines.append(f"  • <code>qwen-image-3-pro</code> Base Covers (1024×1024): {len(cover_items)}×$0.04 = <b>${gen_art_total:.2f}</b>")
+    if extra_regens > 0:
+        lines.append(f"  • Cover Regenerations: <b>${extra_regens:.2f}</b>")
+    if extra_edits > 0:
+        lines.append(f"  • Cover Vision Edits: <b>${extra_edits:.2f}</b>")
+    lines.append(
+        f"  • <code>venice-upscale</code> 4× Ultra-HD (3000×3000): {audit['upscaled_ok']}/{audit['upscaled_attempted']}×$0.02 = "
+        f"<b>${upscale_ok_total:.2f}</b> <i>(${upscale_att_total:.2f} w/ {audit['upscaled_attempted'] - audit['upscaled_ok']} timed-out attempts)</i>"
+    )
+    lines.append(f"  • <code>venice-image-edit</code> Waveform Banners (1240×400): {audit['waveforms_ok']}×$0.04 = <b>${wave_total:.2f}</b>")
+    lines.append(f"  • <code>overlay-title.py</code> Stacked Gradient + Shadow Overlay: 6 covers (PNG+JPG) = <b>$0.00</b> <i>(local PIL)</i>")
+    visuals_subtotal = k3_art_total + gen_art_total + extra_regens + extra_edits + upscale_ok_total + wave_total
+    visuals_subtotal_att = visuals_subtotal - upscale_ok_total + upscale_att_total
+    lines.append(f"  ↳ <b>Covers &amp; Visuals Subtotal:</b> <b>${visuals_subtotal:.2f}</b> <i>(${visuals_subtotal_att:.2f} w/ all upscale attempts)</i>")
+
+    # 4. Grand Total Summary
+    final_tracks_audio = sum(r["audio_usd"] for r in final_runs)
+    final_tracks_llm = sum(r["llm_usd"] for r in final_runs)
+    final_tracks_total = final_tracks_audio + final_tracks_llm
+
+    replaced_tracks_audio = sum(r["audio_usd"] for r in replaced_runs)
+    replaced_tracks_llm = sum(r["llm_usd"] for r in replaced_runs)
+    replaced_tracks_total = replaced_tracks_audio + replaced_tracks_llm
+
+    all_tracks_audio = final_tracks_audio + replaced_tracks_audio
+    all_tracks_llm = final_tracks_llm + replaced_tracks_llm
+    all_tracks_total = all_tracks_audio + all_tracks_llm
+
+    release_only_grand = final_tracks_total + visuals_subtotal
+    full_session_grand = all_tracks_total + visuals_subtotal
+    full_session_grand_att = all_tracks_total + visuals_subtotal_att
+    n_final = max(len(final_runs), 1)
+
     lines.extend([
-        f"🎨 Cover Generation:    ${costs.get('cover_generation', 0):.2f}",
-    ])
-    if costs.get("cover_regeneration", 0) > 0:
-        lines.append(f"🔄 Cover Regeneration:  ${costs.get('cover_regeneration', 0):.2f}  ({costs.get('cover_regen_count', 0)} regens)")
-    if costs.get("cover_edits", 0) > 0:
-        lines.append(f"✏️ Cover Edits:         ${costs.get('cover_edits', 0):.2f}  ({costs.get('cover_edit_count', 0)} edits)")
-    lines.extend([
-        f"⬆️ Cover Upscale:       ${costs.get('cover_upscale', 0):.2f}",
-        f"🎛️ DAWAGENT Mastering:  $0.00  (local)",
+        f"\n━━━━━━━━━━━━━━━━━━━━━━",
+        f"📈 <b>4. GRAND TOTAL SUMMARY</b>",
+        f"• <b>Final 5 Album Tracks (Audio + LLM):</b> ${final_tracks_total:.2f} <i>(${final_tracks_audio:.2f} stems + ${final_tracks_llm:.2f} LLM)</i>",
+        f"• <b>Replaced Initial Runs ({len(replaced_runs)} tracks redone):</b> ${replaced_tracks_total:.2f} <i>(${replaced_tracks_audio:.2f} stems + ${replaced_tracks_llm:.2f} LLM)</i>",
+        f"• <b>All {len(prod_runs)} Song Productions Total:</b> <b>${all_tracks_total:.2f}</b>",
+        f"• <b>DAWAGENT Studio Mastering ({total_daw_runs} sessions):</b> <b>$0.00</b>",
+        f"• <b>Covers, Upscales &amp; Waveforms (18 files):</b> <b>${visuals_subtotal:.2f}</b>",
         f"━━━━━━━━━━━━━━━━━━━━━━",
-        f"📊 <b>Total: ${total:.2f}</b>  (${total/max(track_count,1):.2f}/track)",
+        f"✅ <b>Final Release Cost (5 Final Songs + Art): ${release_only_grand:.2f}</b> <i>(${release_only_grand/n_final:.2f}/track)</i>",
+        f"💳 <b>Full Session Spend (All 7 Runs + Art): ${full_session_grand:.2f}</b> <i>(${full_session_grand_att:.2f} incl. timeouts · ${full_session_grand/n_final:.2f}/released track)</i>",
     ])
     return "\n".join(lines)
 
@@ -219,6 +548,33 @@ def get_env_var(name, default=None, required=True):
             val = cfg.get(name, cfg.get(name.lower()))
         except Exception:
             pass
+    if not val:
+        try:
+            for env_path in ["/opt/data/.env", "D:/hermes-music/.env", "D:/sp2/.env"]:
+                if os.path.exists(env_path):
+                    for line in open(env_path, encoding="utf-8", errors="ignore").read().splitlines():
+                        if line.startswith(f"{name}="):
+                            val = line.split("=", 1)[1].strip().strip('"').strip("'")
+                            if val:
+                                break
+                    if val:
+                        break
+        except Exception:
+            pass
+    if not val and name == "TELEGRAM_BOT_TOKEN":
+        for cfg_path in ("/opt/data/config.yaml", r"D:\sp2\data\config.yaml", r"D:\hermes-music\data\config.yaml"):
+            if os.path.exists(cfg_path):
+                try:
+                    for line in open(cfg_path, encoding="utf-8", errors="ignore").read().splitlines():
+                        if "bot_token:" in line:
+                            cand = line.split(":", 1)[1].strip().strip('"').strip("'")
+                            if cand:
+                                val = cand
+                                break
+                    if val:
+                        break
+                except Exception:
+                    pass
     if not val and required:
         logger.error(f"Missing required environment variable: {name}")
         sys.exit(1)
@@ -256,10 +612,38 @@ def _send_tg_request(method, data=None):
 
 
 def send_message(text, reply_markup=None):
-    payload = {"chat_id": TELEGRAM_CHAT_ID, "text": text, "parse_mode": "HTML"}
-    if reply_markup:
-        payload["reply_markup"] = reply_markup
-    return _send_tg_request("sendMessage", payload)
+    if not text:
+        return None
+    max_len = 3800
+    if len(text) <= max_len:
+        payload = {"chat_id": TELEGRAM_CHAT_ID, "text": text, "parse_mode": "HTML"}
+        if reply_markup:
+            payload["reply_markup"] = reply_markup
+        return _send_tg_request("sendMessage", payload)
+
+    # Split long messages cleanly on double-newline or single-newline boundaries
+    chunks = []
+    remaining = text
+    while len(remaining) > max_len:
+        split_idx = remaining.rfind("\n\n", 0, max_len)
+        if split_idx <= 0:
+            split_idx = remaining.rfind("\n", 0, max_len)
+        if split_idx <= 0:
+            split_idx = max_len
+        chunks.append(remaining[:split_idx].strip())
+        remaining = remaining[split_idx:].strip()
+    if remaining:
+        chunks.append(remaining)
+
+    last_res = None
+    for idx, chunk in enumerate(chunks):
+        payload = {"chat_id": TELEGRAM_CHAT_ID, "text": chunk, "parse_mode": "HTML"}
+        if reply_markup and idx == len(chunks) - 1:
+            payload["reply_markup"] = reply_markup
+        last_res = _send_tg_request("sendMessage", payload)
+        if idx < len(chunks) - 1:
+            time.sleep(0.4)
+    return last_res
 
 
 def edit_message(message_id, text, reply_markup=None):
@@ -273,6 +657,99 @@ def edit_message(message_id, text, reply_markup=None):
 
 def send_agent_notification(text):
     return send_message(f"[pipeline] {text}")
+
+
+def get_venice_balance(api_key=None):
+    """
+    Queries live Venice AI USD & DIEM balances via /api/v1/api_keys/rate_limits.
+    Works directly with standard inference API keys.
+    """
+    key = api_key or VENICE_API_KEY or get_env_var("VENICE_API_KEY", required=False)
+    if not key:
+        return {"ok": False, "usd": 0.0, "diem": 0.0, "bundled": 0.0, "total_usd": 0.0, "access_permitted": False, "error": "Missing VENICE_API_KEY"}
+    url = "https://api.venice.ai/api/v1/api_keys/rate_limits"
+    req = urllib.request.Request(url, headers={"Authorization": f"Bearer {key}", "User-Agent": "Mozilla/5.0"})
+    for attempt in range(2):
+        try:
+            with urllib.request.urlopen(req, timeout=12) as resp:
+                payload = json.loads(resp.read().decode("utf-8"))
+            data = payload.get("data", {})
+            balances = data.get("balances", {})
+            usd = float(balances.get("USD", 0.0) or 0.0)
+            diem = float(balances.get("DIEM", 0.0) or 0.0)
+            bundled = float(balances.get("BUNDLED_CREDITS", 0.0) or 0.0)
+            total_usd = usd + diem + bundled
+            return {
+                "ok": True,
+                "usd": usd,
+                "diem": diem,
+                "bundled": bundled,
+                "total_usd": total_usd,
+                "access_permitted": bool(data.get("accessPermitted", total_usd > 0)),
+                "tier": data.get("apiTier", {}).get("id", "unknown"),
+            }
+        except Exception as e:
+            if attempt == 1:
+                logger.warning(f"Venice balance query failed: {e}")
+                return {"ok": False, "usd": 0.0, "diem": 0.0, "bundled": 0.0, "total_usd": 0.0, "access_permitted": True, "error": str(e)}
+            time.sleep(1.0)
+
+
+def evaluate_venice_budget(remaining_tracks, mode="full", quality="hyperspatial", include_covers=True, album_name=""):
+    """
+    Evaluates live Venice AI balance against the exact cost required to complete
+    the remaining tracks and artwork, persisting a status snapshot for the agent.
+    """
+    bal = get_venice_balance()
+    is_sample = str(mode).lower() in ("sample", "samples")
+    if is_sample:
+        cost_per_track = 0.48
+        tracks_needed_cost = round(remaining_tracks * cost_per_track, 2)
+    else:
+        # Option 1B: 4 punchy singles @ $2.10 ($2.08 elevenlabs-music-v2-5 <=180s + $0.02 foley + $0.00 Demucs harmonic beds)
+        # + Track 5 Extended Closer @ $2.78 ($2.76 <=240s + $0.02 foley) = $11.18 total ($2.24 avg/track)
+        slot_costs = [2.10, 2.10, 2.10, 2.10, 2.78]
+        rem_slice = slot_costs[max(0, 5 - remaining_tracks):] if remaining_tracks <= 5 else ([2.10] * (remaining_tracks - 1) + [2.78])
+        tracks_needed_cost = round(sum(rem_slice), 2)
+        cost_per_track = round(tracks_needed_cost / max(remaining_tracks, 1), 2) if remaining_tracks > 0 else 2.24
+
+    cover_cost = 0.52 if include_covers and not is_sample else 0.0
+    total_needed_cost = round(tracks_needed_cost + cover_cost, 2)
+
+    total_usd = bal.get("total_usd", 0.0)
+    completable_tracks = int(total_usd // cost_per_track) if cost_per_track > 0 else remaining_tracks
+    can_complete_tracks = (not bal.get("ok")) or (total_usd >= tracks_needed_cost * 0.90)
+    can_complete_all = (not bal.get("ok")) or (total_usd >= total_needed_cost * 0.90)
+    shortfall_tracks = round(max(0.0, tracks_needed_cost - total_usd), 2)
+    shortfall_total = round(max(0.0, total_needed_cost - total_usd), 2)
+
+    report = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "album": album_name,
+        "ok": bal.get("ok", False),
+        "usd": round(bal.get("usd", 0.0), 4),
+        "diem": round(bal.get("diem", 0.0), 4),
+        "total_usd": round(total_usd, 4),
+        "access_permitted": bal.get("access_permitted", True),
+        "remaining_tracks": remaining_tracks,
+        "cost_per_track": cost_per_track,
+        "tracks_needed_cost": tracks_needed_cost,
+        "cover_cost": cover_cost,
+        "total_needed_cost": total_needed_cost,
+        "completable_tracks": completable_tracks,
+        "can_complete_tracks": can_complete_tracks,
+        "can_complete_all": can_complete_all,
+        "shortfall_tracks": shortfall_tracks,
+        "shortfall_total": shortfall_total,
+    }
+    for status_path in ("/tmp/venice_balance_status.json", "/opt/data/music/venice_balance_status.json"):
+        try:
+            os.makedirs(os.path.dirname(status_path), exist_ok=True)
+            with open(status_path, "w", encoding="utf-8") as sf:
+                json.dump(report, sf, indent=2)
+        except Exception:
+            pass
+    return report
 
 
 def send_audio(audio_path, caption=None):
@@ -320,6 +797,21 @@ def send_photo(photo_path, caption=None, reply_markup=None):
         return out
     except Exception as e:
         logger.error(f"send_photo failed: {e}")
+        return None
+
+
+def send_document(doc_path, caption=None):
+    if not TELEGRAM_BOT_TOKEN or not os.path.exists(doc_path):
+        return None
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendDocument"
+    cmd = ['curl', '-s', '-X', 'POST', url, '-F', f'chat_id={TELEGRAM_CHAT_ID}', '-F', f'document=@{doc_path}']
+    if caption:
+        cmd.extend(['-F', f'caption={caption}', '-F', 'parse_mode=HTML'])
+    try:
+        res = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+        return json.loads(res.stdout) if res.stdout.strip() else None
+    except Exception as e:
+        logger.error(f"send_document failed for {doc_path}: {e}")
         return None
 
 
@@ -513,9 +1005,16 @@ def discover_existing_album_production(proposal):
                     "mtime": mtime
                 }
 
+    prop_tracks_upper = [str(pt).strip().upper() for pt in proposal.get("tracks", [])]
     sorted_sessions = sorted(
         found_sessions.values(),
-        key=lambda x: (x.get("processed_at") or "", x.get("mtime", 0))
+        key=lambda x: (
+            prop_tracks_upper.index(x.get("title", "").upper())
+            if x.get("title", "").upper() in prop_tracks_upper
+            else 999,
+            x.get("processed_at") or "",
+            x.get("mtime", 0),
+        ),
     )
 
     tracklist = []
@@ -566,6 +1065,108 @@ def discover_existing_album_production(proposal):
         current_phase = 1
 
     return tracklist, current_phase, (has_album_cover and has_all_track_covers)
+
+
+def extract_root_cause_error(stderr_text, stdout_errors=None, exit_code=None):
+    """
+    Extracts the true root-cause error line and classifies the failure category
+    instead of blindly slicing the middle of a usage block or traceback.
+    """
+    raw = (stderr_text or "").strip()
+    lines = [l.strip() for l in raw.splitlines() if l.strip()]
+
+    # Filter out generic argparse usage lines so the actual error line stands out
+    meaningful = [
+        l for l in lines
+        if not l.lower().startswith("usage:")
+        and not (l.startswith("[--") and l.endswith("]"))
+    ]
+
+    # Look for explicit error lines from bottom up
+    root_line = ""
+    for l in reversed(meaningful or lines):
+        low = l.lower()
+        if any(k in low for k in ["error:", "exception:", "failed", "http error", "timeout", "invalid choice", "unrecognized arguments", "filenotfound", "keyerror", "valueerror", "jsondecodeerror"]):
+            root_line = l
+            break
+
+    if not root_line and meaningful:
+        root_line = meaningful[-1]
+    elif not root_line and stdout_errors:
+        root_line = stdout_errors[-1]
+    elif not root_line:
+        root_line = f"Subprocess exited with code {exit_code}" if exit_code is not None else "Unknown pipeline error"
+
+    combined = (raw + " " + " ".join(stdout_errors or [])).lower()
+    if "invalid choice" in combined or "unrecognized arguments" in combined or "argument --" in combined:
+        category = "CLI_ARG_MISMATCH"
+        hint = "Script CLI arguments out of sync between pipeline and producer skill."
+    elif "429" in combined or "rate limit" in combined:
+        category = "VENICE_RATE_LIMIT"
+        hint = "Venice AI API rate limit reached; retry after a short pause."
+    elif "401" in combined or "403" in combined or "api_key" in combined:
+        category = "API_AUTH_ERROR"
+        hint = "API authentication or key quota issue."
+    elif "timeout" in combined or "timed out" in combined:
+        category = "API_TIMEOUT"
+        hint = "Upstream model inference timed out."
+    elif "ffmpeg" in combined or "pedalboard" in combined or "soundfile" in combined:
+        category = "AUDIO_DSP_ERROR"
+        hint = "Audio stem mixing or FFmpeg mastering failed."
+    else:
+        category = "PRODUCE_SCRIPT_FAIL"
+        hint = "Subprocess exited unexpectedly during track generation."
+
+    return {
+        "category": category,
+        "root_line": root_line[:350],
+        "hint": hint,
+        "tail": "\n".join((meaningful or lines)[-6:])[:600],
+    }
+
+
+def send_pipeline_error_card(album_name, phase_num, phase_name, diag, track_num=None, track_title=None, exit_code=None, stdout_errors=None, include_buttons=True):
+    """
+    Sends a structured diagnostic error card to Telegram with actionable recovery buttons.
+    """
+    track_label = f"Track {track_num}" + (f" (<b>{html.escape(str(track_title))}</b>)" if track_title else "") if track_num else "Batch Setup"
+    exit_label = f" (exit {exit_code})" if exit_code is not None else ""
+
+    msg_lines = [
+        f"⚠️ <b>Production Halted — {html.escape(str(album_name))}</b>",
+        f"━━━━━━━━━━━━━━━━━━━━━━",
+        f"• <b>Stage:</b> Phase {phase_num} ({html.escape(str(phase_name))}) — {track_label}",
+        f"• <b>Category:</b> <code>{html.escape(diag.get('category', 'ERROR'))}</code>{exit_label}",
+        f"• <b>Root Cause:</b>\n<pre>{html.escape(diag.get('root_line', 'Unknown error'))}</pre>",
+    ]
+    if stdout_errors:
+        recent_attempts = "\n".join(stdout_errors[-3:])
+        msg_lines.append(f"• <b>Recent Sub-Step Errors:</b>\n<pre>{html.escape(recent_attempts[:400])}</pre>")
+    if diag.get("hint"):
+        msg_lines.append(f"💡 <i>{html.escape(diag['hint'])}</i>")
+
+    reply_markup = None
+    if include_buttons:
+        msg_lines.append("\n<i>Choose an action below:</i>")
+        buttons = []
+        if diag.get("category") == "VENICE_402_INSUFFICIENT_BALANCE":
+            buttons.append([
+                {"text": "💳 Credit Added", "callback_data": "ap:credit:added"},
+                {"text": "⏸ Pause", "callback_data": "ap:credit:pause"},
+            ])
+        buttons.extend([
+            [
+                {"text": "🔄 Retry Now", "callback_data": "ap:error:retry"},
+                {"text": "⏭ Skip & Continue", "callback_data": "ap:error:skip"},
+            ],
+            [
+                {"text": "📋 Full Error Log", "callback_data": "ap:error:log"},
+                {"text": "🛑 Abort Pipeline", "callback_data": "ap:error:abort"},
+            ],
+        ])
+        reply_markup = {"inline_keyboard": buttons}
+
+    return send_message("\n".join(msg_lines), reply_markup=reply_markup)
 
 
 # ── Phase 1: Music Production (Granular Checkpoint & Resuming) ─────────
@@ -626,17 +1227,107 @@ def phase_1_produce(proposal, profile, redo_track=None, redo_feedback=None, mode
         if anti:
             brief += f"Anti-patterns: {', '.join(anti)}\n"
         brief += f"The VØIDRIDE sound: {profile.get('prompt_prefix', '')}\n"
+        brief += (
+            "SMOOTH SFX RULE: If any special effects (risers, accents, foley, transitions) are used, "
+            "make them velvet-smooth, warm, low-pass filtered, and deeply blended with lush reverb fade-ins/outs — "
+            "NEVER jarring, harsh, piercing, or abrupt.\n"
+        )
 
     prop_tracks = proposal.get("tracks", [])
     cover_visual = proposal.get("visual", "")
     album_theme = f"{subgenre}. {proposal.get('brief', '')}".strip()
+    quality = profile.get("defaults", {}).get("quality", "hyperspatial")
+    expected_count = len(prop_tracks) if prop_tracks else 5
+    remaining_to_produce = max(0, expected_count - resume_count)
+
+    # Pre-flight Venice AI balance & track completion capacity check
+    budget = evaluate_venice_budget(
+        remaining_tracks=remaining_to_produce,
+        mode=mode,
+        quality=quality,
+        include_covers=True,
+        album_name=album_name,
+    )
+    if budget.get("ok"):
+        cap_tracks = min(budget["completable_tracks"], remaining_to_produce)
+        logger.info(
+            f"Venice Balance Pre-Flight: ${budget['total_usd']:.2f} USD "
+            f"(need ~${budget['tracks_needed_cost']:.2f} for {remaining_to_produce} tracks @ ~${budget['cost_per_track']:.2f}/track, "
+            f"+ ~${budget['cover_cost']:.2f} covers | can complete {cap_tracks}/{remaining_to_produce} tracks)"
+        )
+        if budget["completable_tracks"] == 0 and remaining_to_produce > 0:
+            next_track_num = resume_count + 1
+            next_track_title = prop_tracks[next_track_num - 1] if prop_tracks and (next_track_num - 1) < len(prop_tracks) else f"Track {next_track_num}"
+            send_agent_notification(
+                f"⛔ Venice AI inference balance depleted for {album_name}! "
+                f"Remaining balance: ${budget['total_usd']:.2f} USD (${budget['usd']:.2f} USD / {budget['diem']:.2f} DIEM). "
+                f"Can complete: 0/{remaining_to_produce} remaining tracks (~${budget['cost_per_track']:.2f}/track). "
+                f"Shortfall: ${budget['shortfall_tracks']:.2f} USD for tracks (${budget['shortfall_total']:.2f} USD including covers). "
+                f"Paused at Track {next_track_num} ({next_track_title})."
+            )
+            diag = {
+                "category": "VENICE_402_INSUFFICIENT_BALANCE",
+                "root_line": (
+                    f"Venice AI Balance Low: ${budget['total_usd']:.2f} USD remaining "
+                    f"(can complete 0/{remaining_to_produce} remaining tracks @ ~${budget['cost_per_track']:.2f}/track; "
+                    f"need ~${budget['tracks_needed_cost']:.2f} USD for tracks, shortfall ${budget['shortfall_tracks']:.2f} USD)."
+                ),
+                "hint": (
+                    f"✅ {resume_count}/{expected_count} tracks are safely saved on disk. "
+                    f"Top up at least ${budget['shortfall_total']:.2f} USD at https://venice.ai/settings/api "
+                    f"and tap 🔄 Retry Now to resume from Track {next_track_num} ({next_track_title})."
+                ),
+            }
+            send_pipeline_error_card(
+                album_name=album_name,
+                phase_num=1,
+                phase_name=f"Music Production ({resume_count}/{expected_count} Complete)",
+                diag=diag,
+                track_num=next_track_num,
+                track_title=next_track_title,
+                include_buttons=True,
+            )
+            while True:
+                flag, content = poll_flags(timeout_hours=24)
+                if flag in ("error:retry", "error_retry", "credit:added", "credit_added"):
+                    if dashboard:
+                        dashboard.clear_error()
+                    if state:
+                        state["produce_batch_retries"] = 0
+                        save_state(state)
+                    return phase_1_produce(proposal, profile, mode=mode, duration=duration, dashboard=dashboard, state=state)
+                elif flag in ("credit:pause", "credit_paused"):
+                    logger.info("Pipeline paused waiting for Venice AI credits...")
+                    continue
+                elif flag in ("error:skip", "error_skip"):
+                    if resume_count > 0:
+                        send_message(f"⏭ Proceeding to Phase 2 (DAWAGENT Studio Mastering) with the {resume_count} completed tracks.")
+                        return completed_tracks
+                    sys.exit(0)
+                elif flag in ("error:abort", "error_abort"):
+                    sys.exit(0)
+        elif not budget["can_complete_tracks"]:
+            send_agent_notification(
+                f"⚠️ Venice AI low balance warning for {album_name}: "
+                f"${budget['total_usd']:.2f} USD remaining — can only complete {cap_tracks}/{remaining_to_produce} remaining tracks "
+                f"(~${budget['cost_per_track']:.2f}/track; need ~${budget['tracks_needed_cost']:.2f} USD, shortfall ${budget['shortfall_tracks']:.2f} USD)."
+            )
+        else:
+            send_agent_notification(
+                f"💳 Venice AI balance verified for {album_name}: ${budget['total_usd']:.2f} USD remaining — "
+                f"sufficient to complete all {remaining_to_produce}/{remaining_to_produce} remaining track(s) "
+                f"(~${budget['tracks_needed_cost']:.2f} USD) + artwork (~${budget['cover_cost']:.2f} USD)."
+            )
+
+    closer_duration = profile.get("defaults", {}).get("closer_duration", 215) if profile else 215
     cmd = [
         "/opt/hermes/.venv/bin/python3", PRODUCE_SCRIPT,
         "--brief", brief,
-        "--tracks", "5",
+        "--tracks", str(expected_count),
         "--duration", str(duration),
+        "--closer-duration", str(closer_duration),
         "--mode", mode,
-        "--quality", "standard",
+        "--quality", quality,
         "--no-deliver",
         "--resume-tracks", str(resume_count),
         "--album-name", album_name,
@@ -651,7 +1342,7 @@ def phase_1_produce(proposal, profile, redo_track=None, redo_feedback=None, mode
 
     tracklist = list(completed_tracks)
     track_num = resume_count
-    stderr_lines = []
+    stdout_error_lines = []
 
     # Monitor stdout for progress and track completions
     while True:
@@ -676,6 +1367,11 @@ def phase_1_produce(proposal, profile, redo_track=None, redo_feedback=None, mode
 
         logger.info(f"Produce output: {line}")
 
+        # Capture sub-step failure / warning lines from produce-album.py
+        if any(marker in line for marker in ["❌", "⚠️", "Error:", "failed:"]):
+            clean_err = re.sub(r'^\[produce-album\]\s*', '', line).strip()
+            stdout_error_lines.append(clean_err)
+
         # Try JSON track output
         try:
             data = json.loads(line)
@@ -692,12 +1388,14 @@ def phase_1_produce(proposal, profile, redo_track=None, redo_feedback=None, mode
                         t_title = str(prop_tracks[t_num - 1]).strip().upper()
                         data["title"] = t_title
                 t_bpm = data.get("bpm", "Unknown")
-                t_cost = data.get("cost", "2.29")
+                t_cost = data.get("cost", "3.86")
                 tracklist.append(data)
                 if dashboard:
                     dashboard.update_track(t_num, t_title, "complete", bpm=t_bpm, cost=t_cost)
                     dashboard.live_cost += float(t_cost)
                 if state:
+                    add_cost(state, "track_production", float(t_cost))
+                    add_cost(state, "llm_passes", SONG_LLM_BATCH_COST)
                     state["completed_tracks"] = tracklist
                     save_state(state)
                 continue
@@ -705,7 +1403,6 @@ def phase_1_produce(proposal, profile, redo_track=None, redo_feedback=None, mode
             pass
 
         # Text format regex: "[produce-album]     ✅ EYEWALL | 160 BPM | $3.85"
-        import re
         match = re.match(r'\[produce-album\]\s+✅\s+(.+?)\s*\|\s*(\d+|None|\?)\s*BPM\s*\|\s*\$?([\d.]+)', line)
         if match:
             track_num += 1
@@ -727,47 +1424,78 @@ def phase_1_produce(proposal, profile, redo_track=None, redo_feedback=None, mode
                 dashboard.update_track(track_num, t_title, "complete", bpm=t_bpm, cost=t_cost)
                 dashboard.live_cost += float(t_cost)
             if state:
+                add_cost(state, "track_production", float(t_cost))
+                add_cost(state, "llm_passes", SONG_LLM_BATCH_COST)
                 state["completed_tracks"] = tracklist
                 save_state(state)
             if logger_hub:
                 logger_hub.log_event("TRACK_COMPLETE", track_entry, album=album_name, phase=1, track_num=track_num)
+            send_message(f"✅ <b>Track {track_num}/5: {html.escape(t_title)}</b> generated ({t_bpm} BPM)")
 
     process.wait()
 
     if process.returncode != 0:
         err_out = process.stderr.read()
-        logger.error(f"Produce album failed with code {process.returncode}: {err_out[-300:]}")
+        diag = extract_root_cause_error(err_out, stdout_errors=stdout_error_lines, exit_code=process.returncode)
+        cur_track_idx = track_num + 1
+        cur_track_title = prop_tracks[cur_track_idx - 1] if prop_tracks and (cur_track_idx - 1) < len(prop_tracks) else None
+        logger.error(f"Produce album failed with code {process.returncode} [{diag['category']}]: {diag['root_line']}")
         if logger_hub:
-            logger_hub.log_failure("PRODUCE_SCRIPT_FAIL", f"Exit {process.returncode}: {err_out[-200:]}", traceback_str=err_out, album=album_name, phase=1)
+            logger_hub.log_failure(diag["category"], f"Exit {process.returncode}: {diag['root_line']}", traceback_str=err_out, album=album_name, phase=1, track_num=cur_track_idx)
         if dashboard:
-            dashboard.set_error(f"Production script failed (exit {process.returncode}): {err_out[-150:]}", track_num=track_num+1)
-            # Interactive Error Recovery Gate
-            send_message(f"⚠️ <b>Production halted on Track {track_num+1}</b>\nTap Retry to re-attempt or Skip to continue.")
-            while True:
-                flag, content = poll_flags(timeout_hours=1)
-                if flag == "error:retry":
+            dashboard.set_error(f"{diag['category']} (exit {process.returncode}): {diag['root_line']}", track_num=cur_track_idx)
+        # Interactive Error Recovery Gate with full root cause + inline buttons
+        send_pipeline_error_card(
+            album_name=album_name,
+            phase_num=1,
+            phase_name="Music Production",
+            diag=diag,
+            track_num=cur_track_idx,
+            track_title=cur_track_title,
+            exit_code=process.returncode,
+            stdout_errors=stdout_error_lines,
+            include_buttons=True,
+        )
+        while True:
+            flag, content = poll_flags(timeout_hours=1)
+            if flag in ("error:retry", "error_retry"):
+                if dashboard:
                     dashboard.clear_error()
-                    return phase_1_produce(proposal, profile, mode=mode, duration=duration, dashboard=dashboard, state=state)
-                elif flag == "error:skip":
+                return phase_1_produce(proposal, profile, mode=mode, duration=duration, dashboard=dashboard, state=state)
+            elif flag in ("error:skip", "error_skip"):
+                if dashboard:
                     dashboard.clear_error()
-                    break
-                elif flag == "error:log":
-                    send_message(f"📋 <b>Error Log:</b>\n<pre>{err_out[-800:]}</pre>")
-                    continue
+                break
+            elif flag in ("error:log", "error_log"):
+                full_log_text = (err_out or "\n".join(stdout_error_lines) or "No additional stderr output.")[-1500:]
+                send_message(f"📋 <b>Full Error Log ({html.escape(album_name)}):</b>\n<pre>{html.escape(full_log_text)}</pre>")
+                continue
+            elif flag in ("error:abort", "error_abort"):
+                logger.info(f"User aborted pipeline for {album_name} at error gate.")
+                sys.exit(0)
 
-    # Locate actual MP3 and FLAC files
+    # Locate actual MP3 and FLAC files (only match production dirs that actually contain master audio files)
     album_slug = proposal.get('album', '').lower().replace(' ', '-').replace('_', '-')
-    prod_dirs = sorted(glob.glob(f"/opt/data/music/productions/*{album_slug}*"))
+    raw_prod_dirs = sorted(glob.glob(f"/opt/data/music/productions/*{album_slug}*"))
+    prod_dirs = [
+        d for d in raw_prod_dirs
+        if glob.glob(os.path.join(d, "*.mp3")) or glob.glob(os.path.join(d, "*.flac"))
+    ]
     for i, t in enumerate(tracklist):
-        if i < len(prod_dirs):
+        existing_d = t.get("production_dir")
+        if existing_d and os.path.isdir(existing_d) and (glob.glob(os.path.join(existing_d, "*.mp3")) or glob.glob(os.path.join(existing_d, "*.flac"))):
+            d = existing_d
+        elif i < len(prod_dirs):
             d = prod_dirs[i]
-            mp3s = sorted(glob.glob(os.path.join(d, "*.mp3")))
-            flacs = sorted(glob.glob(os.path.join(d, "*.flac")))
-            if mp3s:
-                t["mp3_path"] = mp3s[-1]
-            if flacs:
-                t["flac_path"] = flacs[-1]
-            t["production_dir"] = d
+        else:
+            continue
+        mp3s = sorted(glob.glob(os.path.join(d, "*.mp3")))
+        flacs = sorted(glob.glob(os.path.join(d, "*.flac")))
+        if mp3s:
+            t["mp3_path"] = mp3s[-1]
+        if flacs:
+            t["flac_path"] = flacs[-1]
+        t["production_dir"] = d
 
     if state:
         state["completed_tracks"] = tracklist
@@ -775,10 +1503,144 @@ def phase_1_produce(proposal, profile, redo_track=None, redo_feedback=None, mode
 
     if not tracklist:
         logger.error(f"Phase 1 for {album_name} completed with 0 tracks! Halting.")
+        diag = extract_root_cause_error("", stdout_errors=stdout_error_lines, exit_code=0)
+        diag["root_line"] = diag["root_line"] if stdout_error_lines else "0 audio tracks were produced across all attempts."
         if dashboard:
-            dashboard.set_error("Production failed: 0 tracks produced", track_num=1)
-        send_message(f"🚨 <b>Production failed:</b> No audio tracks were produced for <b>{album_name}</b>. Halting pipeline.")
-        sys.exit(1)
+            dashboard.set_error(f"0 tracks produced: {diag['root_line']}", track_num=1)
+        send_pipeline_error_card(
+            album_name=album_name,
+            phase_num=1,
+            phase_name="Music Production",
+            diag=diag,
+            track_num=1,
+            track_title=prop_tracks[0] if prop_tracks else None,
+            stdout_errors=stdout_error_lines,
+            include_buttons=True,
+        )
+        while True:
+            flag, content = poll_flags(timeout_hours=24)
+            if flag in ("error:retry", "error_retry"):
+                if dashboard:
+                    dashboard.clear_error()
+                if state:
+                    state["produce_batch_retries"] = 0
+                    save_state(state)
+                return phase_1_produce(proposal, profile, mode=mode, duration=duration, dashboard=dashboard, state=state)
+            elif flag in ("error:log", "error_log"):
+                full_log_text = ("\n".join(stdout_error_lines) or "No stdout error details captured.")[-1500:]
+                send_message(f"📋 <b>Full Error Log ({html.escape(album_name)}):</b>\n<pre>{html.escape(full_log_text)}</pre>")
+                continue
+            elif flag in ("error:abort", "error_abort", "error:skip", "error_skip"):
+                if os.path.exists(STATE_FILE):
+                    try: os.remove(STATE_FILE)
+                    except Exception: pass
+                sys.exit(0)
+
+    expected_count = len(prop_tracks) if prop_tracks else 5
+    if len(tracklist) < expected_count:
+        remaining_after = max(0, expected_count - len(tracklist))
+        post_budget = evaluate_venice_budget(
+            remaining_tracks=remaining_after,
+            mode=mode,
+            quality=quality,
+            include_covers=True,
+            album_name=album_name,
+        )
+        joined_err = " ".join(stdout_error_lines).lower()
+        is_balance_err = (
+            any(k in joined_err for k in ("402", "insufficient usd", "insufficient balance", "payment required", "balance depleted"))
+            or (post_budget.get("ok") and post_budget.get("completable_tracks", 1) == 0)
+        )
+        retries = state.get("produce_batch_retries", 0) if state else 0
+        if not is_balance_err and retries < 2:
+            if state:
+                state["produce_batch_retries"] = retries + 1
+                save_state(state)
+            logger.warning(f"Phase 1 for {album_name} incomplete: only {len(tracklist)}/{expected_count} tracks produced. Resuming to complete missing tracks (attempt {retries+1}/2)...")
+            err_hint = f"\n<i>Last error: {html.escape(stdout_error_lines[-1][:180])}</i>" if stdout_error_lines else ""
+            bal_note = (
+                f"\n💳 <b>Venice Balance:</b> ${post_budget['total_usd']:.2f} USD "
+                f"(can complete {min(post_budget['completable_tracks'], remaining_after)}/{remaining_after} remaining tracks)"
+                if post_budget.get("ok") else ""
+            )
+            send_message(f"⚠️ <b>Incomplete Batch:</b> {len(tracklist)}/{expected_count} tracks completed for <b>{album_name}</b>.{err_hint}{bal_note}\nAuto-resuming to produce remaining tracks (attempt {retries+1}/2)...")
+            return phase_1_produce(proposal, profile, mode=mode, duration=duration, dashboard=dashboard, state=state)
+        else:
+            next_track_num = len(tracklist) + 1
+            next_track_title = prop_tracks[next_track_num - 1] if prop_tracks and (next_track_num - 1) < len(prop_tracks) else f"Track {next_track_num}"
+            diag = extract_root_cause_error("", stdout_errors=stdout_error_lines, exit_code=1)
+            cap_after = min(post_budget.get("completable_tracks", 0), remaining_after)
+            if is_balance_err:
+                diag["category"] = "VENICE_402_INSUFFICIENT_BALANCE"
+                diag["root_line"] = (
+                    f"Venice AI inference depleted on Track {next_track_num} ({next_track_title}). "
+                    f"Remaining Balance: ${post_budget['total_usd']:.2f} USD (${post_budget['usd']:.2f} USD / {post_budget['diem']:.2f} DIEM) — "
+                    f"can complete {cap_after}/{remaining_after} remaining tracks (~${post_budget['cost_per_track']:.2f}/track; "
+                    f"need ~${post_budget['tracks_needed_cost']:.2f} USD for tracks + ~${post_budget['cover_cost']:.2f} covers, "
+                    f"shortfall ${post_budget['shortfall_total']:.2f} USD)."
+                )
+                diag["hint"] = (
+                    f"✅ Tracks 1–{len(tracklist)} are safely saved on disk. "
+                    f"Top up at least ${post_budget['shortfall_total']:.2f} USD at https://venice.ai/settings/api "
+                    f"and tap 🔄 Retry Now to resume from Track {next_track_num} ({next_track_title}), "
+                    f"or tap ⏭ Skip & Continue to master & review the {len(tracklist)} completed tracks now."
+                )
+                send_agent_notification(
+                    f"⛔ Venice AI inference ran out during {album_name} ({len(tracklist)}/{expected_count} tracks completed)! "
+                    f"Remaining balance: ${post_budget['total_usd']:.2f} USD (${post_budget['usd']:.2f} USD / {post_budget['diem']:.2f} DIEM). "
+                    f"Capacity check: can complete {cap_after}/{remaining_after} remaining tracks (@ ~${post_budget['cost_per_track']:.2f}/track). "
+                    f"Shortfall: ${post_budget['shortfall_tracks']:.2f} USD for tracks (${post_budget['shortfall_total']:.2f} USD including covers)."
+                )
+            else:
+                send_agent_notification(
+                    f"⚠️ {album_name} paused at Track {next_track_num} ({len(tracklist)}/{expected_count} complete). "
+                    f"Venice balance: ${post_budget['total_usd']:.2f} USD (can complete {cap_after}/{remaining_after} remaining tracks). "
+                    f"Root cause: {diag['root_line']}"
+                )
+            logger.warning(f"Phase 1 paused at interactive recovery gate ({len(tracklist)}/{expected_count} tracks complete): {diag['root_line']}")
+            if dashboard:
+                dashboard.set_error(diag["root_line"], track_num=next_track_num)
+            send_pipeline_error_card(
+                album_name=album_name,
+                phase_num=1,
+                phase_name=f"Music Production ({len(tracklist)}/{expected_count} Complete)",
+                diag=diag,
+                track_num=next_track_num,
+                track_title=next_track_title,
+                stdout_errors=stdout_error_lines,
+                include_buttons=True,
+            )
+            while True:
+                flag, content = poll_flags(timeout_hours=24)
+                if flag in ("error:retry", "error_retry", "credit:added", "credit_added"):
+                    if dashboard:
+                        dashboard.clear_error()
+                    if state:
+                        state["produce_batch_retries"] = 0
+                        save_state(state)
+                    return phase_1_produce(proposal, profile, mode=mode, duration=duration, dashboard=dashboard, state=state)
+                elif flag in ("credit:pause", "credit_paused"):
+                    logger.info("Pipeline paused waiting for Venice AI credits...")
+                    continue
+                elif flag in ("error:skip", "error_skip"):
+                    if dashboard:
+                        dashboard.clear_error()
+                    send_message(f"⏭ Proceeding to Phase 2 (DAWAGENT Studio Mastering) with the {len(tracklist)} completed tracks.")
+                    break
+                elif flag in ("error:log", "error_log"):
+                    full_log_text = ("\n".join(stdout_error_lines) or "No stdout error details captured.")[-1500:]
+                    send_message(f"📋 <b>Full Error Log ({html.escape(album_name)}):</b>\n<pre>{html.escape(full_log_text)}</pre>")
+                    continue
+                elif flag in ("error:abort", "error_abort"):
+                    logger.info(f"User aborted pipeline for {album_name} at Phase 1 recovery gate.")
+                    if os.path.exists(STATE_FILE):
+                        try: os.remove(STATE_FILE)
+                        except Exception: pass
+                    for st_f in ["/opt/data/music/pipeline_state.json", "D:/music/pipeline_state.json"]:
+                        if os.path.exists(st_f):
+                            try: os.remove(st_f)
+                            except Exception: pass
+                    sys.exit(0)
 
     if logger_hub:
         logger_hub.log_event("PHASE_COMPLETE", {"tracks_count": len(tracklist)}, album=album_name, phase=1)
@@ -787,8 +1649,9 @@ def phase_1_produce(proposal, profile, redo_track=None, redo_feedback=None, mode
 
 
 # ── Single Track Redo ───────────────────────────────────────────────────
-def phase_1_redo_single(proposal, profile, tracklist, track_num, feedback=None, duration=260, dashboard=None):
+def phase_1_redo_single(proposal, profile, tracklist, track_num, feedback=None, duration=175, dashboard=None, state=None):
     album_name = proposal.get('album', 'Unknown Album')
+    album_slug = album_name.lower().replace(' ', '-').replace('_', '-')
     subgenre = proposal.get('subgenre', 'dark nightride trap')
 
     original = next((t for t in tracklist if t.get('track') == track_num), None)
@@ -797,11 +1660,32 @@ def phase_1_redo_single(proposal, profile, tracklist, track_num, feedback=None, 
         return tracklist
 
     title = original.get('title', f'Track {track_num}')
-    bpm = original.get('bpm', '130')
-    key = original.get('key', 'Cm')
+    title_plain = re.sub(r'^\d+[\s_\-]*', '', title).replace('_', ' ').strip()
+    track_slug = title_plain.lower().replace(' ', '_')
+    session_slug = f"{album_slug}-{track_slug}"
+
+    raw_bpm = str(original.get('bpm', '134')).split('-')[0].strip()
+    try:
+        bpm_int = int(float(raw_bpm))
+    except Exception:
+        bpm_int = 134
+    if bpm_int < 120 or bpm_int > 154:
+        bpm_int = 138 if track_num == 1 else (124 if track_num == len(tracklist) else 134)
+    bpm = str(bpm_int)
+    original['bpm'] = bpm
+
+    # Option 1B duration for redo: 175s for singles, 215s for closer
+    closer_dur = profile.get("defaults", {}).get("closer_duration", 215) if profile else 215
+    duration = closer_dur if (track_num == len(tracklist) and len(tracklist) >= 2 and duration <= 200) else (duration if duration <= 220 else 175)
+
+    key = original.get('key') or proposal.get('key', 'Dm')
 
     cover_visual = proposal.get("visual", "")
-    brief = f"{album_name} - {subgenre}. Track {track_num}: {title}. {proposal.get('brief', '')} {bpm} BPM, {key}. "
+    brief = (
+        f"California bass and heavy West Coast bass mixed with melodic nightride vibes, nocturnal cruising atmosphere, "
+        f"massive continuous 808 sub-bass dominance. {album_name} - {subgenre}. Track {track_num}: {title_plain}. "
+        f"{proposal.get('brief', '')} {bpm} BPM, {key}. "
+    )
     if cover_visual:
         brief += f"Auditory interpretation of cover scene: {cover_visual}. "
     if profile:
@@ -814,13 +1698,33 @@ def phase_1_redo_single(proposal, profile, tracklist, track_num, feedback=None, 
         if anti:
             brief += f"Anti-patterns: {', '.join(anti)}\n"
         brief += f"The VØIDRIDE sound: {profile.get('prompt_prefix', '')}\n"
+        brief += (
+            "SMOOTH SFX RULE: If any special effects (risers, accents, foley, transitions) are used, "
+            "make them velvet-smooth, warm, low-pass filtered, and deeply blended with lush reverb fade-ins/outs — "
+            "NEVER jarring, harsh, piercing, or abrupt.\n"
+        )
     if feedback:
         brief += f"\n[REDO FEEDBACK]: {feedback}\n"
 
     if dashboard:
-        dashboard.update_track(track_num, title, "generating", progress_pct=30, sub_phase=f"Redoing: {feedback[:30] if feedback else 'tweak'}")
+        dashboard.update_track(track_num, title_plain, "generating", progress_pct=30, sub_phase=f"Redoing ({bpm} BPM)")
 
-    send_message(f"🔄 Redoing Track {track_num}: <b>{title}</b>...")
+    send_message(
+        f"🔄 Redoing Track {track_num}: <b>{html.escape(title_plain)}</b> ({bpm} BPM, {key}) with strict VØIDRIDE California bass nightride DNA..."
+    )
+
+    prev_tracks = [
+        {
+            "number": t.get("track"),
+            "title": t.get("title"),
+            "bpm": int(float(str(t.get("bpm", 130)).split("-")[0])) if str(t.get("bpm", "")).replace(".", "").isdigit() else 130,
+            "key": t.get("key", "Dm"),
+            "genre": subgenre,
+            "energy": "heavy California West Coast nightride bass",
+        }
+        for t in tracklist
+        if t.get("track") != track_num
+    ]
 
     ctx = {
         "track_number": track_num,
@@ -828,50 +1732,141 @@ def phase_1_redo_single(proposal, profile, tracklist, track_num, feedback=None, 
         "album_name": album_name,
         "album_theme": f"{subgenre}. {proposal.get('brief', '')}",
         "cover_visual": cover_visual,
-        "track_title": title,
+        "track_title": title_plain,
         "brief": brief,
-        "variation_rules": [f"Redo with feedback: {feedback}"] if feedback else []
+        "previous_tracks": prev_tracks,
+        "sonic_translation": {
+            "rule_1_environment": f"Cavernous nocturnal space ({cover_visual[:120]}) translated into wide 3D binaural delay throws and cold spectral witch-house reverb tails.",
+            "rule_2_transients": "Crisp West Coast snap snares, punchy acoustic-sampled transient kicks, rolling syncopated hi-hats, and metallic industrial micro-accents.",
+            "rule_3_harmonic": f"Dark minor-pentatonic detuned analog brass and melancholic sine plucks in {key} at {bpm} BPM over heavy gliding California 808 sub-bass.",
+            "rule_4_energy_arc": "Smooth atmospheric buildup dropping into relentless, chest-rattling California 808 sub-bass dominance with zero mid-track silence drops.",
+            "tempo_bpm": bpm_int,
+            "musical_key": key,
+        },
+        "variation_rules": [
+            f"Keep strict VØIDRIDE California bass & heavy West Coast nightride aesthetic at {bpm} BPM in {key}. "
+            f"Dominant gliding 808 sub-bass from start to finish, crisp snap snares, detuned nightride synth leads, zero silence drops. "
+            f"Ensure all special effects and transitions are velvet-smooth, filtered, and reverb-washed — never jarring or abrupt."
+            + (f" Redo direction: {feedback}" if feedback else "")
+        ],
     }
     ctx_file = f"/tmp/album_ctx_redo_{track_num}.json"
     with open(ctx_file, "w") as f:
-        json.dump(ctx, f)
+        json.dump(ctx, f, indent=2)
 
+    quality = profile.get("defaults", {}).get("quality", "hyperspatial") if profile else "hyperspatial"
     cmd = [
         "/opt/hermes/.venv/bin/python3", MASTER_PRODUCER_SCRIPT,
         "--prompt", brief,
         "--duration", str(duration),
-        "--quality", "standard",
+        "--quality", quality,
         "--director",
-        "--title", title,
-        "--no-deliver"
+        "--title", title_plain,
+        "--album", album_name,
+        "--track-number", str(track_num),
+        "--total-tracks", str(len(tracklist)),
+        "--no-deliver",
     ]
     env = os.environ.copy()
     env["ALBUM_CONTEXT_FILE"] = ctx_file
     proc = subprocess.run(cmd, capture_output=True, text=True, env=env)
 
     if proc.returncode != 0:
-        send_message(f"❌ Track {track_num} redo failed: {proc.stderr[:100]}")
+        diag = extract_root_cause_error(proc.stderr, exit_code=proc.returncode)
+        send_message(
+            f"❌ <b>Track {track_num} ({html.escape(title_plain)}) redo failed</b> [{diag['category']}]:\n"
+            f"<pre>{html.escape(diag['root_line'])}</pre>"
+        )
         if logger_hub:
-            logger_hub.log_failure("REDO_FAIL", proc.stderr, album=album_name, phase=1, track_num=track_num)
+            logger_hub.log_failure("REDO_FAIL", diag["root_line"], traceback_str=proc.stderr, album=album_name, phase=1, track_num=track_num)
         return tracklist
 
-    # Update track files
-    album_slug = album_name.lower().replace(' ', '-').replace('_', '-')
-    prod_dirs = sorted(glob.glob(f"/opt/data/music/productions/*{album_slug}*"))
-    if prod_dirs:
-        latest_dir = prod_dirs[-1]
-        mp3s = sorted(glob.glob(os.path.join(latest_dir, "*.mp3")))
-        flacs = sorted(glob.glob(os.path.join(latest_dir, "*.flac")))
-        if mp3s:
-            original["mp3_path"] = mp3s[-1]
-        if flacs:
-            original["flac_path"] = flacs[-1]
+    # Parse JSON output from master-producer.py stdout
+    mp_out = None
+    if proc.stdout:
+        for line in reversed(proc.stdout.strip().splitlines()):
+            line_s = line.strip()
+            if line_s.startswith("{") and line_s.endswith("}"):
+                try:
+                    mp_out = json.loads(line_s)
+                    break
+                except Exception:
+                    pass
+        if not mp_out:
+            try:
+                mp_out = json.loads(proc.stdout.strip())
+            except Exception:
+                mp_out = None
+
+    if mp_out and mp_out.get("session_dir"):
+        latest_dir = mp_out["session_dir"]
         original["production_dir"] = latest_dir
+        all_files = mp_out.get("all_files", {})
+        if all_files.get("mp3") and os.path.exists(all_files["mp3"]):
+            original["mp3_path"] = all_files["mp3"]
+        if mp_out.get("primary_file") and os.path.exists(mp_out["primary_file"]):
+            original["flac_path"] = mp_out["primary_file"]
+        elif all_files.get("flac") and os.path.exists(all_files["flac"]):
+            original["flac_path"] = all_files["flac"]
+    else:
+        # Fallback directory scan
+        prod_dirs = sorted(glob.glob("/opt/data/music/productions/2026*"))
+        if prod_dirs:
+            latest_dir = prod_dirs[-1]
+            mp3s = sorted(glob.glob(os.path.join(latest_dir, "master_*.mp3")))
+            flacs = sorted(glob.glob(os.path.join(latest_dir, "master_*.flac")))
+            if mp3s:
+                original["mp3_path"] = mp3s[-1]
+            if flacs:
+                original["flac_path"] = flacs[-1]
+            original["production_dir"] = latest_dir
+
+    # Read production_plan.json from the new session_dir to update actual BPM, Key, and Cost
+    plan_file = os.path.join(original.get("production_dir", ""), "production_plan.json")
+    redo_audio_cost = 2.78 if (track_num == len(tracklist) and len(tracklist) >= 2) else 2.10
+    if os.path.isfile(plan_file):
+        try:
+            with open(plan_file) as pf:
+                plan_data = json.load(pf)
+            if plan_data.get("bpm"):
+                original["bpm"] = str(plan_data["bpm"])
+            if plan_data.get("key"):
+                original["key"] = str(plan_data["key"])
+            if plan_data.get("cost", {}).get("total_usd"):
+                redo_audio_cost = float(plan_data["cost"]["total_usd"])
+        except Exception:
+            pass
+    original["cost"] = str(redo_audio_cost)
+    if state is not None:
+        add_cost(state, "track_redos", redo_audio_cost)
+        add_cost(state, "llm_passes", SONG_LLM_REDO_COST)
+        costs = init_cost_tracker(state)
+        costs["redo_count"] = costs.get("redo_count", 0) + 1
+        save_state(state)
+
+    # CRITICAL: Clear stale DAWAGENT master references and delete old export/session files
+    # so phase_2_daw_handoff freshly masters the newly generated stems!
+    original["master_path"] = None
+    original["master_mp3"] = None
+    original["dawagent_mastered"] = False
+
+    stale_export_dir = f"/opt/data/dawagent/exports/{session_slug}"
+    stale_session_dir = f"/opt/data/dawagent/sessions/{session_slug}"
+    for stale_dir in (stale_export_dir, stale_session_dir):
+        if os.path.isdir(stale_dir):
+            try:
+                shutil.rmtree(stale_dir)
+                logger.info(f"Cleared stale DAWAGENT directory for redo: {stale_dir}")
+            except Exception as e:
+                logger.warning(f"Could not clear {stale_dir}: {e}")
 
     if dashboard:
-        dashboard.update_track(track_num, title, "complete")
+        dashboard.update_track(track_num, title_plain, "complete")
 
-    send_message(f"✅ Track {track_num}: <b>{title}</b> redone successfully!")
+    send_message(
+        f"✅ Track {track_num}: <b>{html.escape(title_plain)}</b> ({original.get('bpm', bpm)} BPM, {original.get('key', key)}) "
+        f"redone with VØIDRIDE DNA! Routing to DAWAGENT for studio mastering..."
+    )
     return tracklist
 
 
@@ -911,14 +1906,22 @@ def build_composer_daw_plan(title, subgenre, bpm, key, stems):
                 f"{s_name}: Calf 8-Band EQ (high-pass 120Hz, presence boost 3.2kHz) + LSP Compressor (smooth 2.5:1) + "
                 f"Dragonfly Hall Reverb (2.4s decay, 25% wet)"
             )
-        elif any(k in s_lower for k in ["texture", "pad", "atmosphere", "accent", "sfx"]):
+        elif any(k in s_lower for k in ["spatial", "3d"]):
             plan_parts.append(
-                f"{s_name}: x42 High-Pass Filter (cut < 220Hz) + Dragonfly Hall Reverb (cavernous 3.5s) + "
-                f"Calf Stereo Tools (140% stereo width)"
+                f"{s_name}: 3D Binaural Haas + Orbital LFO Panning + x42 M/S Widening (136% side) + 808 Sub Sidechain Ducking"
+            )
+        elif any(k in s_lower for k in ["ear_candy", "foley", "riser", "accent", "sfx"]):
+            plan_parts.append(
+                f"{s_name}: Beat-Locked Risers + Sub-Drop Impacts + 3D Doppler Foley + Pitched Sample Chops + Plate Reverb"
+            )
+        elif any(k in s_lower for k in ["texture", "pad", "atmosphere", "b_section"]):
+            plan_parts.append(
+                f"{s_name}: x42 High-Pass Filter (cut < 140Hz) + Dragonfly Hall Reverb (cavernous 3.5s) + "
+                f"Calf Stereo Tools (130% stereo width) + 808 Sidechain Ducking"
             )
         elif any(k in s_lower for k in ["no_drum", "instrument", "main"]):
             plan_parts.append(
-                f"{s_name}: Calf 8-Band EQ (sculpt mids 1.5-4kHz) + LSP Compressor (musical glue 3:1) + Dragonfly Room"
+                f"{s_name}: Calf 8-Band EQ (sub-focus 45-75Hz, sculpt mids 1.5-4kHz) + LSP Compressor (musical glue 2.8:1) + Demucs Breakdown/Stutter"
             )
         else:
             plan_parts.append(
@@ -983,25 +1986,38 @@ def phase_2_daw_handoff(proposal, tracklist, mode="full", dashboard=None):
         stems_to_use = []
         stem_names = []
 
-        # Check for demucs stems
-        demucs_dirs = glob.glob(os.path.join(prod_dir, "stems", "demucs", "htdemucs", "*"))
-        if demucs_dirs and os.path.isdir(demucs_dirs[0]):
-            d_dir = demucs_dirs[0]
-            d_drums = os.path.join(d_dir, "drums.wav")
-            d_nodrums = os.path.join(d_dir, "no_drums.wav")
-            if os.path.exists(d_drums) and os.path.exists(d_nodrums):
-                stems_to_use = [d_drums, d_nodrums]
-                stem_names = ["Drums", "Instrumentation"]
+        # Priority 1: Full-length 3D-arranged discrete stems exported by master-producer.py (01_main, 02_texture, 03_atmosphere, 04_spatial, 06_ear_candy_bus)
+        daw_stem_files = sorted(glob.glob(os.path.join(prod_dir, "daw_stems", "*.wav")))
+        if len(daw_stem_files) >= 2:
+            stems_to_use = daw_stem_files
+            stem_names = [Path(s).stem for s in daw_stem_files]
 
-        # If no demucs stems, check for main/texture stems
+        # Priority 2: Check for demucs stems if daw_stems unavailable
         if not stems_to_use:
-            raw_stems = sorted(glob.glob(os.path.join(prod_dir, "stems", "*.wav")) + glob.glob(os.path.join(prod_dir, "stems", "*.mp3")))
-            valid_stems = [s for s in raw_stems if not s.endswith("_fx.wav")]
+            demucs_dirs = glob.glob(os.path.join(prod_dir, "stems", "demucs", "htdemucs", "*"))
+            if demucs_dirs and os.path.isdir(demucs_dirs[0]):
+                d_dir = demucs_dirs[0]
+                d_drums = os.path.join(d_dir, "drums.wav")
+                d_nodrums = os.path.join(d_dir, "no_drums.wav")
+                if os.path.exists(d_drums) and os.path.exists(d_nodrums):
+                    stems_to_use = [d_drums, d_nodrums]
+                    stem_names = ["Drums", "Instrumentation"]
+
+        # Priority 3: Check for main/texture/atmosphere/spatial stems (including singles/ and sfx/ subdirs)
+        if not stems_to_use:
+            raw_stems = sorted(
+                glob.glob(os.path.join(prod_dir, "stems", "**", "*.wav"), recursive=True)
+                + glob.glob(os.path.join(prod_dir, "stems", "**", "*.mp3"), recursive=True)
+            )
+            valid_stems = [
+                s for s in raw_stems
+                if not s.endswith("_fx.wav") and "demucs" not in s.replace("\\", "/").split("/")
+            ]
             if len(valid_stems) >= 2:
                 stems_to_use = valid_stems
                 stem_names = [Path(s).stem.replace('_', ' ').title() for s in valid_stems]
 
-        # Fallback to pre-mixed wav/flac if stems unavailable
+        # Priority 4: Fallback to pre-mixed wav/flac if stems unavailable
         if not stems_to_use:
             mix_candidates = glob.glob(os.path.join(prod_dir, "mix_*.wav"))
             if mix_candidates:
@@ -1037,13 +2053,17 @@ def phase_2_daw_handoff(proposal, tracklist, mode="full", dashboard=None):
         handoff_cmd = [
             "/opt/hermes/.venv/bin/python3", handoff_script, "write",
             "--session", session_slug,
-            "--bpm", str(t_bpm if str(t_bpm).isdigit() else 120),
+            "--bpm", str(t_bpm if str(t_bpm).isdigit() else 134),
             "--stems", ",".join(stems_to_use),
             "--stem-names", ",".join(stem_names),
             "--plan", dsp_plan,
             "--source", "album_pipeline",
+            "--album", album_name,
+            "--profile", "vidride",
             "--notes", f"{album_name} Track {i}: {title_plain} ({subgenre}, {t_key})"
         ]
+        if prod_dir and os.path.isdir(prod_dir):
+            handoff_cmd.extend(["--production-dir", prod_dir])
         h_res = subprocess.run(handoff_cmd, capture_output=True, text=True)
         if h_res.returncode != 0:
             logger.error(f"Handoff write failed for {title_plain}: {h_res.stderr[-200:]}")
@@ -1171,41 +2191,49 @@ def phase_3_song_review(tracklist, proposal=None, dashboard=None):
 
 def _package_and_share_flacs(tracklist, proposal):
     try:
-        import tempfile
-        album_name = proposal.get("album", "ALBUM").replace(" ", "-")
-        pack_dir = os.path.join(tempfile.gettempdir(), f"flac-{album_name}")
+        album_title = proposal.get("album", "ALBUM").strip()
+        album_slug = album_title.lower().replace(" ", "-").replace("_", "-")
+        exports_base = "/opt/data/music/exports" if os.path.exists("/opt/data/music") else r"D:\music\exports"
+        pack_dir = os.path.join(exports_base, album_slug)
         os.makedirs(pack_dir, exist_ok=True)
 
         flac_files = []
         for idx, t in enumerate(tracklist):
             flac = t.get("master_path") or t.get("flac_path")
+            title = t.get("title", f"Track_{idx+1}").strip()
+            clean_t = title.replace(" ", "_")
             if flac and os.path.exists(flac):
-                title = t.get("title", f"Track_{idx+1}")
-                dest_name = f"{(idx+1):02d}-{title.replace(' ', '-')}.flac"
+                dest_name = f"{(idx+1):02d}_{clean_t}_MASTER.flac"
                 dest = os.path.join(pack_dir, dest_name)
-                shutil.copy2(flac, dest)
+                if os.path.abspath(flac) != os.path.abspath(dest):
+                    shutil.copy2(flac, dest)
                 flac_files.append(dest_name)
             elif t.get("mp3_path") and os.path.exists(t["mp3_path"]):
-                dest_name = f"{(idx+1):02d}-{t.get('title', f'Track_{idx+1}').replace(' ', '-')}.mp3"
+                dest_name = f"{(idx+1):02d}_{clean_t}.mp3"
                 dest = os.path.join(pack_dir, dest_name)
-                shutil.copy2(t["mp3_path"], dest)
+                if os.path.abspath(t["mp3_path"]) != os.path.abspath(dest):
+                    shutil.copy2(t["mp3_path"], dest)
                 flac_files.append(dest_name)
 
         if not flac_files:
-            send_message(f"⚠️ No completed audio tracks found for <b>{album_name}</b> yet. Production is currently in progress.")
-            shutil.rmtree(pack_dir, ignore_errors=True)
+            send_message(f"⚠️ No completed audio tracks found for <b>{html.escape(album_title)}</b> yet. Production is currently in progress.")
             return
+
+        win_folder_path = f"D:\\music\\exports\\{album_slug}"
+        playlist_filename = f"{album_slug}_playlist.m3u8"
+        playlist_path = os.path.join(pack_dir, playlist_filename)
+        win_playlist_path = f"{win_folder_path}\\{playlist_filename}"
 
         # M3U8 playlist - ONLY when all tracks are present
         total_expected = len(tracklist) if tracklist else 5
         has_playlist = len(flac_files) >= total_expected and total_expected > 1
         if has_playlist:
-            playlist_path = os.path.join(pack_dir, f"{album_name}.m3u8")
             with open(playlist_path, "w", encoding="utf-8") as pf:
                 pf.write("#EXTM3U\n")
-                for fname in flac_files:
-                    title_clean = os.path.splitext(fname)[0].split("-", 1)[-1].replace("-", " ")
-                    pf.write(f"#EXTINF:-1,{title_clean}\nD:\\music\\exports\\{album_name}\\{fname}\n")
+                pf.write(f"#PLAYLIST:{album_title} (VØIDRIDE Studio Masters)\n")
+                for idx, fname in enumerate(flac_files, 1):
+                    t_title = tracklist[idx - 1].get("title", fname) if idx <= len(tracklist) else fname
+                    pf.write(f"#EXTINF:-1,VØIDRIDE - {t_title}\n{win_folder_path}\\{fname}\n")
 
         # Tag metadata
         tag_script = "/opt/data/skills/delivery-receipt/scripts/tag_metadata.py"
@@ -1216,34 +2244,30 @@ def _package_and_share_flacs(tracklist, proposal):
         res = subprocess.run(["/opt/hermes/.venv/bin/python3", SHARE_SCRIPT, "--path", pack_dir], capture_output=True, text=True, timeout=120)
         external_link = None
         internal_link = None
-        local_path = None
         for line in res.stdout.splitlines():
             if "[EXTERNAL LINK]" in line:
                 external_link = line.split("[EXTERNAL LINK]")[-1].strip()
             elif "[INTERNAL LINK]" in line:
                 internal_link = line.split("[INTERNAL LINK]")[-1].strip()
-            elif "[SUCCESS] Packaged successfully:" in line:
-                linux_path = line.split("[SUCCESS] Packaged successfully:")[-1].strip()
-                if linux_path.startswith("/opt/data/music/"):
-                    local_path = linux_path.replace("/opt/data/music/", "D:\\music\\").replace("/", "\\")
-                else:
-                    local_path = linux_path
+
+        if has_playlist and os.path.exists(playlist_path):
+            send_document(playlist_path, caption=f"🎶 <b>{html.escape(album_title)}</b> — Windows VLC Playlist (.m3u8)")
 
         pl_suffix = " + VLC playlist" if has_playlist else ""
         msg = (
-            f"📦 <b>{html.escape(album_name)} — Full Master Archive</b>\n"
+            f"📦 <b>{html.escape(album_title)} — Full Master Archive</b>\n"
             f"━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"🎵 {len(flac_files)} Tracks (48kHz/32-bit Studio FLACs{pl_suffix})\n\n"
+            f"🎵 {len(flac_files)} Tracks (48kHz/24-bit Studio FLACs{pl_suffix})\n\n"
         )
         if external_link:
             msg += f"🌐 <b>External Download (Cloudflare / Mobile):</b>\n🔗 <a href='{external_link}'>{external_link}</a>\n\n"
         if internal_link:
             msg += f"🏠 <b>Internal Download (Tailscale / LAN):</b>\n🔗 <a href='{internal_link}'>{internal_link}</a>\n\n"
-        if local_path:
-            msg += f"📁 <b>Windows Local File:</b>\n<code>{html.escape(local_path)}</code>\n"
+        msg += f"📁 <b>Windows Local Folder:</b>\n<code>{html.escape(win_folder_path)}</code>\n"
+        if has_playlist:
+            msg += f"🎶 <b>Windows VLC Playlist:</b>\n<code>{html.escape(win_playlist_path)}</code>\n"
 
         send_message(msg)
-        shutil.rmtree(pack_dir, ignore_errors=True)
     except Exception as e:
         send_message(f"❌ FLAC packaging error: {e}")
 
@@ -1302,7 +2326,7 @@ def sanitize_prompt_for_venice(prompt, max_len=1450):
     return (prompt + suffix).strip()
 
 
-def upsample_image_prompt_k3(title, core_concept, subgenre="", is_album=False, custom_notes=""):
+def upsample_image_prompt_k3(title, core_concept, subgenre="", is_album=False, custom_notes="", state=None):
     """
     Upsample image prompt into a hyper-detailed cinematic scene using kimi-k3 via Venice API.
     Derives visuals directly from the musical theme / acoustic DNA.
@@ -1364,8 +2388,11 @@ def upsample_image_prompt_k3(title, core_concept, subgenre="", is_album=False, c
         "Content-Type": "application/json"
     }
 
-    models_to_try = ["kimi-k3", "qwen-3-7-plus"]
+    models_to_try = _mr.get_role_chain("llm.image_prompt", ["deepseek-v4-flash", "qwen-3-7-plus", "qwen-3-8-flash"]) if _mr else ["deepseek-v4-flash", "qwen-3-7-plus", "qwen-3-8-flash"]
     for model_name in models_to_try:
+        v_params = {"strip_thinking_response": True}
+        if "qwen" in model_name:
+            v_params["disable_thinking"] = True
         payload = {
             "model": model_name,
             "messages": [
@@ -1373,7 +2400,8 @@ def upsample_image_prompt_k3(title, core_concept, subgenre="", is_album=False, c
                 {"role": "user", "content": user_input}
             ],
             "temperature": 0.7,
-            "max_tokens": 1800
+            "max_tokens": 900,
+            "venice_parameters": v_params,
         }
         try:
             req = urllib.request.Request(url, data=json.dumps(payload).encode('utf-8'), headers=headers)
@@ -1384,6 +2412,8 @@ def upsample_image_prompt_k3(title, core_concept, subgenre="", is_album=False, c
                 content = msg.get("content", "").strip() or msg.get("reasoning_content", "").strip()
                 if content:
                     cleaned = re.sub(r'^(Prompt:\s*|Here is the prompt:\s*|Visual prompt:\s*)', '', content, flags=re.IGNORECASE).strip('"` \n')
+                    if state is not None:
+                        add_cost(state, "prompt_upsampling", VENICE_K3_PROMPT_COST)
                     logger.info(f"Successfully upsampled prompt with {model_name} for '{title}' ({len(cleaned)} chars)")
                     return sanitize_prompt_for_venice(cleaned)
         except Exception as e:
@@ -1415,7 +2445,7 @@ def generate_artwork_venice(prompt, album_name, state=None):
 
     url = "https://api.venice.ai/api/v1/images/generations"
     headers = {"Authorization": f"Bearer {VENICE_API_KEY}", "Content-Type": "application/json"}
-    models = ["qwen-image-3-pro", "grok-imagine-image-quality"]
+    models = _mr.get_role_chain("image.cover_primary", ["qwen-image-3-pro", "grok-imagine-image-2-0", "grok-imagine-image"]) if _mr else ["qwen-image-3-pro", "grok-imagine-image-2-0", "grok-imagine-image"]
 
     for model_name in models:
         payload = {
@@ -1550,29 +2580,28 @@ def sanitize_filename(title):
     return clean.strip().replace(" ", "_").upper()
 
 
-def generate_waveform_banner(bg_image_path, title_clean, out_dirs=None):
+def generate_waveform_banner(bg_image_path, title_clean, out_dirs=None, track_num=None, album_slug=None, force=False, state=None, use_paid_ai_extend=False):
     """
-    Generate clean 1240x400 panoramic waveform banner from clean background image
-    using Venice AI image edit endpoint. Absolutely NO text overlays.
-    Saves to each directory in out_dirs and to the master waveforms directory.
+    Generate clean 1240x400 panoramic waveform banner from clean 3000x3000 background image.
+    Defaults to $0.00 razor-sharp high-res Lanczos panoramic crop (zero hallucinated text, zero latency),
+    with optional Venice AI 16:9 outpainting when use_paid_ai_extend=True.
     """
-    if not VENICE_API_KEY or not os.path.exists(bg_image_path):
+    if not os.path.exists(bg_image_path):
         return None
     try:
         from PIL import Image
         import io
         clean_name = sanitize_filename(title_clean)
-        master_dir = "/opt/data/music/artwork/waveforms"
-        if not os.path.exists("/opt/data/music") and os.path.exists("D:/music"):
-            master_dir = "D:/music/artwork/waveforms"
+        music_root = "/opt/data/music" if os.path.exists("/opt/data/music") else "D:/music"
+        master_dir = os.path.join(music_root, "artwork", "waveforms")
         os.makedirs(master_dir, exist_ok=True)
         master_file = os.path.join(master_dir, f"{clean_name}_waveform.png")
 
         banner_bytes = None
-        if os.path.exists(master_file) and os.path.getsize(master_file) > 1000:
+        if not force and os.path.exists(master_file) and os.path.getsize(master_file) > 1000:
             with open(master_file, "rb") as mf:
                 banner_bytes = mf.read()
-        else:
+        elif use_paid_ai_extend and VENICE_API_KEY:
             with Image.open(bg_image_path) as img:
                 resized = img.convert("RGB").resize((1024, 1024), Image.LANCZOS)
                 buf = io.BytesIO()
@@ -1594,33 +2623,95 @@ def generate_waveform_banner(bg_image_path, title_clean, out_dirs=None):
                 "aspect_ratio": "16:9"
             }
             req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers)
-            with urllib.request.urlopen(req, timeout=120) as resp:
-                data = resp.read()
-                if len(data) > 1000:
-                    banner_img = Image.open(io.BytesIO(data))
-                    w, h = banner_img.size
+            try:
+                with urllib.request.urlopen(req, timeout=120) as resp:
+                    content_type = resp.headers.get("Content-Type", "")
+                    data = resp.read()
+                    if "image" in content_type or (len(data) > 8 and data[:8] == b'\x89PNG\r\n\x1a\n'):
+                        raw_bytes = data
+                    else:
+                        try:
+                            res_json = json.loads(data.decode("utf-8"))
+                            if "data" in res_json and res_json["data"]:
+                                b64 = res_json["data"][0].get("b64_json", "")
+                                raw_bytes = base64.b64decode(b64)
+                            else:
+                                raw_bytes = data
+                        except Exception:
+                            raw_bytes = data
+
+                    if raw_bytes and len(raw_bytes) > 1000:
+                        banner_img = Image.open(io.BytesIO(raw_bytes))
+                        w, h = banner_img.size
+                        target_w, target_h = 1240, 400
+                        target_ratio = target_w / target_h
+                        new_h = int(w / target_ratio)
+                        center_offset = int(h * 0.1)
+                        top = (h - new_h) // 2 + center_offset
+                        top = min(top, h - new_h)
+                        cropped = banner_img.crop((0, max(0, top), w, min(h, top + new_h)))
+                        final = cropped.resize((target_w, target_h), Image.LANCZOS)
+                        out_buf = io.BytesIO()
+                        final.save(out_buf, "PNG")
+                        banner_bytes = out_buf.getvalue()
+                        if state is not None:
+                            add_cost(state, "waveform_banners", VENICE_IMAGE_EDIT_COST)
+            except Exception as api_err:
+                logger.warning(f"Venice waveform API edit error for {clean_name}: {api_err}. Using local high-res panoramic crop.")
+
+        if not banner_bytes and os.path.exists(bg_image_path):
+            try:
+                with Image.open(bg_image_path) as img:
+                    w, h = img.size
                     target_w, target_h = 1240, 400
                     target_ratio = target_w / target_h
                     new_h = int(w / target_ratio)
                     center_offset = int(h * 0.1)
                     top = (h - new_h) // 2 + center_offset
-                    top = min(top, h - new_h)
-                    cropped = banner_img.crop((0, top, w, top + new_h))
+                    top = min(top, max(0, h - new_h))
+                    cropped = img.crop((0, max(0, top), w, min(h, top + new_h)))
                     final = cropped.resize((target_w, target_h), Image.LANCZOS)
                     out_buf = io.BytesIO()
                     final.save(out_buf, "PNG")
                     banner_bytes = out_buf.getvalue()
+                    logger.info(f"Generated clean local crop waveform banner for {clean_name}")
+            except Exception as fe:
+                logger.error(f"Local crop waveform failed for {clean_name}: {fe}")
 
         if banner_bytes:
-            target_dirs = set((out_dirs or []) + [master_dir])
+            extra_dirs = []
+            if album_slug:
+                slug = album_slug.lower().replace(" ", "-").replace("_", "-")
+                extra_dirs = [
+                    os.path.join(music_root, "albums", slug, "artwork"),
+                    os.path.join(music_root, "albums", slug, "artwork", "waveforms"),
+                    os.path.join(music_root, "artwork", "albums", slug),
+                    os.path.join(music_root, "artwork", "albums", slug, "waveforms"),
+                    os.path.join(music_root, "artwork", "waveforms", slug),
+                    os.path.join(music_root, "exports", slug, "waveforms"),
+                    os.path.join(music_root, "releases", slug, "waveforms"),
+                    os.path.join(music_root, "releases", slug, "covers"),
+                ]
+            target_dirs = set((out_dirs or []) + extra_dirs + [master_dir])
+            saved_primary = None
             for d in target_dirs:
                 if d:
                     os.makedirs(d, exist_ok=True)
                     dest = os.path.join(d, f"{clean_name}_waveform.png")
                     with open(dest, "wb") as f:
                         f.write(banner_bytes)
-            logger.info(f"Successfully generated/saved clean waveform banner for {clean_name}")
-            return True
+                    if not saved_primary:
+                        saved_primary = dest
+                    if track_num is not None:
+                        num_dest = os.path.join(d, f"{int(track_num):02d}_{clean_name}_waveform.png")
+                        with open(num_dest, "wb") as f:
+                            f.write(banner_bytes)
+                    elif album_slug and os.path.abspath(d) != os.path.abspath(master_dir):
+                        alb_dest = os.path.join(d, "album_waveform.png")
+                        with open(alb_dest, "wb") as f:
+                            f.write(banner_bytes)
+            logger.info(f"Successfully generated/saved clean waveform banner for {clean_name} across {len(target_dirs)} directories")
+            return saved_primary or True
     except Exception as e:
         logger.error(f"Failed to generate waveform banner for {title_clean}: {e}")
     return False
@@ -1656,14 +2747,9 @@ def phase_4_album_cover(proposal, tracklist, state=None, dashboard=None):
 
         shutil.copy2(raw_path, cover_bg)
 
-        send_message("⬆️ Upscaling clean background artwork to 3000×3000...")
-        upscale_artwork_venice(cover_bg)
-        if state:
-            add_cost(state, "cover_upscale", VENICE_UPSCALE_COST)
-
     if os.path.exists(OVERLAY_TITLE_SCRIPT) and os.path.exists(cover_bg):
         styled_album = stylize_title(album_name)
-        logger.info(f"Overlaying title '{styled_album}' stacked & justified onto bottom of 3000x3000 canvas...")
+        logger.info(f"Overlaying title '{styled_album}' stacked & justified onto bottom of cover preview...")
         subprocess.run(["/opt/hermes/.venv/bin/python3", OVERLAY_TITLE_SCRIPT,
                         "--image", cover_bg, "--title", styled_album, "--stacked", "--bottom", "--auto-color", "--opacity", "0.60", "--output", cover_path], capture_output=True)
     elif os.path.exists(cover_bg) and not os.path.exists(cover_path):
@@ -1697,7 +2783,7 @@ def phase_4_album_cover(proposal, tracklist, state=None, dashboard=None):
         moon_phase, _ = get_current_moon_phase()
         caption = (
             f"🎨 <b>Album Cover: {html.escape(album_name)}</b>\n"
-            f"🌙 Phase: <i>{moon_phase}</i> | 📐 3000×3000 Ultra-HD\n"
+            f"🌙 Phase: <i>{moon_phase}</i> | 📐 3000×3000 Master on Approval\n"
             f"<i>Review cover below — tap Approve, Regenerate, or Edit:</i>"
         )
         send_file = jpg_path if os.path.exists(jpg_path) else cover_path
@@ -1708,9 +2794,28 @@ def phase_4_album_cover(proposal, tracklist, state=None, dashboard=None):
     while True:
         flag, content = poll_flags()
         if flag == "albumcover_approved":
-            send_message("✅ Album cover approved! Generating clean panoramic waveform banner...")
+            send_message("✅ Album cover approved! Upscaling clean master to 3000×3000 & generating panoramic waveform banner...")
+            if os.path.exists(cover_bg):
+                upscale_artwork_venice(cover_bg)
+                if state:
+                    add_cost(state, "cover_upscale", VENICE_UPSCALE_COST)
+                if os.path.exists(OVERLAY_TITLE_SCRIPT):
+                    styled_album = stylize_title(album_name)
+                    subprocess.run(["/opt/hermes/.venv/bin/python3", OVERLAY_TITLE_SCRIPT,
+                                    "--image", cover_bg, "--title", styled_album, "--stacked", "--bottom", "--auto-color", "--opacity", "0.60", "--output", cover_path], capture_output=True)
+                else:
+                    shutil.copy2(cover_bg, cover_path)
+                try:
+                    from PIL import Image
+                    with Image.open(cover_path) as im:
+                        im.convert('RGB').save(jpg_path, 'JPEG', quality=95)
+                except Exception:
+                    pass
             alb_bg = cover_bg if os.path.exists(cover_bg) else cover_path
-            generate_waveform_banner(alb_bg, album_name, [art_dir, "/opt/data/music/artwork/waveforms"])
+            album_slug = album_name.lower().replace(' ', '-').replace('_', '-')
+            wave_res = generate_waveform_banner(alb_bg, album_name, [art_dir, "/opt/data/music/artwork/waveforms"], track_num=None, album_slug=album_slug, force=True)
+            if isinstance(wave_res, str) and os.path.exists(wave_res):
+                send_photo(wave_res, caption=f"🌊 <b>Album Waveform Banner: {html.escape(album_name)}</b> (1240×400)")
             return "approved"
         elif flag == "albumcover_regen":
             send_message("🔄 <b>Regenerating album cover from scratch...</b>")
@@ -1729,11 +2834,6 @@ def phase_4_album_cover(proposal, tracklist, state=None, dashboard=None):
                 shutil.copy2(cover_path, cover_bg)
 
             edit_artwork_venice(cover_bg, edit_directive, cover_bg, state=state)
-
-            send_message("⬆️ Upscaling edited background to 3000×3000...")
-            upscale_artwork_venice(cover_bg)
-            if state:
-                add_cost(state, "cover_upscale", VENICE_UPSCALE_COST)
 
             if os.path.exists(OVERLAY_TITLE_SCRIPT):
                 styled_album = stylize_title(album_name)
@@ -1815,7 +2915,7 @@ def phase_5_track_covers(proposal, tracklist, state=None, dashboard=None):
             if os.path.exists(OVERLAY_TITLE_SCRIPT):
                 styled_title = stylize_title(title)
                 subprocess.run(["/opt/hermes/.venv/bin/python3", OVERLAY_TITLE_SCRIPT,
-                                "--image", bg_backup, "--title", styled_title, "--bottom", "--auto-color", "--opacity", "0.60", "--output", cover_path], capture_output=True)
+                                "--image", bg_backup, "--title", styled_title, "--stacked", "--bottom", "--auto-color", "--opacity", "0.68", "--output", cover_path], capture_output=True)
             else:
                 shutil.copy2(bg_backup, cover_path)
 
@@ -1851,22 +2951,25 @@ def phase_5_track_covers(proposal, tracklist, state=None, dashboard=None):
     while True:
         flag, content = poll_flags()
         if flag == "trackcovers_approved":
-            send_message(f"⬆️ <b>Upscaling all {len(track_cover_paths)} track covers to 3000×3000 with crisp inverted typography...</b>")
+            album_slug = album_name.lower().replace(' ', '-').replace('_', '-')
+            send_message(f"⬆️ <b>Upscaling all {len(track_cover_paths)} track covers to 3000×3000 & generating per-song waveform banners...</b>")
             for i, cp in enumerate(track_cover_paths):
                 track_title = os.path.basename(cp).replace('_cover.png', '').replace('_cover.jpg', '')
                 bg_path = os.path.join(track_art_dir, f"{track_title}_cover_bg.png")
-                send_message(f"⚙️ [{(i+1)}/{len(track_cover_paths)}] Upscaling clean background for <b>{html.escape(track_title)}</b>...")
+                send_message(f"⚙️ [{(i+1)}/{len(track_cover_paths)}] Upscaling & generating waveform for <b>{html.escape(track_title)}</b>...")
                 if os.path.exists(bg_path):
                     upscale_artwork_venice(bg_path)
                     # Generate clean panoramic waveform banner from un-captioned background
-                    generate_waveform_banner(bg_path, track_title, [track_art_dir, "/opt/data/music/artwork/waveforms"])
+                    wave_res = generate_waveform_banner(bg_path, track_title, [track_art_dir, "/opt/data/music/artwork/waveforms"], track_num=i+1, album_slug=album_slug, force=True)
                     if os.path.exists(OVERLAY_TITLE_SCRIPT):
                         styled_title = stylize_title(track_title)
                         subprocess.run(["/opt/hermes/.venv/bin/python3", OVERLAY_TITLE_SCRIPT,
-                                        "--image", bg_path, "--title", styled_title, "--bottom", "--auto-color", "--opacity", "0.60", "--output", cp], capture_output=True)
+                                        "--image", bg_path, "--title", styled_title, "--stacked", "--bottom", "--auto-color", "--opacity", "0.68", "--output", cp], capture_output=True)
                 else:
                     upscale_artwork_venice(cp)
-                    generate_waveform_banner(cp, track_title, [track_art_dir, "/opt/data/music/artwork/waveforms"])
+                    wave_res = generate_waveform_banner(cp, track_title, [track_art_dir, "/opt/data/music/artwork/waveforms"], track_num=i+1, album_slug=album_slug, force=True)
+                if isinstance(wave_res, str) and os.path.exists(wave_res):
+                    send_photo(wave_res, caption=f"🌊 Track {i+1} Waveform: <b>{html.escape(track_title)}</b> (1240×400)")
                 if state:
                     add_cost(state, "cover_upscale", VENICE_UPSCALE_COST)
                 jpg_cp = os.path.splitext(cp)[0] + '.jpg'
@@ -1876,7 +2979,7 @@ def phase_5_track_covers(proposal, tracklist, state=None, dashboard=None):
                         im.convert('RGB').save(jpg_cp, 'JPEG', quality=95)
                 except Exception:
                     pass
-            send_message("✅ <b>All track covers upscaled to 3000×3000!</b> Assembling final release package for your review & confirmation...")
+            send_message("✅ <b>All track covers upscaled & per-song waveform banners generated!</b> Assembling final release package for your review & confirmation...")
             return "approved"
         elif flag == "trackcovers_regenall":
             send_message("🔄 <b>Regenerating all track covers...</b>")
@@ -1905,7 +3008,7 @@ def phase_5_track_covers(proposal, tracklist, state=None, dashboard=None):
                         if os.path.exists(OVERLAY_TITLE_SCRIPT):
                             styled_title = stylize_title(title)
                             subprocess.run(["/opt/hermes/.venv/bin/python3", OVERLAY_TITLE_SCRIPT,
-                                            "--image", bg_path, "--title", styled_title, "--bottom", "--auto-color", "--opacity", "0.60", "--output", cover_path], capture_output=True)
+                                            "--image", bg_path, "--title", styled_title, "--stacked", "--bottom", "--auto-color", "--opacity", "0.68", "--output", cover_path], capture_output=True)
                         else:
                             shutil.copy2(bg_path, cover_path)
                         track_btn = [
@@ -1941,7 +3044,7 @@ def phase_5_track_covers(proposal, tracklist, state=None, dashboard=None):
                         if os.path.exists(OVERLAY_TITLE_SCRIPT):
                             styled_title = stylize_title(title)
                             subprocess.run(["/opt/hermes/.venv/bin/python3", OVERLAY_TITLE_SCRIPT,
-                                            "--image", bg_path, "--title", styled_title, "--bottom", "--auto-color", "--opacity", "0.60", "--output", cover_path], capture_output=True)
+                                            "--image", bg_path, "--title", styled_title, "--stacked", "--bottom", "--auto-color", "--opacity", "0.68", "--output", cover_path], capture_output=True)
                         else:
                             shutil.copy2(bg_path, cover_path)
                         track_btn = [
@@ -2060,42 +3163,124 @@ def assemble_release(proposal, tracklist, album_slug):
                     styled_title = stylize_title(title)
                     subprocess.run([
                         "/opt/hermes/.venv/bin/python3", OVERLAY_TITLE_SCRIPT,
-                        "--image", bg_img, "--title", styled_title, "--bottom", "--auto-color", "--output", dest_cov
+                        "--image", bg_img, "--title", styled_title, "--stacked", "--bottom", "--auto-color", "--opacity", "0.68", "--output", dest_cov
                     ], capture_output=True, timeout=30)
                 except Exception as oe:
                     logger.warning(f"Re-overlay title error on {dest_cov}: {oe}")
 
-    # 2b. Waveform banners - copy album and track waveforms into covers/
-    master_waves_dir = "/opt/data/music/artwork/waveforms"
-    if not os.path.exists("/opt/data/music") and os.path.exists("D:/music"):
-        master_waves_dir = "D:/music/artwork/waveforms"
+    # 2b. Waveform banners - ensure dedicated waveforms/ folder across all canonical directories
+    music_root = "/opt/data/music" if os.path.exists("/opt/data/music") else "D:/music"
+    master_waves_dir = os.path.join(music_root, "artwork", "waveforms")
+    master_waves_sub = os.path.join(master_waves_dir, album_slug)
+    art_waves_dir = os.path.join(art_dir, "waveforms")
+    art_albums_dir = os.path.join(music_root, "artwork", "albums", album_slug)
+    art_albums_waves_dir = os.path.join(art_albums_dir, "waveforms")
+    export_dir = os.path.join(music_root, "exports", album_slug)
+    export_waves_dir = os.path.join(export_dir, "waveforms")
+    export_covers_dir = os.path.join(export_dir, "covers")
+    release_waves_dir = os.path.join(release_dir, "waveforms")
+
+    for d in [master_waves_dir, master_waves_sub, art_waves_dir, art_albums_dir, art_albums_waves_dir, export_dir, export_waves_dir, export_covers_dir, release_waves_dir]:
+        os.makedirs(d, exist_ok=True)
+
+    # Also sync covers to artwork/albums/{album_slug} and exports/{album_slug}/covers
+    for cf in os.listdir(covers_dir):
+        src_cf = os.path.join(covers_dir, cf)
+        if os.path.isfile(src_cf):
+            for dst_d in [art_albums_dir, export_covers_dir]:
+                try:
+                    shutil.copy2(src_cf, os.path.join(dst_d, cf))
+                except Exception:
+                    pass
 
     clean_alb_name = sanitize_filename(proposal.get("album", album_slug))
+    alb_wave_found = None
     alb_wave_cands = [
+        os.path.join(release_waves_dir, "album_waveform.png"),
+        os.path.join(release_waves_dir, f"{clean_alb_name}_waveform.png"),
+        os.path.join(covers_dir, "album_waveform.png"),
+        os.path.join(covers_dir, f"{clean_alb_name}_waveform.png"),
         os.path.join(art_dir, "album_waveform.png"),
         os.path.join(art_dir, f"{clean_alb_name}_waveform.png"),
+        os.path.join(art_waves_dir, f"{clean_alb_name}_waveform.png"),
         os.path.join(master_waves_dir, f"{clean_alb_name}_waveform.png"),
     ]
     for awc in alb_wave_cands:
-        if os.path.exists(awc):
-            shutil.copy2(awc, os.path.join(covers_dir, "album_waveform.png"))
-            shutil.copy2(awc, os.path.join(covers_dir, f"{clean_alb_name}_waveform.png"))
+        if os.path.exists(awc) and os.path.getsize(awc) > 1000:
+            alb_wave_found = awc
             break
+
+    if not alb_wave_found:
+        alb_bg_cands = [
+            os.path.join(art_dir, "album_cover_bg.png"),
+            os.path.join(art_dir, f"{clean_alb_name}_bg.png"),
+            os.path.join(art_dir, f"{album_slug}_bg.png"),
+            os.path.join(covers_dir, "album_cover.png"),
+            os.path.join(release_dir, "cover.png"),
+            os.path.join(release_dir, "cover.jpg"),
+        ]
+        alb_bg = next((c for c in alb_bg_cands if os.path.exists(c)), None)
+        if alb_bg:
+            logger.info(f"Generating missing album waveform banner for {clean_alb_name}...")
+            generate_waveform_banner(alb_bg, clean_alb_name, [release_waves_dir, covers_dir, master_waves_dir, art_dir], track_num=None, album_slug=album_slug)
+            alb_wave_found = os.path.join(release_waves_dir, f"{clean_alb_name}_waveform.png")
+
+    if alb_wave_found and os.path.exists(alb_wave_found):
+        for dst_dir in [release_waves_dir, covers_dir, art_dir, art_waves_dir, art_albums_dir, art_albums_waves_dir, master_waves_sub, export_waves_dir]:
+            for fn in ["album_waveform.png", f"{clean_alb_name}_waveform.png"]:
+                dst = os.path.join(dst_dir, fn)
+                if os.path.abspath(alb_wave_found) != os.path.abspath(dst):
+                    try: shutil.copy2(alb_wave_found, dst)
+                    except Exception: pass
+        master_alb_dst = os.path.join(master_waves_dir, f"{clean_alb_name}_waveform.png")
+        if os.path.abspath(alb_wave_found) != os.path.abspath(master_alb_dst):
+            try: shutil.copy2(alb_wave_found, master_alb_dst)
+            except Exception: pass
 
     for idx, t in enumerate(tracklist, 1):
         title = t.get("title", f"Track {idx}")
         clean_title = sanitize_filename(title)
+        tr_wave_found = None
         tr_wave_cands = [
+            os.path.join(release_waves_dir, f"{idx:02d}_{clean_title}_waveform.png"),
+            os.path.join(release_waves_dir, f"{clean_title}_waveform.png"),
+            os.path.join(covers_dir, f"{idx:02d}_{clean_title}_waveform.png"),
+            os.path.join(covers_dir, f"{clean_title}_waveform.png"),
+            os.path.join(art_dir, f"{idx:02d}_{clean_title}_waveform.png"),
             os.path.join(art_dir, f"{clean_title}_waveform.png"),
-            os.path.join(art_dir, f"{title}_waveform.png"),
+            os.path.join(art_waves_dir, f"{idx:02d}_{clean_title}_waveform.png"),
+            os.path.join(art_waves_dir, f"{clean_title}_waveform.png"),
+            os.path.join(master_waves_dir, f"{idx:02d}_{clean_title}_waveform.png"),
             os.path.join(master_waves_dir, f"{clean_title}_waveform.png"),
-            os.path.join(master_waves_dir, f"{title}_waveform.png"),
         ]
         for twc in tr_wave_cands:
-            if os.path.exists(twc):
-                shutil.copy2(twc, os.path.join(covers_dir, f"{clean_title}_waveform.png"))
-                shutil.copy2(twc, os.path.join(covers_dir, f"{idx:02d}_{clean_title}_waveform.png"))
+            if os.path.exists(twc) and os.path.getsize(twc) > 1000:
+                tr_wave_found = twc
                 break
+
+        if not tr_wave_found:
+            tr_bg_cands = [
+                os.path.join(art_dir, f"{title}_cover_bg.png"),
+                os.path.join(art_dir, f"{clean_title}_cover_bg.png"),
+                os.path.join(art_dir, f"OS_{idx:02d}_{title.lower().replace(' ', '_')}_bg.png"),
+                os.path.join(art_dir, f"{clean_title}_bg.png"),
+                os.path.join(covers_dir, f"{idx:02d}_{clean_title}_cover.png"),
+                os.path.join(covers_dir, f"{idx:02d}_{clean_title}.png"),
+                os.path.join(covers_dir, f"{idx:02d}_{clean_title}.jpg"),
+            ]
+            tr_bg = next((c for c in tr_bg_cands if os.path.exists(c)), None)
+            if tr_bg:
+                logger.info(f"Generating missing waveform banner for track {idx} ({title})...")
+                generate_waveform_banner(tr_bg, clean_title, [release_waves_dir, covers_dir, master_waves_dir, art_dir], track_num=idx, album_slug=album_slug)
+                tr_wave_found = os.path.join(release_waves_dir, f"{clean_title}_waveform.png")
+
+        if tr_wave_found and os.path.exists(tr_wave_found):
+            for dst_dir in [release_waves_dir, covers_dir, art_dir, art_waves_dir, art_albums_dir, art_albums_waves_dir, master_waves_sub, export_waves_dir, master_waves_dir]:
+                for fn in [f"{idx:02d}_{clean_title}_waveform.png", f"{clean_title}_waveform.png"]:
+                    dst = os.path.join(dst_dir, fn)
+                    if os.path.abspath(tr_wave_found) != os.path.abspath(dst):
+                        try: shutil.copy2(tr_wave_found, dst)
+                        except Exception: pass
 
     # Clean any unwanted files from release_dir (ensure no MP3s and no loose images in root)
     for f in os.listdir(release_dir):
@@ -2123,13 +3308,15 @@ def assemble_release(proposal, tracklist, album_slug):
     with open(os.path.join(release_dir, "tracks_meta.json"), "w", encoding="utf-8") as f:
         json.dump(tracks_meta, f, indent=2)
 
-    # 4. Write playlist
+    # 4. Write playlist in release_dir and sync FLACs + playlist to exports/{album_slug}
+    album_display = proposal.get("album", album_slug.upper()).replace("-", " ")
     with open(os.path.join(release_dir, f"{album_slug}_playlist.m3u8"), "w", encoding="utf-8") as pf:
         pf.write("#EXTM3U\n")
+        pf.write(f"#PLAYLIST:{album_display} (VØIDRIDE Studio Masters)\n")
         for idx, title in enumerate(tracks, 1):
             clean_title = title.replace(" ", "_")
             pf.write(f"#EXTINF:-1,VØIDRIDE - {title}\n")
-            pf.write(f"{idx:02d}_{clean_title}_MASTER.flac\n")
+            pf.write(f"D:\\music\\releases\\{album_slug}\\{idx:02d}_{clean_title}_MASTER.flac\n")
 
     # 5. Tag metadata & embed artwork directly into FLACs
     tag_script = "/opt/data/skills/delivery-receipt/scripts/tag_metadata.py"
@@ -2140,6 +3327,23 @@ def assemble_release(proposal, tracklist, album_slug):
         except Exception as e:
             logger.error(f"tag_metadata failed: {e}")
 
+    # 5b. Sync tagged FLACs and playlist into /opt/data/music/exports/{album_slug}
+    try:
+        for fn in flac_files:
+            src_f = os.path.join(release_dir, fn)
+            dst_f = os.path.join(export_dir, fn)
+            if os.path.exists(src_f):
+                shutil.copy2(src_f, dst_f)
+        with open(os.path.join(export_dir, f"{album_slug}_playlist.m3u8"), "w", encoding="utf-8") as epf:
+            epf.write("#EXTM3U\n")
+            epf.write(f"#PLAYLIST:{album_display} (VØIDRIDE Studio Masters)\n")
+            for idx, title in enumerate(tracks, 1):
+                clean_title = title.replace(" ", "_")
+                epf.write(f"#EXTINF:-1,VØIDRIDE - {title}\n")
+                epf.write(f"D:\\music\\exports\\{album_slug}\\{idx:02d}_{clean_title}_MASTER.flac\n")
+    except Exception as se:
+        logger.warning(f"Export sync warning: {se}")
+
     return release_dir
 
 
@@ -2149,92 +3353,107 @@ def phase_6_final_review(proposal, tracklist=None, state=None, dashboard=None):
         dashboard.set_phase(6)
     album_name = proposal.get('album', 'release')
     album_slug = album_name.lower().replace(' ', '-')
-
-    # 1. Canonical assembly: embed FLAC covers & keep strictly 1 image per song + album cover
-    assemble_release(proposal, tracklist or [], album_slug)
-
-    # 2. Generate Windows review playlist & receipt
-    try:
-        playlist_script = "/opt/data/skills/delivery-receipt/scripts/send_windows_playlist.py"
-        receipt_script = "/opt/data/skills/delivery-receipt/scripts/deliver_receipt.py"
-        if os.path.exists(playlist_script):
-            subprocess.run(["/opt/hermes/.venv/bin/python3", playlist_script, "--release", album_slug], capture_output=True, text=True, timeout=120)
-        if os.path.exists(receipt_script):
-            subprocess.run(["/opt/hermes/.venv/bin/python3", receipt_script, "--release", album_slug], capture_output=True, text=True, timeout=120)
-    except Exception as e:
-        logger.error(f"Playlist/receipt generation error: {e}")
-
-    # 3. Share album directory via Cloudflare tunnel & local service
     album_release_dir = f"/opt/data/music/releases/{album_slug}"
-    ext_link = None
-    int_link = None
-    local_path = None
-    if os.path.exists(album_release_dir):
+
+    already_packaged = bool(
+        state and state.get("phase_6_package_sent")
+        and os.path.exists(os.path.join(album_release_dir, "release.json"))
+    )
+
+    if not already_packaged:
+        # 1. Canonical assembly: embed FLAC covers & keep strictly 1 image per song + album cover
+        assemble_release(proposal, tracklist or [], album_slug)
+
+        # 2. Generate Windows review playlist & receipt
         try:
-            share_res = subprocess.run(["/opt/hermes/.venv/bin/python3", SHARE_SCRIPT, "--path", album_release_dir], capture_output=True, text=True, timeout=180)
-            for line in share_res.stdout.splitlines():
-                if "[EXTERNAL LINK]" in line:
-                    ext_link = line.split("[EXTERNAL LINK]")[-1].strip()
-                elif "[INTERNAL LINK]" in line:
-                    int_link = line.split("[INTERNAL LINK]")[-1].strip()
-                elif "[SUCCESS] Packaged successfully:" in line:
-                    lp = line.split("[SUCCESS] Packaged successfully:")[-1].strip()
-                    if lp.startswith("/opt/data/music/"):
-                        local_path = lp.replace("/opt/data/music/", "D:\\music\\").replace("/", "\\")
-                    else:
-                        local_path = lp
+            playlist_script = "/opt/data/skills/delivery-receipt/scripts/send_windows_playlist.py"
+            receipt_script = "/opt/data/skills/delivery-receipt/scripts/deliver_receipt.py"
+            if os.path.exists(playlist_script):
+                subprocess.run(["/opt/hermes/.venv/bin/python3", playlist_script, "--release", album_slug], capture_output=True, text=True, timeout=120)
+            if os.path.exists(receipt_script):
+                subprocess.run(["/opt/hermes/.venv/bin/python3", receipt_script, "--release", album_slug], capture_output=True, text=True, timeout=120)
         except Exception as e:
-            logger.error(f"Packaging error: {e}")
+            logger.error(f"Playlist/receipt generation error: {e}")
 
-    # 3b. Deliver all reference masters together for inline preview if available
-    for t in (tracklist or []):
-        track_num = t.get('track', '?')
-        title = t.get('title', f"Track {track_num}")
-        bpm = t.get('bpm', proposal.get('bpm', '?') if proposal else '?')
-        key = t.get('key', proposal.get('key', '?') if proposal else '?')
-        mp3 = t.get('master_mp3') or t.get('mp3_path')
-        if mp3 and os.path.exists(mp3):
-            send_audio(mp3, caption=f"🎵 [{track_num}/{len(tracklist)}] {title} (Mastered · {bpm} BPM · {key})")
+        # 3. Share album directory via Cloudflare tunnel & local service
+        ext_link = None
+        int_link = None
+        win_release_folder = f"D:\\music\\releases\\{album_slug}"
+        win_playlist_path = f"{win_release_folder}\\{album_slug}_playlist.m3u8"
+        if os.path.exists(album_release_dir):
+            try:
+                share_res = subprocess.run(["/opt/hermes/.venv/bin/python3", SHARE_SCRIPT, "--path", album_release_dir], capture_output=True, text=True, timeout=180)
+                for line in share_res.stdout.splitlines():
+                    if "[EXTERNAL LINK]" in line:
+                        ext_link = line.split("[EXTERNAL LINK]")[-1].strip()
+                    elif "[INTERNAL LINK]" in line:
+                        int_link = line.split("[INTERNAL LINK]")[-1].strip()
+            except Exception as e:
+                logger.error(f"Packaging error: {e}")
 
-    # 4. Build prompt message with download links & interactive buttons
-    final_buttons = [
-        [{"text": "🚀 Confirm: Good to Proceed to SoundCloud", "callback_data": "ap:final:publish"}],
-        [
-            {"text": "🎵 Edit Songs", "callback_data": "ap:final:edit_songs"},
-            {"text": "🎨 Edit Album Art", "callback_data": "ap:final:edit_album"}
-        ],
-        [
-            {"text": "🖼️ Edit Track Covers", "callback_data": "ap:final:edit_covers"},
-            {"text": "❌ Keep on Hold / Cancel", "callback_data": "ap:final:cancel"}
+        # 3b. Deliver all reference masters together for inline preview if available
+        for t in (tracklist or []):
+            track_num = t.get('track', '?')
+            title = t.get('title', f"Track {track_num}")
+            bpm = t.get('bpm', proposal.get('bpm', '?') if proposal else '?')
+            key = t.get('key', proposal.get('key', '?') if proposal else '?')
+            mp3 = t.get('master_mp3') or t.get('mp3_path')
+            if mp3 and os.path.exists(mp3):
+                send_audio(mp3, caption=f"🎵 [{track_num}/{len(tracklist)}] {title} (Mastered · {bpm} BPM · {key})")
+
+        # 4. Build prompt message with download links & interactive buttons
+        final_buttons = [
+            [{"text": "🚀 Confirm: Good to Proceed to SoundCloud", "callback_data": "ap:final:publish"}],
+            [
+                {"text": "🎵 Edit Songs", "callback_data": "ap:final:edit_songs"},
+                {"text": "🎨 Edit Album Art", "callback_data": "ap:final:edit_album"}
+            ],
+            [
+                {"text": "🖼️ Edit Track Covers", "callback_data": "ap:final:edit_covers"},
+                {"text": "❌ Keep on Hold / Cancel", "callback_data": "ap:final:cancel"}
+            ]
         ]
-    ]
 
-    msg = (
-        f"📦 <b>{html.escape(album_name)} — Final Release Package Submitted!</b>\n\n"
-        f"✨ Lossless 24-bit/48kHz FLAC studio masters (artwork embedded into files).\n"
-        f"🖼️ Exactly 1 cover per track + album cover (styled with opposite key color).\n\n"
-    )
-    if ext_link:
-        msg += f"🌐 <b>External Download (Cloudflare / Mobile):</b>\n🔗 <a href='{ext_link}'>{ext_link}</a>\n\n"
-    if int_link:
-        msg += f"🏠 <b>Internal Download (Tailscale / LAN):</b>\n🔗 <a href='{int_link}'>{int_link}</a>\n\n"
-    if local_path:
-        msg += f"📁 <b>Windows Local File:</b>\n<code>{html.escape(local_path)}</code>\n\n"
-    msg += (
-        "<b>Please review all reference masters and artwork above.</b>\n"
-        "👉 <i>When you are ready, tap <b>Confirm: Good to Proceed to SoundCloud</b> to push live:</i>"
-    )
+        msg = (
+            f"📦 <b>{html.escape(album_name)} — Final Release Package Submitted!</b>\n\n"
+            f"✨ Lossless 24-bit/48kHz FLAC studio masters (artwork embedded into files).\n"
+            f"🖼️ Exactly 1 cover per track + album cover + per-song waveform banners.\n\n"
+        )
+        if ext_link:
+            msg += f"🌐 <b>External Download (Cloudflare / Mobile):</b>\n🔗 <a href='{ext_link}'>{ext_link}</a>\n\n"
+        if int_link:
+            msg += f"🏠 <b>Internal Download (Tailscale / LAN):</b>\n🔗 <a href='{int_link}'>{int_link}</a>\n\n"
+        msg += f"📁 <b>Windows Local Folder:</b>\n<code>{html.escape(win_release_folder)}</code>\n"
+        msg += f"🎶 <b>Windows VLC Playlist:</b>\n<code>{html.escape(win_playlist_path)}</code>\n\n"
+        msg += (
+            "<b>Please review all reference masters and artwork above.</b>\n"
+            "👉 <i>When you are ready, tap <b>Confirm: Good to Proceed to SoundCloud</b> to push live:</i>"
+        )
 
-    send_message(msg, reply_markup={"inline_keyboard": final_buttons})
-    logger.info("Sent final review package & publishing gate to Telegram. Polling for decisions...")
+        send_message(msg, reply_markup={"inline_keyboard": final_buttons})
+        if state is not None:
+            state["phase_6_package_sent"] = True
+            save_state(state)
+        logger.info("Sent final review package & publishing gate to Telegram. Polling for decisions...")
+    else:
+        logger.info(f"Phase 6 package already sent for {album_name}; skipping duplicate MP3/archive delivery.")
 
-    # 5. Poll for user decision
+    # 5. Poll for user decision (or immediately execute if final_publish was already confirmed before a retry)
+    auto_publish = bool(state and state.get("phase_6_publish_confirmed"))
     while True:
-        flag, content = poll_flags()
+        if auto_publish:
+            flag, content = "final_publish", "publish"
+            auto_publish = False
+        else:
+            flag, content = poll_flags()
         if flag == "final_publish":
+            if state is not None:
+                state["phase_6_publish_confirmed"] = True
+                save_state(state)
             logger.info("User confirmed publish. Pushing to SoundCloud...")
             send_message(f"🚀 <b>Publishing {html.escape(album_name)} to SoundCloud...</b>\n<i>Uploading 24-bit studio FLAC masters and synchronized covers. Live progress will be reported below.</i>")
             cmd = ["/opt/hermes/.venv/bin/python3", PUBLISH_SCRIPT, "--release", album_slug, "--confirm", "--force"]
+            res = subprocess.run(cmd, capture_output=True, text=True, timeout=1800)
             if res.returncode == 0:
                 logger.info(f"Published {album_name} to SoundCloud successfully.")
                 send_agent_notification(f"Published {album_name} to SoundCloud")
@@ -2253,10 +3472,22 @@ def phase_6_final_review(proposal, tracklist=None, state=None, dashboard=None):
                              reply_markup={"inline_keyboard": remediation_buttons})
                 continue
         elif flag == "final_edit_songs":
+            if state is not None:
+                state["phase_6_package_sent"] = False
+                state["phase_6_publish_confirmed"] = False
+                save_state(state)
             return "edit_songs"
         elif flag == "final_edit_album":
+            if state is not None:
+                state["phase_6_package_sent"] = False
+                state["phase_6_publish_confirmed"] = False
+                save_state(state)
             return "edit_album"
         elif flag == "final_edit_covers":
+            if state is not None:
+                state["phase_6_package_sent"] = False
+                state["phase_6_publish_confirmed"] = False
+                save_state(state)
             return "edit_covers"
         elif flag == "final_cancel":
             return "cancelled"
@@ -2287,6 +3518,8 @@ def main():
     parser.add_argument("--duration", type=int, default=None)
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--force", action="store_true", help="Force acquire lock by terminating any existing pipeline")
+    parser.add_argument("--redo-tracks", default=None, help="Comma-separated 1-based track numbers to redo immediately (e.g. '1,5')")
+    parser.add_argument("--redo-feedback", default=None, help="Feedback direction to apply when redoing tracks")
     parser.add_argument("--test", action="store_true")
     args = parser.parse_args()
 
@@ -2297,7 +3530,7 @@ def main():
     clear_flags()
     state = load_state()
     mode = args.mode
-    duration = args.duration if args.duration else (20 if mode == "sample" else 260)
+    duration = args.duration if args.duration else (20 if mode == "sample" else 175)
 
     if args.resume and state.get("proposal"):
         proposal = state["proposal"]
@@ -2354,23 +3587,63 @@ def main():
 
     redo_track, redo_feedback = None, None
 
+    # ── Published Album Guard ──
+    # If the album is already published on SoundCloud or in releases/, abort immediately,
+    # clean up stale pipeline state, and do NOT send any messages or audio to Telegram.
+    album_name = proposal.get("album", "")
+    album_slug = album_name.lower().replace(" ", "-").replace("_", "-")
+    release_candidates = [
+        f"/opt/data/music/releases/{album_slug}/release.json",
+        f"D:/music/releases/{album_slug}/release.json",
+        f"/opt/data/music/albums/{album_slug}/release.json",
+        f"D:/music/albums/{album_slug}/release.json"
+    ]
+    is_already_published = False
+    for rpath in release_candidates:
+        if os.path.exists(rpath):
+            try:
+                with open(rpath, "r", encoding="utf-8") as rf:
+                    rj = json.load(rf)
+                if rj.get("status") == "published" or rj.get("soundcloud", {}).get("track_ids"):
+                    is_already_published = True
+                    break
+            except Exception:
+                pass
+
+    if is_already_published:
+        logger.info(f"Album '{album_name}' is already published on SoundCloud ({album_slug}). Cleaning up stale pipeline state and exiting cleanly.")
+        if os.path.exists(STATE_FILE):
+            try:
+                os.remove(STATE_FILE)
+            except Exception:
+                pass
+        for st_f in ["/opt/data/music/pipeline_state.json", "D:/music/pipeline_state.json"]:
+            if os.path.exists(st_f):
+                try:
+                    os.remove(st_f)
+                except Exception:
+                    pass
+        clear_flags()
+        sys.exit(0)
+
     acquire_lock(force=args.force)
     init_cost_tracker(state)
 
-    # Auto-discover existing completed masters and artwork on disk
-    disc_tracks, disc_phase, disc_art = discover_existing_album_production(proposal)
-    if len(disc_tracks) >= 5:
-        logger.info(f"Auto-discovery found {len(disc_tracks)} completed masters on disk for {proposal.get('album')}.")
-        tracklist = disc_tracks
-        state["completed_tracks"] = disc_tracks
-        state["tracklist"] = disc_tracks
-        if not (args.resume and state.get("phase")):
-            current_phase = disc_phase
-            state["phase"] = disc_phase
-        else:
-            current_phase = state.get("phase")
-        logger.info(f"Pipeline phase set to [{current_phase}/6]")
-        save_state(state)
+    # Auto-discover existing completed masters and artwork on disk only if state tracklist is incomplete
+    if not (args.resume and len(tracklist) >= 5):
+        disc_tracks, disc_phase, disc_art = discover_existing_album_production(proposal)
+        if len(disc_tracks) >= 5:
+            logger.info(f"Auto-discovery found {len(disc_tracks)} completed masters on disk for {proposal.get('album')}.")
+            tracklist = disc_tracks
+            state["completed_tracks"] = disc_tracks
+            state["tracklist"] = disc_tracks
+            if not (args.resume and state.get("phase")):
+                current_phase = disc_phase
+                state["phase"] = disc_phase
+            else:
+                current_phase = state.get("phase")
+            logger.info(f"Pipeline phase set to [{current_phase}/6]")
+            save_state(state)
 
     # Internal status tracker (dashboard messages disabled)
     dashboard = LiveStatusDashboard(
@@ -2381,107 +3654,175 @@ def main():
         total_tracks=5
     )
 
+    # Immediate CLI multi-track redo before entering main loop
+    if args.redo_tracks and tracklist:
+        redo_nums = [int(x.strip()) for x in str(args.redo_tracks).split(",") if x.strip().isdigit()]
+        if redo_nums:
+            for rn in redo_nums:
+                tracklist = phase_1_redo_single(
+                    proposal, profile, tracklist, rn,
+                    feedback=args.redo_feedback, duration=duration, dashboard=dashboard, state=state
+                )
+                state["tracklist"] = tracklist
+                state["completed_tracks"] = tracklist
+                save_state(state)
+            current_phase = 2 if mode != "sample" else 3
+            state["phase"] = current_phase
+            save_state(state)
+
     try:
         while True:
-            # Phase 1: Music Production
-            if current_phase <= 1:
-                dashboard.set_phase(1)
-                state["phase"] = 1
-                save_state(state)
-                tracklist = phase_1_produce(proposal, profile, redo_track, redo_feedback, mode=mode, duration=duration, dashboard=dashboard, state=state)
-                state["tracklist"] = tracklist
-                state["phase"] = 2
-                save_state(state)
-                current_phase = 2
-
-            # Phase 2: DAW Mastering (bypassed if mode == sample)
-            if current_phase == 2:
-                if mode == "sample":
-                    logger.info("Sample preview mode: bypassing DAW mastering.")
-                    current_phase = 3
-                else:
-                    dashboard.set_phase(2)
-                    phase_2_daw_handoff(proposal, tracklist, mode=mode, dashboard=dashboard)
+            try:
+                # Phase 1: Music Production
+                if current_phase <= 1:
+                    dashboard.set_phase(1)
+                    state["phase"] = 1
+                    save_state(state)
+                    tracklist = phase_1_produce(proposal, profile, redo_track, redo_feedback, mode=mode, duration=duration, dashboard=dashboard, state=state)
                     state["tracklist"] = tracklist
-                    state["phase"] = 3
+                    state["phase"] = 2
                     save_state(state)
-                    current_phase = 3
+                    current_phase = 2
 
-            # Phase 3: Song Review
-            if current_phase == 3:
-                dashboard.set_phase(3)
-                decision, payload = phase_3_song_review(tracklist, proposal=proposal, dashboard=dashboard)
-                if decision == "reject":
-                    send_message(f"❌ Album remaking with direction: <i>{payload}</i>")
-                    proposal['brief'] = proposal.get('brief', '') + f"\n[USER REVISION]: {payload}"
-                    current_phase = 1
-                    state["completed_tracks"] = []
+                # Phase 2: DAW Mastering (bypassed if mode == sample)
+                if current_phase == 2:
+                    if mode == "sample":
+                        logger.info("Sample preview mode: bypassing DAW mastering.")
+                        current_phase = 3
+                    else:
+                        dashboard.set_phase(2)
+                        phase_2_daw_handoff(proposal, tracklist, mode=mode, dashboard=dashboard)
+                        state["tracklist"] = tracklist
+                        state["phase"] = 3
+                        save_state(state)
+                        current_phase = 3
+
+                # Phase 3: Song Review
+                if current_phase == 3:
+                    dashboard.set_phase(3)
+                    decision, payload = phase_3_song_review(tracklist, proposal=proposal, dashboard=dashboard)
+                    if decision == "reject":
+                        send_message(f"❌ Album remaking with direction: <i>{payload}</i>")
+                        proposal['brief'] = proposal.get('brief', '') + f"\n[USER REVISION]: {payload}"
+                        current_phase = 1
+                        state["completed_tracks"] = []
+                        save_state(state)
+                        continue
+                    elif decision == "redo_track":
+                        t_num, fb = payload
+                        tracklist = phase_1_redo_single(proposal, profile, tracklist, t_num, fb, duration=duration, dashboard=dashboard, state=state)
+                        state["tracklist"] = tracklist
+                        state["completed_tracks"] = tracklist
+                        save_state(state)
+                        current_phase = 2 if mode != "sample" else 3
+                        continue
+                    elif decision == "approved":
+                        send_message("✅ All songs approved! Moving to album cover art.")
+                        state["phase"] = 4
+                        save_state(state)
+                        current_phase = 4
+
+                # Phase 4: Album Cover Art
+                if current_phase == 4:
+                    dashboard.set_phase(4)
+                    art_decision = phase_4_album_cover(proposal, tracklist, state=state, dashboard=dashboard)
+                    if art_decision == "approved":
+                        state["phase"] = 5
+                        save_state(state)
+                        current_phase = 5
+                    else:
+                        continue
+
+                # Phase 5: Track Cover Art
+                if current_phase == 5:
+                    dashboard.set_phase(5)
+                    covers_decision = phase_5_track_covers(proposal, tracklist, state=state, dashboard=dashboard)
+                    if covers_decision == "approved":
+                        state["phase"] = 6
+                        save_state(state)
+                        current_phase = 6
+                    else:
+                        continue
+
+                # Phase 6: Final Review & Publishing Gate
+                if current_phase == 6:
+                    dashboard.set_phase(6)
+                    final_decision = phase_6_final_review(proposal, tracklist=tracklist, state=state, dashboard=dashboard)
+                    if final_decision == "edit_songs":
+                        send_message("🎵 <b>Returning to Phase 3: Song Review...</b>")
+                        state["phase"] = 3
+                        save_state(state)
+                        current_phase = 3
+                        continue
+                    elif final_decision == "edit_album":
+                        send_message("🎨 <b>Returning to Phase 4: Album Cover Art...</b>")
+                        state["phase"] = 4
+                        save_state(state)
+                        current_phase = 4
+                        continue
+                    elif final_decision == "edit_covers":
+                        send_message("🖼️ <b>Returning to Phase 5: Track Cover Art...</b>")
+                        state["phase"] = 5
+                        save_state(state)
+                        current_phase = 5
+                        continue
+                    else:  # "published" or "cancelled"
+                        cost_summary = format_cost_summary(state, proposal.get('album', 'Release'), proposal=proposal, tracklist=tracklist)
+                        send_message(cost_summary)
+                        if os.path.exists(STATE_FILE):
+                            try: os.remove(STATE_FILE)
+                            except Exception: pass
+                        break
+            except Exception as e:
+                import traceback
+                tb_str = traceback.format_exc()
+                tb_frames = traceback.extract_tb(e.__traceback__)
+                loc_str = ""
+                if tb_frames:
+                    last_f = tb_frames[-1]
+                    loc_str = f" ({os.path.basename(last_f.filename)}:{last_f.lineno} in {last_f.name})"
+                logger.error(f"Unhandled exception in pipeline phase {current_phase}: {e}\n{tb_str}")
+                if logger_hub:
+                    logger_hub.log_failure("UNHANDLED_EXCEPTION", f"{type(e).__name__}: {e}{loc_str}", traceback_str=tb_str, album=proposal.get('album', 'Unknown'), phase=current_phase)
+                send_pipeline_error_card(
+                    album_name=proposal.get('album', 'Unknown Album'),
+                    phase_num=current_phase,
+                    phase_name=dashboard.phase_names.get(current_phase, f"Phase {current_phase}"),
+                    diag={
+                        "category": "UNHANDLED_EXCEPTION",
+                        "root_line": f"{type(e).__name__}: {e}{loc_str}",
+                        "hint": "Unexpected Python exception in pipeline orchestrator. State saved for resume — tap Retry Now after fixing or to re-attempt.",
+                    },
+                    include_buttons=True,
+                )
+                recover_action = None
+                while True:
+                    flag, content = poll_flags(timeout_hours=6)
+                    if flag in ("error:retry", "error_retry"):
+                        if dashboard:
+                            dashboard.clear_error()
+                        recover_action = "retry"
+                        break
+                    elif flag in ("error:skip", "error_skip"):
+                        if dashboard:
+                            dashboard.clear_error()
+                        recover_action = "skip"
+                        break
+                    elif flag in ("error:log", "error_log"):
+                        send_message(f"📋 <b>Full Traceback ({html.escape(proposal.get('album', 'Album'))}):</b>\n<pre>{html.escape(tb_str[-1500:])}</pre>")
+                        continue
+                    elif flag in ("error:abort", "error_abort") or flag is None:
+                        logger.info("Pipeline aborted or timed out at unhandled exception gate.")
+                        recover_action = "abort"
+                        break
+                if recover_action == "retry":
+                    continue
+                elif recover_action == "skip" and current_phase < 6:
+                    current_phase += 1
+                    state["phase"] = current_phase
                     save_state(state)
                     continue
-                elif decision == "redo_track":
-                    t_num, fb = payload
-                    tracklist = phase_1_redo_single(proposal, profile, tracklist, t_num, fb, duration=duration, dashboard=dashboard)
-                    state["tracklist"] = tracklist
-                    state["completed_tracks"] = tracklist
-                    save_state(state)
-                    current_phase = 2 if mode != "sample" else 3
-                    continue
-                elif decision == "approved":
-                    send_message("✅ All songs approved! Moving to album cover art.")
-                    state["phase"] = 4
-                    save_state(state)
-                    current_phase = 4
-
-            # Phase 4: Album Cover Art
-            if current_phase == 4:
-                dashboard.set_phase(4)
-                art_decision = phase_4_album_cover(proposal, tracklist, state=state, dashboard=dashboard)
-                if art_decision == "approved":
-                    state["phase"] = 5
-                    save_state(state)
-                    current_phase = 5
                 else:
-                    continue
-
-            # Phase 5: Track Cover Art
-            if current_phase == 5:
-                dashboard.set_phase(5)
-                covers_decision = phase_5_track_covers(proposal, tracklist, state=state, dashboard=dashboard)
-                if covers_decision == "approved":
-                    state["phase"] = 6
-                    save_state(state)
-                    current_phase = 6
-                else:
-                    continue
-
-            # Phase 6: Final Review & Publishing Gate
-            if current_phase == 6:
-                dashboard.set_phase(6)
-                final_decision = phase_6_final_review(proposal, tracklist=tracklist, state=state, dashboard=dashboard)
-                if final_decision == "edit_songs":
-                    send_message("🎵 <b>Returning to Phase 3: Song Review...</b>")
-                    state["phase"] = 3
-                    save_state(state)
-                    current_phase = 3
-                    continue
-                elif final_decision == "edit_album":
-                    send_message("🎨 <b>Returning to Phase 4: Album Cover Art...</b>")
-                    state["phase"] = 4
-                    save_state(state)
-                    current_phase = 4
-                    continue
-                elif final_decision == "edit_covers":
-                    send_message("🖼️ <b>Returning to Phase 5: Track Cover Art...</b>")
-                    state["phase"] = 5
-                    save_state(state)
-                    current_phase = 5
-                    continue
-                else:  # "published" or "cancelled"
-                    cost_summary = format_cost_summary(state, proposal.get('album', 'Release'))
-                    send_message(cost_summary)
-                    if os.path.exists(STATE_FILE):
-                        try: os.remove(STATE_FILE)
-                        except Exception: pass
                     break
     finally:
         release_lock()

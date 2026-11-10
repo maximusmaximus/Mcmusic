@@ -130,41 +130,41 @@ def tg_send_audio(file_path, title="", performer=""):
 # ─── Variation templates ────────────────────────────────────────────────
 
 VARIATION_TEMPLATES = [
-    {"direction": "heavy west coast bass opener",
-     "rules": ["Massive West Coast 808 sub-bass with aggressive pitch glide curves and tape saturation",
+    {"direction": "heavy california bass opener",
+     "rules": ["Massive California 808 sub-bass with aggressive pitch glide curves and lowrider low-end saturation",
                "Punchy acoustic-sampled transient kick drum with sharp attack and sidechain ducking",
-               "Crisp snap snares with wide stereo throws and syncopated trap rolls",
-               "Hard-hitting immediate presence — menacing nocturnal cruiser"]},
-    {"direction": "melodic nightride groove",
+               "Crisp snap snares with wide stereo throws and rolling West Coast syncopated bounce",
+               "Hyperspatial 3D soundstage with holographic delay throws and centered mono sub authority"]},
+    {"direction": "melodic nightride west coast groove",
      "rules": ["Melancholic detuned analog brass and minor-pentatonic sine plucks leading the melody",
-               "Sliding West Coast 808 sub-bass groove with rhythmic syncopation",
-               "Atmospheric nocturnal cruising aura with stereo haas reverb throws",
-               "Smooth buildup descending into a heavy, resonant sub drop"]},
-    {"direction": "west coast bounce & melodic lead",
-     "rules": ["Syncopated West Coast bounce rhythm with rolling triplet hi-hats",
+               "Sliding California 808 sub-bass groove with syncopated rhythmic bounce",
+               "Atmospheric nocturnal cruising aura with stereo haas reverb throws and wide spectral pads",
+               "Smooth buildup descending into a heavy, resonant West Coast sub drop"]},
+    {"direction": "west coast bounce & hyperspatial synth lead",
+     "rules": ["Syncopated West Coast bounce rhythm with rolling triplet hi-hats and snapping claps",
                "Lead detuned synth melody over deep reese and 808 bass foundations",
                "Punchy transient kick drum driving the dynamic groove",
-               "Wide stereo imaging on percussion with centered mono bass dominance"]},
-    {"direction": "tempo shift nightride banger",
-     "rules": ["Different BPM (tempo shift ±10-15 BPM) exploring faster or slower nightride energy",
-               "Tension-building filtered buildup with rising nocturnal pads and sub swells",
-               "Devastating drop with elongated 808 glide slides and hard transient slap",
+               "Wide binaural hyperspatial imaging on ambient textures and delays"]},
+    {"direction": "tempo shift california nightride banger",
+     "rules": ["Different BPM (tempo shift ±10-15 BPM) exploring faster or slower nightride cruising energy",
+               "Tension-building filtered buildup with rising nocturnal pads, sub swells, and spatial risers",
+               "Devastating drop with elongated California 808 glide slides and hard transient slap",
                "Dynamic contrast between atmospheric verse and crushing drop"]},
-    {"direction": "atmospheric nightride closer",
-     "rules": ["Cinematic nocturnal atmosphere with haunting spectral witch house pads",
+    {"direction": "atmospheric hyperspatial nightride closer",
+     "rules": ["Cinematic nocturnal atmosphere with haunting spectral witch house pads and 3D spatial field",
                "Deep melodic minor chord progressions on detuned analog synths",
-               "Heavy sustained sub-bass foundation with expressive pitch portamento",
+               "Heavy sustained California sub-bass foundation with expressive pitch portamento",
                "Smooth evolving soundscape building to a final thundering sub-bass climax"]},
-    {"direction": "experimental nightride wildcard",
-     "rules": ["Unexpected sonic textures layered with dominant West Coast sub-bass slides",
-               "Detuned sine plucks and chopped vocal textures in stereo delay space",
+    {"direction": "experimental nightride bass wildcard",
+     "rules": ["Unexpected sonic textures layered with dominant California sub-bass slides",
+               "Detuned sine plucks and chopped vocal textures in wide stereo delay space",
                "Bass drops that hit with punchy acoustic transient definition",
-               "Menacing, hypnotic nocturnal cruising aura"]},
-    {"direction": "sub-heavy melodic groove",
+               "Menacing, hypnotic nocturnal cruising aura with hyperspatial depth"]},
+    {"direction": "sub-heavy california melodic groove",
      "rules": ["Deep sub-bass frequencies commanding the low end (40-55Hz fundamental)",
                "Melodic synth hooks playing dark, silky minor-pentatonic lines",
-               "Crisp snap snares and tight syncopated percussion groove",
-               "Uncompromised volume balance — hard-hitting yet silky and controlled"]},
+               "Crisp snap snares and tight syncopated West Coast percussion groove",
+               "Uncompromised volume balance — hard-hitting yet silky, controlled, and expansive"]},
 ]
 
 
@@ -294,81 +294,149 @@ def interpret_track_from_cover_and_theme(album_name, album_theme, cover_visual, 
 
     norm_title = track_title.strip().upper()
     fallback = base_fallbacks.get(norm_title)
+    default_bpms = [134, 128, 140, 124, 132]
+    default_keys = ["Dm", "Fm", "Cm", "Dm", "Fm"]
+    fb_bpm = default_bpms[(track_num - 1) % len(default_bpms)]
+    fb_key = default_keys[(track_num - 1) % len(default_keys)]
     if not fallback:
         fallback = {
-            "direction": f"Auditory interpretation of cover scene embodying '{track_title}'",
+            "direction": (
+                f"Hyperspatial West Coast nightride bass and witch house gravity translating '{track_title}' "
+                f"into relentless California 808 sub-bass glides, predatory Reese undertones, punchy transient kicks, "
+                f"and detuned analog brass/sine hooks ({fb_bpm} BPM, {fb_key})"
+            ),
             "rules": [
-                f"Sub-bass and 808 glide behavior reflecting {cover_visual[:50] or album_theme[:50]}",
-                "Transient percussion and acoustic snap matching visual materials",
-                "Atmospheric synth leads and pads translating visual lighting and motifs into sound",
-                f"Dynamic progression and arrangement embodying '{track_title}'"
+                f"Rule 1: Continuous California 808 sub-bass dominance ({fb_bpm} BPM, {fb_key}) with slow predatory pitch portamento glides and centered low-end authority",
+                "Rule 2: Punchy acoustic-sampled transient kicks, crisp snap snares thrown wide into metallic impulse reverb, and rolling syncopated West Coast hi-hats",
+                "Rule 3: Melancholic detuned analog brass stabs and dark minor-pentatonic sine plucks carrying a hypnotic nocturnal cruising melody",
+                "Rule 4: Spectral pitched-down witch house choir pads and holographic 3D binaural delay throws supporting (never overpowering) the 808 sub",
+                f"Rule 5: Smooth psychological buildup dropping early into full-force West Coast bass weight embodying '{track_title}' — no dead air, no weak/thin leads"
             ],
-            "bpm": 130,
-            "key": "Ebm",
+            "bpm": fb_bpm,
+            "key": fb_key,
             "stems": {
-                "main": f"{album_theme}. Auditory translation of {cover_visual}. Focused on {track_title}. Heavy 808 slides, punchy kicks, atmospheric synth textures.",
-                "texture": f"Atmospheric soundscape reflecting {cover_visual[:150]}, subtle background drone.",
-                "accent": f"Sharp dynamic impact matching {track_title} and visual scene."
+                "main": (
+                    f"Hyperspatial nightride bass with witch house gravity, {fb_bpm} BPM, {fb_key}. "
+                    f"California bass and heavy West Coast bass mixed with melodic nightride vibes, nocturnal cruising atmosphere. "
+                    f"Massive continuous sub-bass dominance: gliding West Coast 808 slides with slow predatory pitch portamento, "
+                    f"always centered and thundering. Punchy acoustic-sampled transient kicks, crisp snap snares thrown wide into "
+                    f"metallic impulse reverb, rolling syncopated hi-hats. Detuned analog brass stabs and melancholic sine plucks "
+                    f"trace dark minor-pentatonic hooks over predatory Reese bass growls and spectral pitched-down choir pads. "
+                    f"Hyperspatial 3D binaural delay throws surround the listener while the 808 stays dominant. "
+                    f"NO four-on-the-floor, NO EDM festival drops, NO cheerful G-funk, NO static loops, NO silence drops."
+                ),
+                "texture": (
+                    f"Dark witch house atmospheric texture, {fb_bpm} BPM, {fb_key}: spectral detuned analog pads, "
+                    f"cold metallic reverb haze, subtle sub swells, nocturnal industrial stillness. Supporting role only, no drums."
+                )[:445],
+                "accent": (
+                    f"Warm rounded sub-bass swell impact in {fb_key} ({fb_bpm} BPM): soft low-passed resonance "
+                    f"with lush dark cavernous plate reverb tail, smooth attack, no harsh transients."
+                )[:445],
+                "riser": (
+                    f"Silky dark cyber-noir filter sweep in {fb_key} ({fb_bpm} BPM): gradual spectral pitch-bend swell "
+                    f"and warm reversed reverb wash with smooth high-end roll-off, no harsh noise or sudden cutoff."
+                )[:445],
+                "foley": (
+                    f"Subtle low-passed nocturnal ambient texture for '{track_title}': soft distant rain-slicked highway "
+                    f"wash, warm analog hum, and deep velvet stereo reverb reflections, smooth and understated."
+                )[:445],
+                "atmosphere": (
+                    f"Deep sub-bass drone and cavernous witch house ambient wash in {fb_key} at {fb_bpm} BPM: "
+                    f"distant nocturnal rain haze, stereo depth, warm analog darkness. No drums, no melody."
+                )[:445],
+                "spatial": (
+                    f"Hyperspatial 3D audio layer, {fb_bpm} BPM, {fb_key}: wide binaural stereo panning sweeps, "
+                    f"holographic ping-pong delay throws, ghostly spectral reflections orbiting the listener, no drums."
+                )[:445]
             }
         }
 
     if not api_key:
         return fallback
 
+    dna_str = json.dumps(sonic_dna, indent=2) if sonic_dna else "California West Coast nightride bass, witch house, dark nightride trap (122-144 BPM, Dm/Fm/Cm)"
+
     system_prompt = (
         "You are the Creative Director and Master Sound Designer for VØIDRIDE.\n"
         "Your task: Translate the visual album cover art and album theme into an auditory, "
-        "compositional interpretation for the specific song title below.\n\n"
+        "compositional interpretation for the specific song title below while STRICTLY preserving the core VØIDRIDE sonic aesthetic.\n\n"
         f"ALBUM: {album_name}\n"
         f"ALBUM THEME & SONIC DNA: {album_theme}\n"
+        f"VØIDRIDE SONIC DNA PROFILE: {dna_str}\n"
         f"COVER ART VISUAL SCENE: {cover_visual}\n"
         f"TRACK {track_num} OF {total_tracks} TITLE: {track_title}\n\n"
-        "Translate the visual setting, lighting, materials, and motifs directly into sound:\n"
-        "- Visual materials (wet concrete, cold tiles, steel grills, glass) -> reverb acoustics, transient snap, high-frequency reflections.\n"
-        "- Atmospheric phenomena (venting steam, drifting fog, fluorescent tube hum) -> sound beds, filtered white-noise sweeps, voltage drone.\n"
-        "- Visual motifs (ambulance idle, shadowed man, katana, moon) -> deep sub-bass motor glide, predatory reese undertones, razor transient cuts, pale pad swells.\n"
-        f"- Song Title '{track_title}' -> the central musical hook, groove, and narrative of this specific track.\n\n"
+        "MANDATORY VØIDRIDE AESTHETIC GUARDRAILS (NEVER VIOLATE):\n"
+        "1. EVERY track (including Track 1 Opener and Track 5 Closer) MUST be a heavy California West Coast nightride bass / witch house track.\n"
+        "2. BPM MUST be strictly between 122 and 144 BPM (NEVER drop below 120 BPM; slow 110 BPM tempos kill the West Coast trap bounce).\n"
+        "3. KEY MUST be a dark minor key from: Dm, Fm, Cm, Ebm.\n"
+        "4. CORE INSTRUMENTS (REQUIRED ON ALL TRACKS): Dominant continuous California 808 sub-bass with predatory pitch portamento slides, coiling Reese bass undertones, punchy acoustic-sampled transient kicks, crisp snap snares thrown wide into metallic reverb, rolling syncopated hi-hats, detuned analog brass stabs, melancholic minor-pentatonic sine plucks, and pitched-down spectral witch house choir pads.\n"
+        "5. FORBIDDEN TROPES (STRICT BAN):\n"
+        "   - NEVER use organic/woodland foley (NO 'snapping twigs', NO 'creaking wooden beams', NO acoustic folk/rock percussion).\n"
+        "   - NEVER interpret words like 'HELIUM', 'BLEED', 'COLD', or 'SILENCE' as weak, thin, deflating, or drumless audio (NO 'helium-thin whistles', NO 'deflating bass', NO 'airy drumless verses', NO 'slow-burn ambient closer').\n"
+        "   - Track 1 and Track 5 MUST hit with the same heavy sub-bass authority and nocturnal cruising groove as Tracks 2, 3, and 4.\n"
+        "6. SMOOTH SPECIAL EFFECTS RULE (CRITICAL FOR VØIDRIDE):\n"
+        "   - Any special effects (`accent_prompt`, `riser_prompt`, `foley_prompt`, or transition FX in `main_prompt`) MUST be velvet-smooth, warm, low-pass filtered on the high end, and drenched in lush dark reverb with gradual fade-ins and long decaying tails.\n"
+        "   - NEVER ask for jarring, harsh, piercing, clicky, clanky, or abrupt sound effects that poke out of the mix.\n"
+        "7. MAIN PROMPT FORMULA: `main_prompt` MUST begin with the genre, BPM, key, and the exact anchor phrase: 'California bass and heavy West Coast bass mixed with melodic nightride vibes — massive continuous sub-bass dominance, gliding West Coast 808 slides with slow predatory pitch portamento...'\n\n"
         "Return ONLY a valid JSON object (no markdown fences, no commentary):\n"
         "{\n"
-        '  "direction": "One-sentence summary of how this track translates the visual cover into sound",\n'
+        '  "direction": "One-sentence summary of how this track translates the visual cover into VØIDRIDE heavy nightride bass",\n'
         '  "rules": [\n'
-        '    "Rule 1: Sub-bass and 808 glide behavior reflecting the scene",\n'
-        '    "Rule 2: Drum and transient textures reflecting visual materials",\n'
-        '    "Rule 3: Lead synth/melodic elements reflecting the visual mood",\n'
-        '    "Rule 4: Foley and atmospheric textures from the cover scene",\n'
-        '    "Rule 5: Pacing and arrangement embodying the song title"\n'
+        '    "Rule 1: Continuous California 808 sub-bass and predatory pitch glide behavior",\n'
+        '    "Rule 2: Punchy acoustic transient kicks, crisp snap snares with metallic reverb throws, and rolling syncopated hi-hats",\n'
+        '    "Rule 3: Detuned analog brass stabs, melancholic minor-pentatonic sine plucks, and Reese bass growls",\n'
+        '    "Rule 4: Spectral witch house choir pads and smooth reverb-washed nocturnal atmosphere supporting the sub-bass",\n'
+        '    "Rule 5: Relentless nocturnal cruising groove with seamless, non-jarring special effects embodying the song title"\n'
         '  ],\n'
-        '  "bpm": 132,\n'
-        '  "key": "Ebm",\n'
-        '  "main_prompt": "Comprehensive main prompt for elevenlabs-music (60-120 words) detailing genre, BPM, key, instruments, 808 behavior, atmospheric space, and mood",\n'
-        '  "texture_prompt": "Prompt for stable-audio-25 (UNDER 450 CHARS) describing atmospheric texture/foley bed with key and BPM",\n'
-        '  "accent_prompt": "Prompt for elevenlabs-sound-effects-v2 (UNDER 450 CHARS) describing short transition FX/foley hit from the scene"\n'
+        f'  "bpm": {fb_bpm},\n'
+        f'  "key": "{fb_key}",\n'
+        '  "main_prompt": "Comprehensive main prompt for elevenlabs-music (90-150 words) starting with genre, BPM, key, and California bass / heavy West Coast bass mixed with melodic nightride vibes",\n'
+        '  "texture_prompt": "Prompt for stable-audio-25 (UNDER 450 CHARS) describing dark witch house spectral pad & atmospheric texture bed with key and BPM (no drums, supporting role)",\n'
+        '  "accent_prompt": "Prompt for elevenlabs-sound-effects-v2 (UNDER 450 CHARS) describing warm, rounded sub-bass swell impact with soft low-passed resonance and lush dark reverb tail (no harsh clicks)",\n'
+        '  "riser_prompt": "Prompt for elevenlabs-sound-effects-v2 (UNDER 450 CHARS) describing silky pre-drop filter sweep with warm reverse reverb swell and gradual crescendo (no harsh noise or sudden cutoff)",\n'
+        '  "foley_prompt": "Prompt for elevenlabs-sound-effects-v2 (UNDER 450 CHARS) describing a subtle, warm low-passed cyber-noir ambient wash inspired by the cover art scene (smooth and deeply recessed, no sharp clicks)",\n'
+        '  "atmosphere_prompt": "Prompt for stable-audio-25 (UNDER 450 CHARS) describing deep cavernous sub-bass ambient drone and nocturnal rain haze in the track key and BPM (no drums)",\n'
+        '  "spatial_prompt": "Prompt for stable-audio-25 (UNDER 450 CHARS) describing hyperspatial 3D audio layer, wide binaural stereo panning, and holographic delays with key and BPM"\n'
         "}"
     )
 
-    for model_name in ["kimi-k3", "llama-3.3-70b"]:
+    _sr_chain = ["deepseek-v4-flash", "qwen-3-7-plus", "qwen-3-8-flash"]
+    for _sd in [os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "scripts")), "/opt/data/scripts"]:
+        if os.path.isdir(_sd) and _sd not in sys.path:
+            sys.path.insert(0, _sd)
+    try:
+        import model_registry as _mr
+        _sr_chain = _mr.get_role_chain("llm.showrunner", _sr_chain)
+    except Exception:
+        pass
+
+    for model_name in _sr_chain:
         try:
-            payload = json.dumps({
+            v_params = {"strip_thinking_response": True}
+            if "qwen" in model_name:
+                v_params["disable_thinking"] = True
+            req_body = {
                 "model": model_name,
                 "messages": [
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": f"Generate auditory interpretation for Track {track_num}: '{track_title}' based on the cover art and theme."}
+                    {"role": "user", "content": f"Generate dynamic VØIDRIDE hit-record interpretation for Track {track_num}: '{track_title}' based on the cover art and theme."}
                 ],
-                "temperature": 0.6,
-                "max_tokens": 1500,
-                "venice_parameters": {
-                    "strip_thinking_response": True
-                }
-            }).encode('utf-8')
+                "temperature": 0.55,
+                "max_tokens": 2800,
+                "venice_parameters": v_params,
+            }
+            payload = json.dumps(req_body).encode('utf-8')
 
             req = urllib.request.Request(
                 "https://api.venice.ai/api/v1/chat/completions",
                 data=payload,
                 headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
             )
-            with urllib.request.urlopen(req, timeout=45) as resp:
+            with urllib.request.urlopen(req, timeout=60) as resp:
                 data = json.loads(resp.read().decode('utf-8'))
-                raw = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+                msg_obj = data.get("choices", [{}])[0].get("message", {}) or {}
+                raw = (msg_obj.get("content") or msg_obj.get("reasoning_content") or "").strip()
                 if "<think>" in raw:
                     raw = raw.split("</think>")[-1].strip()
                 if "```" in raw:
@@ -379,19 +447,66 @@ def interpret_track_from_cover_and_theme(album_name, album_theme, cover_visual, 
                         raw = re.sub(r'```(?:json)?\s*', '', raw)
                         raw = re.sub(r'\s*```', '', raw)
 
-                parsed = json.loads(raw)
+                try:
+                    parsed = json.loads(raw)
+                except json.JSONDecodeError:
+                    # Brace-depth fallback extraction
+                    parsed = None
+                    depth = 0
+                    start_pos = None
+                    for pos, ch in enumerate(raw):
+                        if ch == '{':
+                            if depth == 0:
+                                start_pos = pos
+                            depth += 1
+                        elif ch == '}':
+                            depth -= 1
+                            if depth == 0 and start_pos is not None:
+                                try:
+                                    cand = json.loads(raw[start_pos:pos + 1])
+                                    if "direction" in cand or "main_prompt" in cand:
+                                        parsed = cand
+                                except json.JSONDecodeError:
+                                    pass
+                                start_pos = None
+                    if not parsed:
+                        raise ValueError("No valid JSON object in response")
+
                 if parsed.get("direction") and parsed.get("rules") and len(parsed["rules"]) >= 3:
+                    # Clamp BPM strictly into VØIDRIDE nightride range (122-144 BPM)
+                    try:
+                        raw_bpm = int(parsed.get("bpm", fb_bpm))
+                    except Exception:
+                        raw_bpm = fb_bpm
+                    if raw_bpm < 120 or raw_bpm > 148:
+                        raw_bpm = fb_bpm
+                    parsed["bpm"] = raw_bpm
+
                     stems = parsed.get("stems", {})
                     if not stems:
                         stems = {
                             "main": parsed.get("main_prompt", fallback["stems"]["main"]),
                             "texture": parsed.get("texture_prompt", fallback["stems"]["texture"]),
-                            "accent": parsed.get("accent_prompt", fallback["stems"]["accent"])
+                            "accent": parsed.get("accent_prompt", fallback["stems"]["accent"]),
+                            "riser": parsed.get("riser_prompt", fallback["stems"]["riser"]),
+                            "foley": parsed.get("foley_prompt", fallback["stems"]["foley"]),
+                            "atmosphere": parsed.get("atmosphere_prompt", fallback["stems"]["atmosphere"]),
+                            "spatial": parsed.get("spatial_prompt", fallback["stems"]["spatial"])
                         }
-                    if len(stems.get("texture", "")) > 450:
-                        stems["texture"] = stems["texture"][:445]
-                    if len(stems.get("accent", "")) > 450:
-                        stems["accent"] = stems["accent"][:445]
+                    else:
+                        for k in ("main", "texture", "accent", "riser", "foley", "atmosphere", "spatial"):
+                            if not stems.get(k):
+                                stems[k] = parsed.get(f"{k}_prompt") or fallback["stems"][k]
+                    # Ensure main prompt contains the mandatory California West Coast nightride bass anchor
+                    if "california bass" not in stems.get("main", "").lower():
+                        stems["main"] = (
+                            f"California bass and heavy West Coast bass mixed with melodic nightride vibes, "
+                            f"massive continuous sub-bass dominance, gliding West Coast 808 slides with slow predatory pitch portamento. "
+                            f"{stems.get('main', '')}"
+                        )
+                    for k in ("texture", "accent", "riser", "foley", "atmosphere", "spatial"):
+                        if len(stems.get(k, "")) > 450:
+                            stems[k] = stems[k][:445]
                     parsed["stems"] = stems
                     return parsed
         except Exception as e:
@@ -401,15 +516,229 @@ def interpret_track_from_cover_and_theme(album_name, album_theme, cover_visual, 
     return fallback
 
 
+GROOVE_ARCHETYPES = [
+    {
+        "slot": 1, "bpm": 138, "key": "Dm",
+        "archetype": "Lead Single West Coast Bounce",
+        "brief": "Immediate within-10s earworm synth/pluck hook, infectious syncopated California 808 lowrider bounce, crisp snap claps, high-replay chorus drop",
+    },
+    {
+        "slot": 2, "bpm": 150, "key": "Cm",
+        "archetype": "High-Octane Drift-Phonk Club Weapon",
+        "brief": "Aggressive nocturnal metallic bell/brass hook motif, driving double-time hi-hat velocity, predatory 808 portamento slides, explosive climax second drop",
+    },
+    {
+        "slot": 3, "bpm": 126, "key": "Fm",
+        "archetype": "Hypnotic Halftime Reese & Witch-House Roller",
+        "brief": "Spacious halftime pocket, coiling Reese bass growl trading phrases with haunting spectral vocal/synth lead motif, deep cavernous tension bridge",
+    },
+    {
+        "slot": 4, "bpm": 134, "key": "Gm",
+        "archetype": "Minimalist Negative-Space Sub-Bounce Single",
+        "brief": "Surgical pocket percussion, bold rhythmic pauses where gliding West Coast 808 sub commands the room, catchy call-and-response minor pluck hook",
+    },
+    {
+        "slot": 5, "bpm": 124, "key": "Ebm",
+        "archetype": "Extended Widescreen Darkwave-Trap Anthem Closer",
+        "brief": "Emotional minor chord progression, soaring detuned analog lead melody, stripped atmospheric middle bridge, towering octave-lifted finale drop",
+    },
+]
+
+
+def plan_album_showrunner(album_name, album_theme, cover_visual, track_names, total_tracks, track_durations, sonic_dna=None):
+    """Single-Pass Album Showrunner: plans all N tracks in ONE cohesive LLM call ($0.005 on qwen-3-7-plus),
+    assigning contrasting BPM pockets, distinct minor keys, named foreground earworm hooks, and time-stamped
+    section-scripted prompts for elevenlabs-music-v2-5!
+    Returns dict {track_num (1..N): plan_dict} or {} on failure.
+    """
+    api_key = os.environ.get("VENICE_API_KEY", "")
+    if not api_key:
+        return {}
+
+    slots_desc = []
+    for idx in range(total_tracks):
+        t_num = idx + 1
+        t_title = track_names[idx].strip().upper() if idx < len(track_names) and track_names[idx] else f"TRACK {t_num}"
+        arch = GROOVE_ARCHETYPES[idx % len(GROOVE_ARCHETYPES)]
+        dur_s = track_durations[idx] if idx < len(track_durations) else 175
+        m_end = f"{dur_s // 60}:{dur_s % 60:02d}"
+        slots_desc.append(
+            f"- Track {t_num}: title=\"{t_title}\", duration={dur_s}s ({m_end}), target_bpm={arch['bpm']}, "
+            f"target_key=\"{arch['key']}\", archetype=\"{arch['archetype']}\" ({arch['brief']})"
+        )
+
+    dna_summary = json.dumps(sonic_dna, indent=2) if sonic_dna else "VØIDRIDE: California 808 nightride bass, witch house & dark trap"
+    sys_prompt = (
+        "You are the Executive Hit-Record Showrunner for VØIDRIDE.\n"
+        "Plan an entire cohesive yet dynamically varied EP in ONE JSON response.\n\n"
+        f"ALBUM TITLE: {album_name}\n"
+        f"ALBUM THEME: {album_theme}\n"
+        f"COVER ART VISUAL SCENE: {cover_visual}\n"
+        f"VØIDRIDE SONIC DNA: {dna_summary}\n\n"
+        "TRACK SLOTS TO DESIGN (MANDATORY CONTRAST — NO TWO TRACKS MAY SHARE THE SAME BPM OR HOOK INSTRUMENT):\n"
+        + "\n".join(slots_desc)
+        + "\n\nHIT-SONG ARRANGEMENT RULES FOR EVERY `main_prompt` (160–280 words each, for `elevenlabs-music-v2-5`):\n"
+        "1. Start with exact subgenre, BPM, minor key, and VØIDRIDE West Coast 808 + nocturnal nightride identity.\n"
+        "2. Define ONE unmistakable, singable FOREGROUND HOOK MOTIF (specific lead synth/pluck/brass/bell/chopped-vocal timbre + rhythmic phrasing) introduced within the first 10 seconds.\n"
+        "3. Include explicit time-stamped dynamic section cues scaled to the track's duration:\n"
+        "   [0:00-0:14 Haunted Hook Tease, filtered motif, sub held back] -> [0:14-0:16 Pre-Drop Breath] -> "
+        "[0:16-0:58 Drop 1: Explosive California 808 glides + punchy transient kicks + full signature hook] -> "
+        "[0:58-1:30 Verse Switch-Up: syncopated counter-groove & Reese growls] -> "
+        "[1:30-1:56 Tension Bridge: drums & sub stripped back, atmospheric suspense] -> "
+        "[1:56-2:36 Climax Drop 2: octave-lifted hook + double-time hat energy + heaviest 808 glides] -> "
+        "[Outro: sleek nocturnal resolve]. (Extend timestamps proportionally for Track 5's 3:35 closer arc!)\n"
+        "4. All special effects / transitions MUST be smooth, warm, low-passed, and reverb-washed — NEVER harsh, clicky, or jarring. NEVER use woodland/organic foley.\n"
+        "5. Also write a bespoke `foley_prompt` (<380 chars) for `elevenlabs-sound-effects-v2` capturing subtle warm cyber-noir scene air from the cover visual.\n\n"
+        "Return ONLY valid JSON matching this exact structure (no markdown fences):\n"
+        "{\n"
+        '  "tracks": [\n'
+        "    {\n"
+        '      "track_number": 1,\n'
+        '      "title": "EXACT TRACK TITLE",\n'
+        '      "genre": "West Coast Nightride Trap / Witch House Bass",\n'
+        '      "bpm": 138,\n'
+        '      "key": "Dm",\n'
+        '      "hook_motif": "Short description of signature earworm lead hook",\n'
+        '      "direction": "One-sentence sonic direction",\n'
+        '      "rules": ["Rule 1", "Rule 2", "Rule 3"],\n'
+        '      "main_prompt": "Full 160-280 word section-scripted prompt for elevenlabs-music-v2-5...",\n'
+        '      "foley_prompt": "Warm low-passed cyber-noir ambient texture (<380 chars)..."\n'
+        "    }\n"
+        "  ]\n"
+        "}"
+    )
+
+    _sr_chain = ["deepseek-v4-flash", "qwen-3-7-plus", "qwen-3-8-flash"]
+    for _sd in [os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "scripts")), "/opt/data/scripts"]:
+        if os.path.isdir(_sd) and _sd not in sys.path:
+            sys.path.insert(0, _sd)
+    try:
+        import model_registry as _mr
+        _sr_chain = _mr.get_role_chain("llm.showrunner", _sr_chain)
+    except Exception:
+        pass
+
+    for model_name in _sr_chain:
+        try:
+            v_params = {"strip_thinking_response": True}
+            if "qwen" in model_name:
+                v_params["disable_thinking"] = True
+            req_body = {
+                "model": model_name,
+                "messages": [
+                    {"role": "system", "content": sys_prompt},
+                    {"role": "user", "content": f"Design all {total_tracks} contrasting hit tracks for '{album_name}' now."},
+                ],
+                "temperature": 0.6,
+                "max_tokens": 5500,
+                "venice_parameters": v_params,
+            }
+            req = urllib.request.Request(
+                "https://api.venice.ai/api/v1/chat/completions",
+                data=json.dumps(req_body).encode("utf-8"),
+                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+            )
+            with urllib.request.urlopen(req, timeout=95) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+            msg_obj = data.get("choices", [{}])[0].get("message", {}) or {}
+            raw = (msg_obj.get("content") or msg_obj.get("reasoning_content") or "").strip()
+            if "<think>" in raw:
+                raw = raw.split("</think>")[-1].strip()
+            if "```" in raw:
+                m = re.search(r"```(?:json)?\s*(\{.*\})\s*```", raw, re.DOTALL)
+                raw = m.group(1) if m else re.sub(r"```(?:json)?|```", "", raw).strip()
+
+            parsed = json.loads(raw)
+            tracks_arr = parsed.get("tracks", [])
+            if not isinstance(tracks_arr, list) or len(tracks_arr) < total_tracks:
+                raise ValueError(f"Expected {total_tracks} tracks, got {len(tracks_arr) if isinstance(tracks_arr, list) else 0}")
+
+            plans_by_num = {}
+            for idx, item in enumerate(tracks_arr[:total_tracks]):
+                t_num = int(item.get("track_number") or (idx + 1))
+                arch = GROOVE_ARCHETYPES[idx % len(GROOVE_ARCHETYPES)]
+                t_title = (
+                    track_names[idx].strip().upper()
+                    if idx < len(track_names) and track_names[idx]
+                    else str(item.get("title", f"TRACK {t_num}")).strip().upper()
+                )
+                try:
+                    bpm_val = int(item.get("bpm") or arch["bpm"])
+                except Exception:
+                    bpm_val = arch["bpm"]
+                if bpm_val < 120 or bpm_val > 156:
+                    bpm_val = arch["bpm"]
+                key_val = str(item.get("key") or arch["key"]).strip()
+                mp = str(item.get("main_prompt") or "").strip()
+                if len(mp) < 120:
+                    raise ValueError(f"Track {t_num} main_prompt too short ({len(mp)} chars)")
+                if "california" not in mp.lower() and "west coast" not in mp.lower():
+                    mp = (
+                        f"Dynamic hit-arranged West Coast nightride trap & California 808 bass, {bpm_val} BPM, {key_val}. "
+                        + mp
+                    )
+                fp = str(item.get("foley_prompt") or f"Subtle warm low-passed cyber-noir nocturnal highway wash and velvet reflections for {t_title}.")[:440]
+
+                plans_by_num[t_num] = {
+                    "title": t_title,
+                    "genre": str(item.get("genre") or "Hyperspatial West Coast Nightride Bass"),
+                    "bpm": bpm_val,
+                    "key": key_val,
+                    "energy": str(item.get("hook_motif") or item.get("direction") or arch["archetype"]),
+                    "direction": str(item.get("direction") or f"{arch['archetype']}: {item.get('hook_motif', '')}"),
+                    "rules": list(item.get("rules") or [arch["brief"]]),
+                    "stems": {
+                        "main": {
+                            "model": "elevenlabs-music-v2-5",
+                            "prompt": mp[:3900],
+                            "instrumental": True,
+                        },
+                        "texture": {
+                            "model": "demucs-harmonic-synth",
+                            "prompt": f"Warm chord-locked analog chorus pad in {key_val} at {bpm_val} BPM for {t_title}.",
+                        },
+                        "atmosphere": {
+                            "model": "demucs-harmonic-synth",
+                            "prompt": f"Cavernous cyber-noir spectral reverb wash in {key_val} at {bpm_val} BPM for {t_title}.",
+                        },
+                        "spatial": {
+                            "model": "demucs-harmonic-synth",
+                            "prompt": f"Hyperspatial 3D binaural side-shimmer reflections in {key_val} at {bpm_val} BPM for {t_title}.",
+                        },
+                        "accent": {
+                            "model": "voidride-sfx-vault",
+                            "prompt": f"Warm rounded subterranean sub-bass impact swell for {t_title}.",
+                        },
+                        "riser": {
+                            "model": "voidride-sfx-vault",
+                            "prompt": f"Silky dark analog synth filter sweep into drop for {t_title}.",
+                        },
+                        "foley": {
+                            "model": "elevenlabs-sound-effects-v2",
+                            "prompt": fp,
+                        },
+                    },
+                }
+
+            log(f"  🎬 Showrunner planned all {len(plans_by_num)} contrasting hit tracks in 1 pass ({model_name})")
+            return plans_by_num
+        except Exception as e:
+            log(f"  ⚠️ Showrunner pass on {model_name} failed ({e}) — trying next model...")
+            continue
+
+    return {}
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--brief", required=True, help="Album concept")
     parser.add_argument("--tracks", type=int, default=5)
-    parser.add_argument("--duration", type=int, default=20)
+    parser.add_argument("--duration", type=int, default=175)
+    parser.add_argument("--closer-duration", type=int, default=215, help="Extended closer duration for final track (Option 1B)")
     parser.add_argument("--mode", default=None, choices=["full", "sample", "samples", "full tracks"])
     parser.add_argument("--no-deliver", action="store_true", help="Skip Telegram delivery and status messages")
     parser.add_argument("--resume-tracks", type=int, default=0, help="Number of tracks already completed")
-    parser.add_argument("--quality", default="quick", choices=["quick", "standard", "premium"])
+    parser.add_argument("--quality", default="quick", choices=["quick", "standard", "premium", "hyperspatial"])
     parser.add_argument("--target", default="streaming")
     parser.add_argument("--vocals-pct", type=int, default=0, help="Pct of tracks with vocals (0-100)")
     parser.add_argument("--track-names", nargs="*", default=None, help="Pre-defined track names")
@@ -439,11 +768,31 @@ def main():
         for i in range(vocal_count):
             vocal_positions.add(min(int(round(step * i + step / 2)), args.tracks - 1))
 
-    log(f"📀 {args.brief} — {args.tracks} × {args.duration}s {mode}")
+    # Option 1B Hit Duration Architecture:
+    # Tracks 1..(N-1) run at punchy streaming-hit durations (170-178s -> $2.08 Venice <=180s bucket),
+    # while Track N (Closer) runs as an extended 215s (3m35s -> $2.76 bucket) widescreen anthem!
+    single_pockets = [174, 170, 178, 172]
+    track_durations = []
+    for idx in range(args.tracks):
+        if is_sample:
+            track_durations.append(args.duration)
+        elif idx == args.tracks - 1 and args.tracks >= 2:
+            track_durations.append(max(args.closer_duration, args.duration))
+        elif args.duration <= 190:
+            track_durations.append(single_pockets[idx % len(single_pockets)])
+        else:
+            track_durations.append(args.duration)
+
+    dur_summary = (
+        f"{args.tracks} × {args.duration}s samples"
+        if is_sample
+        else f"Option 1B ({args.tracks - 1} singles @ ~{args.duration}s + Closer @ {track_durations[-1]}s)"
+    )
+    log(f"📀 {args.brief} — {dur_summary}")
 
     progress_id = None
     if not args.no_deliver:
-        progress_id = tg_send(f"⏳ *{args.brief}*\nGenerating {args.tracks} {mode}...")
+        progress_id = tg_send(f"⏳ *{args.brief}*\nGenerating {dur_summary}...")
 
     completed = []
     track_files = []
@@ -471,9 +820,71 @@ def main():
     album_theme = args.album_theme or args.brief
     cover_visual = args.cover_visual or ""
 
+    def _track_est_cost(dur_sec):
+        if is_sample:
+            return 0.48
+        # elevenlabs-music-v2-5 ($2.08 <=180s, $2.76 <=240s) + $0.02 bespoke foley + $0.00 Demucs harmonic beds & vault SFX
+        return 2.10 if dur_sec <= 180 else (2.78 if dur_sec <= 240 else 3.45)
+
+    def _query_venice_budget(start_idx):
+        api_key = os.environ.get("VENICE_API_KEY", "")
+        rem_durs = track_durations[start_idx:]
+        next_cost = _track_est_cost(rem_durs[0]) if rem_durs else 2.10
+        rem_total_cost = round(sum(_track_est_cost(d) for d in rem_durs), 2)
+        avg_cost = round(rem_total_cost / max(len(rem_durs), 1), 2)
+        if not api_key:
+            return {"ok": False, "total_usd": 0.0, "cost_per_track": next_cost, "completable_tracks": len(rem_durs)}
+        try:
+            req = urllib.request.Request(
+                "https://api.venice.ai/api/v1/api_keys/rate_limits",
+                headers={"Authorization": f"Bearer {api_key}", "User-Agent": "Mozilla/5.0"},
+            )
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                bdata = json.loads(resp.read().decode("utf-8")).get("data", {}).get("balances", {})
+            usd = float(bdata.get("USD", 0.0) or 0.0)
+            diem = float(bdata.get("DIEM", 0.0) or 0.0)
+            bundled = float(bdata.get("BUNDLED_CREDITS", 0.0) or 0.0)
+            tot = usd + diem + bundled
+            running = 0.0
+            comp = 0
+            for d in rem_durs:
+                c = _track_est_cost(d)
+                if running + c <= tot + 0.05:
+                    running += c
+                    comp += 1
+                else:
+                    break
+            return {
+                "ok": True,
+                "usd": usd,
+                "diem": diem,
+                "total_usd": tot,
+                "cost_per_track": next_cost,
+                "avg_cost_per_track": avg_cost,
+                "completable_tracks": comp,
+                "needed_for_remaining": rem_total_cost,
+                "shortfall": round(max(0.0, rem_total_cost - tot), 2),
+            }
+        except Exception:
+            return {"ok": False, "total_usd": 0.0, "cost_per_track": next_cost, "completable_tracks": len(rem_durs)}
+
+    # Single-Pass Album Showrunner: plan all tracks up front in 1 cohesive LLM call
+    showrunner_plans = {}
+    if not is_sample and (cover_visual or track_names or args.album_theme):
+        showrunner_plans = plan_album_showrunner(
+            album_name=album_name,
+            album_theme=album_theme,
+            cover_visual=cover_visual,
+            track_names=track_names,
+            total_tracks=args.tracks,
+            track_durations=track_durations,
+            sonic_dna=profile.get("sonic_dna") if profile else None,
+        )
+
     for i in range(args.resume_tracks, args.tracks):
         track_num = i + 1
         has_vocals = i in vocal_positions
+        this_duration = track_durations[i]
 
         # Determine track title if pre-defined
         predefined_title = None
@@ -481,8 +892,39 @@ def main():
             predefined_title = track_names[i].strip().upper()
         current_title = predefined_title or f"Track {track_num}"
 
-        # If cover_visual, album_theme, or predefined_title are present, derive track direction from cover + theme + title
-        if cover_visual or predefined_title or args.album_theme:
+        # Live Venice balance check before starting track
+        rem_tracks = args.tracks - i
+        v_budget = _query_venice_budget(i)
+        if v_budget.get("ok"):
+            cap_t = min(v_budget["completable_tracks"], rem_tracks)
+            log(
+                f"  💳 Venice Balance: ${v_budget['total_usd']:.2f} USD | "
+                f"Track {track_num}/{args.tracks} ({this_duration}s) est. ~${v_budget['cost_per_track']:.2f} | "
+                f"Capacity: {cap_t}/{rem_tracks} remaining track(s)"
+            )
+            if v_budget["total_usd"] < v_budget["cost_per_track"] * 0.85:
+                log(
+                    f"    ⛔ Venice AI balance (${v_budget['total_usd']:.2f} USD) insufficient to complete "
+                    f"Track {track_num} '{current_title}' (~${v_budget['cost_per_track']:.2f} needed; "
+                    f"can complete 0/{rem_tracks} remaining tracks; shortfall ${v_budget['shortfall']:.2f} USD) — halting cleanly before stem generation."
+                )
+                balance_depleted = True
+                break
+
+        locked_plan_file = None
+        sr_plan = showrunner_plans.get(track_num)
+        if sr_plan and not has_vocals:
+            variation = {
+                "direction": sr_plan.get("direction", f"Showrunner hit plan for {current_title}"),
+                "rules": list(sr_plan.get("rules", [])),
+                "bpm": sr_plan.get("bpm"),
+                "key": sr_plan.get("key"),
+                "stems": {k: v.get("prompt", "") for k, v in sr_plan.get("stems", {}).items() if isinstance(v, dict)},
+            }
+            locked_plan_file = f"/tmp/showrunner_plan_{track_num}.json"
+            with open(locked_plan_file, "w") as pf:
+                json.dump(sr_plan, pf, indent=2)
+        elif cover_visual or predefined_title or args.album_theme:
             log(f"  🎨 Interpreting Track {track_num} '{current_title}' from cover scene & album theme...")
             interp = interpret_track_from_cover_and_theme(
                 album_name=album_name,
@@ -591,13 +1033,19 @@ def main():
         progress_thread = threading.Thread(target=_update_progress, daemon=True)
         progress_thread.start()
 
-        # Use enriched brief that includes variation direction
+        # Use Showrunner locked plan when available (zero per-track LLM calls!), else --director
         cmd = [sys.executable, PRODUCER,
                "--prompt", enriched_brief,
-               "--duration", str(args.duration),
+               "--duration", str(this_duration),
                "--quality", args.quality,
                "--target", args.target,
-               "--director", "--no-deliver"]
+               "--track-number", str(track_num),
+               "--total-tracks", str(args.tracks),
+               "--no-deliver"]
+        if locked_plan_file and os.path.isfile(locked_plan_file):
+            cmd.extend(["--plan", locked_plan_file])
+        else:
+            cmd.append("--director")
 
         if predefined_title:
             cmd.extend(["--title", predefined_title])
@@ -612,8 +1060,83 @@ def main():
         env["ALBUM_CONTEXT_FILE"] = ctx_file
         env["TRACK_PROGRESS_FILE"] = progress_file
 
-        timeout = 1800 if not is_sample else 600
-        result = subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=timeout)
+        max_retries = 3
+        track_success = False
+
+        for attempt in range(1, max_retries + 1):
+            if attempt > 1:
+                log(f"  🔄 Retrying Track {track_num} (attempt {attempt}/{max_retries}) after backoff...")
+                time.sleep(5 * attempt)
+
+            timeout = 1800 if not is_sample else 600
+            result = subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=timeout)
+
+            if result.returncode == 0:
+                try:
+                    rj = json.loads(result.stdout.strip().split("\n")[-1])
+                    cost = rj.get("cost_report", {}).get("total_usd", 0)
+                    mp3 = rj.get("files", {}).get("mp3", "")
+                    flac = rj.get("files", {}).get("flac", "")
+                    meta_path = rj.get("metadata", "")
+                    plan_path = meta_path.replace("production_metadata.json", "production_plan.json") if meta_path else ""
+                    prod_dir = os.path.dirname(meta_path) if meta_path else ""
+
+                    # Verify that audio file actually exists and is non-empty
+                    if not (mp3 and os.path.isfile(mp3) and os.path.getsize(mp3) > 1000):
+                        log(f"    ⚠️ Attempt {attempt}: Audio file missing or empty, retrying...")
+                        continue
+
+                    total_cost += cost
+                    default_title = predefined_title or f"Track {track_num}"
+                    info = {"title": default_title, "bpm": None, "key": None,
+                            "genre": None, "has_vocals": has_vocals, "cost_usd": cost,
+                            "direction": variation["direction"], "production_dir": prod_dir}
+
+                    if plan_path and os.path.isfile(plan_path):
+                        with open(plan_path) as f:
+                            plan = json.load(f)
+                        if predefined_title:
+                            info["title"] = predefined_title
+                        else:
+                            plan_title = plan.get("title")
+                            if plan_title and not plan_title.lower().startswith("track "):
+                                info["title"] = plan_title
+                        info.update({"bpm": plan.get("bpm"), "key": plan.get("key"),
+                                     "genre": plan.get("genre")})
+                    elif predefined_title:
+                        info["title"] = predefined_title
+
+                    if not info.get("bpm") and variation.get("bpm"):
+                        info["bpm"] = str(variation.get("bpm"))
+                    if not info.get("key") and variation.get("key"):
+                        info["key"] = str(variation.get("key"))
+
+                    completed.append(info)
+                    track_files.append((info["title"], mp3, flac))
+                    log(f"    ✅ {info['title']} | {info.get('bpm','')} BPM | ${cost:.2f}")
+                    track_success = True
+                    break
+                except Exception as e:
+                    log(f"    ⚠️ Parse error on attempt {attempt}: {e}")
+                    if attempt == max_retries:
+                        default_fallback = predefined_title or f"Track {track_num}"
+                        completed.append({"title": default_fallback, "direction": variation["direction"]})
+                        track_success = True
+            else:
+                stderr_tail = (result.stderr or "").strip().split("\n")[-2:]
+                err_msg = " | ".join(l.strip() for l in stderr_tail if l.strip())
+                log(f"    ❌ Attempt {attempt} failed: {err_msg}")
+                if any(k in err_msg.lower() for k in ("402", "insufficient usd", "insufficient balance", "payment required")):
+                    v_post = _query_venice_budget(args.tracks - i)
+                    bal_str = (
+                        f"Remaining balance: ${v_post['total_usd']:.2f} USD | "
+                        f"Can complete: {min(v_post['completable_tracks'], args.tracks - i)}/{args.tracks - i} remaining tracks | "
+                        f"Shortfall: ${v_post.get('shortfall', 0.0):.2f} USD"
+                        if v_post.get("ok") else "Insufficient USD/DIEM balance"
+                    )
+                    log(f"    ⛔ Venice AI balance depleted (HTTP 402) — {bal_str} — halting retries until credits are added.")
+                    balance_depleted = True
+                    break
 
         # Stop progress thread
         stop_progress.set()
@@ -622,63 +1145,18 @@ def main():
         track_times.append(track_elapsed)
         avg_track_time = sum(track_times) / len(track_times)
 
-        if result.returncode == 0:
-            try:
-                rj = json.loads(result.stdout.strip().split("\n")[-1])
-                cost = rj.get("cost_report", {}).get("total_usd", 0)
-                total_cost += cost
-                mp3 = rj.get("files", {}).get("mp3", "")
-                flac = rj.get("files", {}).get("flac", "")
-                meta_path = rj.get("metadata", "")
-                plan_path = meta_path.replace("production_metadata.json", "production_plan.json") if meta_path else ""
-                prod_dir = os.path.dirname(meta_path) if meta_path else ""
-
-                default_title = predefined_title or f"Track {track_num}"
-                info = {"title": default_title, "bpm": None, "key": None,
-                        "genre": None, "has_vocals": has_vocals, "cost_usd": cost,
-                        "direction": variation["direction"], "production_dir": prod_dir}
-
-                if plan_path and os.path.isfile(plan_path):
-                    with open(plan_path) as f:
-                        plan = json.load(f)
-                    if predefined_title:
-                        info["title"] = predefined_title
-                    else:
-                        plan_title = plan.get("title")
-                        if plan_title and not plan_title.lower().startswith("track "):
-                            info["title"] = plan_title
-                    info.update({"bpm": plan.get("bpm"), "key": plan.get("key"),
-                                 "genre": plan.get("genre")})
-                elif predefined_title:
-                    info["title"] = predefined_title
-
-                if not info.get("bpm") and variation.get("bpm"):
-                    info["bpm"] = str(variation.get("bpm"))
-                if not info.get("key") and variation.get("key"):
-                    info["key"] = str(variation.get("key"))
-
-                completed.append(info)
-                # For full tracks, prefer FLAC; for samples, MP3 only
-                send_file = mp3
-                if mp3 and os.path.isfile(mp3):
-                    track_files.append((info["title"], mp3, flac))
-                log(f"    ✅ {info['title']} | {info.get('bpm','')} BPM | ${cost:.2f}")
-            except Exception as e:
-                log(f"    ✅ done (parse: {e})")
-                default_fallback = predefined_title or f"Track {track_num}"
-                completed.append({"title": default_fallback, "direction": variation["direction"]})
-        else:
-            log(f"    ❌ failed")
-            stderr_tail = (result.stderr or "").strip().split("\n")[-2:]
-            for line in stderr_tail:
-                log(f"       {line.strip()}")
+        if not track_success:
             failed += 1
+            log(f"    ❌ Track {track_num} failed after {attempt} attempt(s).")
 
-        try:
-            os.remove(ctx_file)
-            os.remove(progress_file)
-        except Exception:
-            pass
+        for tmp_f in (ctx_file, progress_file, locked_plan_file):
+            if tmp_f:
+                try:
+                    os.remove(tmp_f)
+                except Exception:
+                    pass
+        if locals().get("balance_depleted"):
+            break
         if track_num < args.tracks:
             time.sleep(5)
 

@@ -121,54 +121,11 @@ if [ -f "$RECURSIVE_UPDATE_SCRIPT" ]; then
 fi
 
 # ── Pipeline auto-resume watchdog with crash-loop protection ──
-PIPELINE_STATE="/opt/data/music/pipeline_state.json"
-PIPELINE_SCRIPT="/opt/data/scripts/album_pipeline.py"
-(
-    sleep 30  # Let gateway initialize first
-    CRASH_FILE="/tmp/.pipeline_crashes"
-    while true; do
-        if [ -f "$PIPELINE_STATE" ] && ! pgrep -f "album_pipeline.py" > /dev/null 2>&1; then
-            ALREADY_PUBLISHED=$("$VENV_PYTHON" -c "
-import json, os, sys
-try:
-    state = json.load(open('$PIPELINE_STATE'))
-    album = state.get('proposal',{}).get('album','').lower().replace(' ','-')
-    # Check if a different album was selected in current_proposals.json
-    try:
-        props = json.load(open('/opt/data/music/proposals/current_proposals.json'))
-        sel = props.get('selected_slug') or props.get('selected','').lower().replace(' ','-')
-        if sel and sel != album:
-            print('stale'); sys.exit(0)
-    except Exception: pass
-    for rpath in [f'/opt/data/music/releases/{album}/release.json', f'/opt/data/music/albums/{album}/release.json']:
-        if os.path.exists(rpath):
-            rj = json.load(open(rpath))
-            if rj.get('status') == 'published' or rj.get('soundcloud',{}).get('track_ids'):
-                print('yes'); sys.exit(0)
-    print('no')
-except: print('no')
-" 2>/dev/null)
-            if [ "$ALREADY_PUBLISHED" = "yes" ] || [ "$ALREADY_PUBLISHED" = "stale" ]; then
-                echo "[pipeline-watchdog] $(date) Album published or replaced by new selection ($ALREADY_PUBLISHED), removing state"
-                rm -f "$PIPELINE_STATE"
-            else
-                NOW=$(date +%s)
-                touch "$CRASH_FILE"
-                COUNT=$(awk -v now="$NOW" '$1 > now - 600' "$CRASH_FILE" 2>/dev/null | wc -l)
-                if [ "$COUNT" -ge 3 ]; then
-                    echo "[pipeline-watchdog] $(date) 🚨 Crash loop detected ($COUNT restarts in 10m). Pausing auto-resume." >> "$LOG_DIR/pipeline.log"
-                else
-                    echo "$NOW" >> "$CRASH_FILE"
-                    echo "[pipeline-watchdog] $(date) State exists but no pipeline running — resuming..."
-                    "$VENV_PYTHON" -B "$PIPELINE_SCRIPT" --resume >> "$LOG_DIR/pipeline.log" 2>&1 &
-                    sleep 300
-                fi
-            fi
-        fi
-        sleep 60
-    done
-) &
-echo "[wrapper] Pipeline watchdog started (60s interval with crash-loop guard)"
+PIPELINE_WD="/opt/data/scripts/pipeline_watchdog.sh"
+if [ -f "$PIPELINE_WD" ]; then
+    /bin/bash "$PIPELINE_WD" >> "$LOG_DIR/pipeline_watchdog.log" 2>&1 &
+    echo "[wrapper] Pipeline watchdog started"
+fi
 
 # ── Hand off to gateway ──
 exec /opt/hermes/entrypoint.sh "$@"

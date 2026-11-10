@@ -99,13 +99,13 @@ def load_production_context(metadata_file=None, production_dir=None):
     if plan.get("bpm"):
         context["bpm"] = plan["bpm"]
 
-    # Extract mastering profile from metadata
+    # Extract mastering profile from metadata (default to VØIDRIDE -10.0 LUFS club/streaming hit target)
     mastering = meta.get("mastering_profile")
     if mastering:
         context["mastering_profile"] = {
-            "lufs": mastering.get("lufs", -14),
-            "true_peak": mastering.get("true_peak", -1),
-            "lra": mastering.get("lra", 11),
+            "lufs": mastering.get("lufs", -10.0),
+            "true_peak": mastering.get("true_peak", -0.8),
+            "lra": mastering.get("lra", 9.0),
             "compression": mastering.get("compression", {}),
             "eq_bands": mastering.get("eq_bands", []),
             "stereo": mastering.get("stereo", {}),
@@ -134,13 +134,18 @@ def load_production_context(metadata_file=None, production_dir=None):
     if "has_vocals" in dj_profile:
         context["has_vocals"] = dj_profile["has_vocals"]
 
-    # Mix file path (for direct mastering instead of amix re-mix)
-    outputs = meta.get("outputs", {})
-    if outputs.get("primary_file"):
-        session_dir = meta.get("session_dir", "")
-        mix_file = os.path.join(session_dir, outputs["primary_file"])
-        if os.path.exists(mix_file):
-            context["mix_file"] = mix_file
+    # Prefer unmastered premaster_mix.wav (prevents double-limiting in DAWAGENT!)
+    session_dir_meta = meta.get("session_dir", "") or (str(production_dir) if production_dir else "")
+    if session_dir_meta:
+        premaster_cand = os.path.join(session_dir_meta, "premaster_mix.wav")
+        if os.path.exists(premaster_cand):
+            context["premaster_file"] = premaster_cand
+        else:
+            outputs = meta.get("outputs", {})
+            if outputs.get("primary_file"):
+                mix_file = os.path.join(session_dir_meta, outputs["primary_file"])
+                if os.path.exists(mix_file):
+                    context["mix_file"] = mix_file
 
     return context
 
@@ -210,6 +215,8 @@ def cmd_write(args):
         manifest["genre"] = context["genre"]
     if context.get("mastering_profile"):
         manifest["mastering_profile"] = context["mastering_profile"]
+    else:
+        manifest["mastering_profile"] = {"lufs": -10.0, "true_peak": -0.8, "lra": 9.0}
     if context.get("stem_volumes"):
         manifest["stem_volumes"] = context["stem_volumes"]
     if context.get("stem_sources"):
@@ -217,12 +224,12 @@ def cmd_write(args):
     if "has_vocals" in context:
         manifest["has_vocals"] = context["has_vocals"]
 
-    # Copy hermes-music mix file to interchange for direct mastering
-    mix_file = context.get("mix_file")
-    if mix_file and os.path.exists(mix_file):
-        mix_dest = session_dir / Path(mix_file).name
-        shutil.copy2(mix_file, str(mix_dest))
-        manifest["mix_file"] = str(mix_dest)
+    # Copy unmastered premaster_mix.wav to session root (OUTSIDE interchange/ so find_stems() never double-sums it!)
+    premaster_src = context.get("premaster_file")
+    if premaster_src and os.path.exists(premaster_src):
+        premaster_dest = SESSIONS_DIR / args.session / "premaster.wav"
+        shutil.copy2(premaster_src, str(premaster_dest))
+        manifest["premaster_filename"] = "premaster.wav"
 
     manifest_path = SESSIONS_DIR / args.session / MANIFEST_NAME
     # Atomic write: write to temp file first, then rename to prevent corruption

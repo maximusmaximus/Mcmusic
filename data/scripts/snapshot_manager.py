@@ -9,6 +9,8 @@ Ensures any changes made to SP2 can be safely verified and rolled back with 1-cl
   - Supports 1-click manual rollback to any previous version.
 """
 
+from __future__ import annotations
+
 import json
 import os
 import py_compile
@@ -18,11 +20,15 @@ import sys
 import time
 from datetime import datetime, timezone
 
-SCRIPTS_DIR = os.environ.get("HERMES_SCRIPTS_DIR", "/opt/data/scripts")
-SNAPSHOTS_DIR = os.environ.get("HERMES_SNAPSHOTS_DIR", "/opt/data/snapshots")
+_DEFAULT_ROOT = "/opt/data" if os.path.isdir("/opt/data") else os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+SCRIPTS_DIR = os.environ.get("HERMES_SCRIPTS_DIR", os.path.join(_DEFAULT_ROOT, "scripts"))
+SNAPSHOTS_DIR = os.environ.get("HERMES_SNAPSHOTS_DIR", os.path.join(_DEFAULT_ROOT, "snapshots"))
 HISTORY_FILE = os.path.join(SNAPSHOTS_DIR, "history.json")
 
-os.makedirs(SNAPSHOTS_DIR, exist_ok=True)
+try:
+    os.makedirs(SNAPSHOTS_DIR, exist_ok=True)
+except OSError:
+    pass
 
 
 def _load_history() -> dict:
@@ -71,8 +77,55 @@ def create_snapshot(description: str = "manual_snapshot") -> str:
     return snapshot_id
 
 
+def _check_undefined_names(script_path: str) -> list[tuple[str, int, str]]:
+    """Use Python's compiler symtable to detect undefined variables (NameError) before runtime."""
+    import ast
+    import builtins
+    import symtable
+
+    builtin_names = set(dir(builtins)) | {
+        "__name__", "__file__", "__doc__", "__package__",
+        "__loader__", "__spec__", "__annotations__", "__builtins__",
+    }
+    with open(script_path, "r", encoding="utf-8") as f:
+        src = f.read()
+
+    top = symtable.symtable(src, script_path, "exec")
+    mod_defs = {
+        s.get_name()
+        for s in top.get_symbols()
+        if s.is_assigned() or s.is_imported() or s.is_namespace()
+    }
+    tree = ast.parse(src, script_path)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Global):
+            mod_defs.update(node.names)
+
+    issues = []
+
+    def visit_table(tbl, enclosing_defs):
+        local_defs = {
+            s.get_name()
+            for s in tbl.get_symbols()
+            if s.is_assigned() or s.is_imported() or s.is_parameter() or s.is_local() or s.is_namespace()
+        }
+        combined_defs = enclosing_defs | local_defs
+        for s in tbl.get_symbols():
+            name = s.get_name()
+            if s.is_referenced() and not (
+                s.is_assigned() or s.is_imported() or s.is_parameter() or s.is_local()
+            ):
+                if name not in combined_defs and name not in mod_defs and name not in builtin_names:
+                    issues.append((tbl.get_name(), tbl.get_lineno(), name))
+        for child in tbl.get_children():
+            visit_table(child, combined_defs)
+
+    visit_table(top, mod_defs)
+    return issues
+
+
 def verify_scripts(scripts_to_check: list = None) -> tuple[bool, str]:
-    """Pre-flight compile check on Python scripts."""
+    """Pre-flight compile and static symbol-table (NameError) check on Python scripts."""
     if not scripts_to_check:
         scripts_to_check = [
             os.path.join(SCRIPTS_DIR, f)
@@ -90,7 +143,19 @@ def verify_scripts(scripts_to_check: list = None) -> tuple[bool, str]:
         except Exception as e:
             return False, f"Compile error in {os.path.basename(script)}: {e}"
 
-    return True, "All scripts passed syntax validation."
+        try:
+            undef = _check_undefined_names(script)
+            if undef:
+                fn_name, lineno, var_name = undef[0]
+                return (
+                    False,
+                    f"Undefined variable '{var_name}' in {os.path.basename(script)} "
+                    f"(scope '{fn_name}' at line {lineno}) — would raise NameError at runtime.",
+                )
+        except Exception as e:
+            return False, f"Static symbol check failed in {os.path.basename(script)}: {e}"
+
+    return True, "All scripts passed syntax and symbol-table (NameError) validation."
 
 
 def rollback(target_snapshot_id: str = None) -> tuple[bool, str]:

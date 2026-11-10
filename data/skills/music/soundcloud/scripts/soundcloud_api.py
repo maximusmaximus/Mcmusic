@@ -313,7 +313,7 @@ def cmd_upload(args):
         if artwork_file:
             artwork_file.close()
 
-    if status == 201 and isinstance(body, dict):
+    if status in (200, 201) and isinstance(body, dict):
         track = body
         track_id = track.get("id")
         permalink = track.get("permalink_url", "N/A")
@@ -618,7 +618,7 @@ def cmd_batch_upload(args):
             if artwork_file:
                 artwork_file.close()
 
-        if status == 201 and isinstance(body, dict):
+        if status in (200, 201) and isinstance(body, dict):
             track = body
             results.append({
                 "success": True,
@@ -700,7 +700,7 @@ def cmd_create_playlist(args):
         if artwork_file:
             artwork_file.close()
 
-    if status == 201 and isinstance(body, dict):
+    if status in (200, 201) and isinstance(body, dict):
         permalink = body.get("permalink_url", "N/A")
         log(f"✅ Playlist created! URL: {permalink}")
         output_result({

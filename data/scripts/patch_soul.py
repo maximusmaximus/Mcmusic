@@ -11,7 +11,7 @@ EXTRA_RULES = r"""7. **NEVER rename file extensions for Telegram** (.m3u8, .flac
 10. **NEVER write ad-hoc scripts to /tmp** and debug them in chat. Use existing pipeline scripts (gen_artwork.py, publish_release.py, tag_metadata.py). If a script fails, read the error and fix it.
 11. **Only include the .m3u8 VLC playlist when providing ALL the tracks** (e.g. the full album package or final delivery). NEVER send per-track or single-track playlists while individual tracks are being produced or mastered. The playlist must contain all tracks in the release and reference local Windows paths (D:\\music\\exports\\...).
 12. **Track titles on SoundCloud MUST be ALL CAPS** (e.g. "GHOST MOTHERBOARD" not "Ghost Motherboard").
-13. **NEVER make up album concepts ad-hoc**. When the user asks for album proposals, ALWAYS run: `python3 /opt/data/scripts/propose_albums.py --force` (or with `--seed-themes "theme here"` if the user specified a theme, or `--refine "direction"` to iterate). When a proposal is selected, `album_pipeline.py` handles production automatically — do NOT run produce-album.py or master-producer.py yourself.
+13. **NEVER make up album concepts ad-hoc, and ALWAYS deliver strictly 5 proposals (NEVER 3 or fewer)**. When the user asks for album proposals, ALWAYS run: `python3 /opt/data/scripts/propose_albums.py --force` (or with `--seed-themes "theme here"` if the user specified a theme, or `--refine "direction"` to iterate). `propose_albums.py` enforces `REQUIRED_PROPOSAL_COUNT = 5` and will never send fewer than 5 proposals. When a proposal is selected, `album_pipeline.py` handles production automatically — do NOT run produce-album.py or master-producer.py yourself.
 14. **ALWAYS generate waveform artwork after creating album covers**. Use the waveform-artwork skill: `/opt/hermes/.venv/bin/python3 /opt/data/skills/waveform-artwork/waveform-artwork/scripts/gen_waveform_art.py --playlist-id <ID> --output-dir /opt/data/music/artwork/waveforms`. NEVER use system `python3` — only the venv Python has Pillow. Save all waveforms to `/opt/data/music/artwork/waveforms/`.
 15. **ALWAYS use the "grok-imagine-image-quality" model** when generating image covers on Venice.
 16. **NEVER interfere with the album pipeline**. When `[pipeline]` messages arrive, the script-driven album_pipeline.py is running. You may answer user questions about production status, but NEVER run `produce-album.py` or `master-producer.py` yourself when the pipeline is active. The pipeline handles production, review gates, artwork, and publishing autonomously.
@@ -40,6 +40,18 @@ EXTRA_RULES = r"""7. **NEVER rename file extensions for Telegram** (.m3u8, .flac
     - **SoundCloud Publishing Gate**: The "Publish to SoundCloud" action must NEVER be displayed or triggered on individual unmastered tracks or releases lacking completed covers. It is strictly gated to Phase 6 / finalized release packages where ALL tracks are mastered and ALL covers (album cover + track covers) are finished and approved.
     - **Unified Master Delivery**: All completed masters must be previewed and delivered together in Phase 3. Never send piecemeal FLAC files or per-track publishing prompts from background daemons (`notify_processed.py`).
     - **Dual External & Internal Links**: Every master/release package delivery must always provide BOTH the Cloudflare external link (for remote/mobile review) and the internal link (Tailscale / local network / Windows path).
+23. **OPTION 1B HIT-SONG ARCHITECTURE & VELVET-SMOOTH VØIDRIDE SFX**:
+    - **Option 1B Album Pacing & Cost (`~$11.70 USD` avg)**: VØIDRIDE productions default to `--quality hyperspatial` with Option 1B pacing: **Tracks 1–4** are punchy streaming singles (`170–178s`, `~$2.10/track` on `elevenlabs-music-v2-5`), and **Track 5** is an extended widescreen album closer (`215s`, `~$2.78`). Total audio cost is `~$11.18` (`~$2.24/track` avg) + `~$0.52` for covers/LLM = **`~$11.70 USD` per full 5-track album** (no pre-flight hook preview gate).
+    - **Single-Pass Showrunner & Zero-Dissonance Harmonic Beds**: `produce-album.py` plans all 5 tracks together via `qwen-3-7-plus` with contrasting BPM pockets (`122–154 BPM`), distinct minor keys, and named earworm hooks. `master-producer.py` derives `texture`, `atmosphere`, and `spatial` stems directly from the main stem's Demucs harmonic separation (`100%` chord-locked, `$0.00` extra cost), pulls `riser` & `accent` from the click-free VØIDRIDE SFX vault (`$0.00`), and generates 1 bespoke `foley` stem (`$0.02`).
+    - **Dynamic Arrangement & `-10.0 LUFS` 2-Pass Mastering**: Tracks sculpt real arrangement contrast (filtered intro, full Drop 1 hook by `0:20`, `-12 dB` breakdown breath, pre-drop silence/echo lift, and `+12st` octave-shimmer Drop 2 climax) and master via 2-pass linear `loudnorm` + `asoftclip` + `alimiter` to **`-10.0 LUFS` / `-0.8 dBTP`** without double-compression.
+    - **Velvet-Smooth Special Effects**: All special effects (`riser`, `accent`, `foley`, `ear_candy_bus`, pre-drop transitions) MUST be velvet-smooth, warm, low-pass filtered (`4.8–6.5kHz`), transient-softened, S-curve faded (`0.22–2.0s`), reverb-washed (`55–60%` wet dark hall), and sidechain-ducked under the 808/kick. NEVER generate jarring, harsh, piercing, clicky, or abrupt SFX.
+24. **VENICE AI LIVE CREDIT CHECK & WARNING GATE (`💳 Credit Added` / `⏸ Pause`)**:
+    - **Automatic Balance Check on Proposal & Pre-Flight**: `propose_albums.py`, `patch_gateway.py`, and `album_pipeline.py` automatically query `https://api.venice.ai/api/v1/api_keys/rate_limits` and write a live snapshot to `/opt/data/music/venice_balance_status.json` (and `/tmp/venice_balance_status.json`).
+    - **Low Credit Warning & Interactive Buttons**: Whenever available Venice credits (`USD + DIEM + BUNDLED_CREDITS`) are below the average full album cost (`~$11.70 USD`), `propose_albums.py` and the gateway automatically warn the user with exact balance, track completion capacity (`N/5 tracks`), and shortfall, and provide interactive **`💳 Credit Added`** (`callback_data: "ap:credit:added"`) and **`⏸ Pause`** (`callback_data: "ap:credit:pause"`) buttons.
+    - **Mid-Album Depletion**: If inference runs out mid-album (`HTTP 402`), `album_pipeline.py` and `produce-album.py` immediately notify the chat with the remaining balance, how many tracks can be completed, and the **`💳 Credit Added`** / **`⏸ Pause`** / **`🔄 Retry Now`** buttons while preserving all completed tracks on disk.
+25. **WEEKLY VENICE MODEL SCOUT, CI/E2E BENCHMARKING & GITHUB PR GATE**:
+    - **Declarative Model Registry**: All Venice AI model bindings (`music.main_instrumental`, `music.foley_sfx`, `llm.proposals`, `llm.showrunner`, `llm.creative_director`, `llm.image_prompt`, `image.cover_primary`, `image.edit`) live in `/opt/data/config/model_registry.json` (loaded via `model_registry.py`).
+    - **Weekly Audit & Canary Benchmarks**: Every Sunday (`recursive_sp2_update.py` -> `venice_model_scout.py`), the agent queries `GET /api/v1/models?type=all`, checks 7-day production feedback (`model_feedback_collector.py`), benchmarks eligible new/replacement models within a `$1.50/week` cap, runs the 3-tier CI & E2E test suite, and opens a GitHub PR on `maximusmaximus/Mcmusic` (`model_pr_manager.py`) gated by GitHub Actions CI + Telegram approval (`sp2:model_pr:merge:<PR>`).
 """
 
 FILE_DELIVERY_BLOCK = """
@@ -78,7 +90,7 @@ if not content:
 
 changed = False
 
-if "SOUNDCLOUD PUBLISHING GATE & MASTER DELIVERY INTEGRITY" not in content:
+if "OPTION 1B HIT-SONG ARCHITECTURE" not in content or "REQUIRED_PROPOSAL_COUNT = 5" not in content or "WEEKLY VENICE MODEL SCOUT" not in content:
     if "7. **NEVER rename file extensions" in content:
         start_r = content.find("7. **NEVER rename file extensions")
         end_r = content.find("## 📁 FILE DELIVERY RULES", start_r)
@@ -87,7 +99,7 @@ if "SOUNDCLOUD PUBLISHING GATE & MASTER DELIVERY INTEGRITY" not in content:
         if end_r != -1:
             content = content[:start_r] + EXTRA_RULES + "\n\n" + content[end_r:]
             changed = True
-            print("[patch_soul] Updated NEVER rules with Rule 20 (Mandatory Telegram update notifications)")
+            print("[patch_soul] Updated NEVER rules with Rules 7-24 (Option 1B Hit-Song Architecture, Smooth SFX, Venice Credit Gate)")
     else:
         idx = content.find(ANCHOR)
         if idx != -1:
@@ -95,9 +107,41 @@ if "SOUNDCLOUD PUBLISHING GATE & MASTER DELIVERY INTEGRITY" not in content:
             eol = len(content) if eol == -1 else eol
             content = content[:eol+1] + EXTRA_RULES + content[eol+1:]
             changed = True
-            print("[patch_soul] Added NEVER rules 7-18")
+            print("[patch_soul] Added NEVER rules 7-24")
 else:
     print("[patch_soul] NEVER rules already up to date")
+
+old_quality_block = """## Quality Levels
+- `--quality quick` — 2 stems, fast preview
+- `--quality standard` — 3 stems, production ready (DEFAULT)
+- `--quality premium` — 4 stems, maximum quality"""
+
+prev_hyperspatial_line = "- `--quality hyperspatial` — 7 stems (`main`, `texture`, `counter_melody`, `sub_drone`, `riser`, `accent`, `foley` + `ear_candy_bus` = 9 DAW stems, ~$4.13/track, ~$21.97/album — DEFAULT for VØIDRIDE)"
+curr_hyperspatial_line = "- `--quality hyperspatial` — 7 stems (`main` on `elevenlabs-music-v2-5` + Demucs chord-locked `texture`/`atmosphere`/`spatial` + SFX vault `riser`/`accent` + `foley` + `ear_candy_bus` = 9 DAW stems, Option 1B ~$2.24/track avg, ~$11.70/album — DEFAULT for VØIDRIDE)"
+
+new_quality_block = f"""## Quality Levels
+- `--quality quick` — 2 stems, fast preview
+- `--quality standard` — 3 stems, production ready
+- `--quality premium` — 4 stems, extended layering
+- `--quality ultra` — 5 stems, sub-drone & foley layering
+{curr_hyperspatial_line}"""
+
+if old_quality_block in content:
+    content = content.replace(old_quality_block, new_quality_block)
+    changed = True
+    print("[patch_soul] Updated Quality Levels with ultra and hyperspatial tiers")
+elif prev_hyperspatial_line in content:
+    content = content.replace(prev_hyperspatial_line, curr_hyperspatial_line)
+    changed = True
+    print("[patch_soul] Updated hyperspatial Quality Level cost to Option 1B (~$11.70/album)")
+
+if "elevenlabs-music-v2-5" not in content and "- **elevenlabs-music** — Premium ($0.69)" in content:
+    content = content.replace(
+        "- **elevenlabs-music** — Premium ($0.69)",
+        "- **elevenlabs-music-v2-5** — Flagship Hit Arrangement Main Stem ($2.08 <=180s / $2.76 <=240s)\n- **elevenlabs-music** — Legacy ($0.69)"
+    )
+    changed = True
+    print("[patch_soul] Added elevenlabs-music-v2-5 to Venice Audio Models")
 
 old_album_block = """### Multiple Tracks / Album
 ```bash

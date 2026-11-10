@@ -1,0 +1,237 @@
+{
+  "schema_version": "1.0",
+  "updated_at": "2026-11-10T18:58:00Z",
+  "budget_policy": {
+    "weekly_canary_cap_usd": 1.50,
+    "option_1b_durations": {
+      "singles": [174, 170, 178, 172],
+      "closer": 215
+    },
+    "estimated_costs_usd": {
+      "single_track": 2.10,
+      "closer_track": 2.78,
+      "tracks_total": 11.18,
+      "covers_total": 0.52,
+      "album_total": 11.70,
+      "avg_track": 2.24
+    }
+  },
+  "roles": {
+    "music.main_instrumental": {
+      "primary": "elevenlabs-music-v2-5",
+      "fallbacks": ["elevenlabs-music-v2", "elevenlabs-music"],
+      "modality": "music",
+      "description": "Flagship section-scripted hit instrumental main stem",
+      "params": {
+        "supports_duration": true,
+        "supports_instrumental": true,
+        "supports_lyrics": false,
+        "max_prompt_chars": 4096,
+        "min_duration": 10,
+        "max_duration": 600,
+        "output_format": "mp3"
+      }
+    },
+    "music.main_vocal": {
+      "primary": "ace-step-15",
+      "fallbacks": ["minimax-music-v26", "minimax-music-v25", "minimax-music-v2"],
+      "modality": "music",
+      "description": "Structured vocal song stem",
+      "params": {
+        "supports_duration": true,
+        "supports_instrumental": true,
+        "supports_lyrics": true,
+        "max_prompt_chars": 2000,
+        "valid_durations": [60, 90, 120, 150, 180, 210],
+        "output_format": "flac"
+      }
+    },
+    "music.foley_sfx": {
+      "primary": "elevenlabs-sound-effects-v2",
+      "fallbacks": ["mmaudio-v2-text-to-audio", "sonilo-v1-1-sound-effects"],
+      "modality": "music",
+      "description": "Bespoke smooth nocturnal foley & spatial ear candy",
+      "params": {
+        "supports_duration": false,
+        "supports_instrumental": false,
+        "supports_lyrics": false,
+        "max_prompt_chars": 500,
+        "output_format": "mp3"
+      }
+    },
+    "llm.proposals": {
+      "primary": "qwen-3-7-plus",
+      "fallbacks": ["deepseek-v4-flash", "qwen-3-8-flash"],
+      "modality": "text",
+      "description": "5-proposal VØIDRIDE hit-record concept generator",
+      "params": {
+        "temperature": 0.9,
+        "max_tokens": 4800,
+        "venice_parameters": {
+          "include_venice_system_prompt": false,
+          "strip_thinking_response": true,
+          "disable_thinking": true
+        }
+      }
+    },
+    "llm.showrunner": {
+      "primary": "deepseek-v4-flash",
+      "fallbacks": ["qwen-3-7-plus", "qwen-3-8-flash"],
+      "modality": "text",
+      "description": "Single-pass 5-track album showrunner & section planner",
+      "params": {
+        "temperature": 0.6,
+        "max_tokens": 5500,
+        "venice_parameters": {
+          "strip_thinking_response": true
+        }
+      }
+    },
+    "llm.creative_director": {
+      "primary": "deepseek-v4-flash",
+      "fallbacks": ["qwen-3-7-plus", "qwen-3-8-flash"],
+      "modality": "text",
+      "description": "Per-track creative director & prompt upscaler",
+      "params": {
+        "temperature": 0.55,
+        "max_tokens": 3500,
+        "venice_parameters": {
+          "strip_thinking_response": true
+        }
+      }
+    },
+    "llm.image_prompt": {
+      "primary": "deepseek-v4-flash",
+      "fallbacks": ["qwen-3-7-plus", "qwen-3-8-flash"],
+      "modality": "text",
+      "description": "Photorealistic dark nightride cover prompt upsampler",
+      "params": {
+        "temperature": 0.7,
+        "max_tokens": 900,
+        "venice_parameters": {
+          "strip_thinking_response": true
+        }
+      }
+    },
+    "image.cover_primary": {
+      "primary": "qwen-image-3-pro",
+      "fallbacks": ["grok-imagine-image-2-0", "grok-imagine-image", "flux-2-max"],
+      "modality": "image",
+      "description": "1024x1024 nocturnal album & track cover generator",
+      "params": {
+        "resolution": "1024x1024",
+        "upscale_scale": 4,
+        "upscale_creativity": 0.01
+      }
+    },
+    "image.edit": {
+      "primary": "qwen-image-3-edit",
+      "fallbacks": ["qwen-image-3-pro-edit", "seedream-v5-5-edit", "nano-banana-2-edit"],
+      "modality": "inpaint",
+      "description": "Interactive cover artwork edit model",
+      "params": {
+        "enhance_prompt": true
+      }
+    }
+  },
+  "music_model_specs": {
+    "elevenlabs-music-v2-5": {
+      "supports_lyrics": false,
+      "supports_duration": true,
+      "supports_instrumental": true,
+      "output_format": "mp3",
+      "max_prompt": 4096,
+      "min_duration": 10,
+      "max_duration": 600
+    },
+    "elevenlabs-music-v2": {
+      "supports_lyrics": false,
+      "supports_duration": true,
+      "supports_instrumental": true,
+      "output_format": "mp3",
+      "max_prompt": 4096,
+      "min_duration": 10,
+      "max_duration": 600
+    },
+    "elevenlabs-music": {
+      "supports_lyrics": false,
+      "supports_duration": true,
+      "supports_instrumental": true,
+      "output_format": "mp3",
+      "max_prompt": 2000,
+      "min_duration": 10,
+      "max_duration": 300
+    },
+    "lyria-3-pro": {
+      "supports_lyrics": true,
+      "supports_duration": false,
+      "supports_instrumental": true,
+      "output_format": "mp3",
+      "max_prompt": 2000
+    },
+    "minimax-music-v26": {
+      "supports_lyrics": true,
+      "supports_duration": false,
+      "supports_instrumental": false,
+      "output_format": "mp3",
+      "max_prompt": 1000,
+      "max_lyrics": 3000
+    },
+    "minimax-music-v25": {
+      "supports_lyrics": true,
+      "supports_duration": false,
+      "supports_instrumental": false,
+      "output_format": "mp3",
+      "max_prompt": 1000,
+      "max_lyrics": 3000
+    },
+    "minimax-music-v2": {
+      "supports_lyrics": true,
+      "supports_duration": false,
+      "supports_instrumental": false,
+      "output_format": "mp3",
+      "max_prompt": 300,
+      "max_lyrics": 3000
+    },
+    "ace-step-15": {
+      "supports_lyrics": true,
+      "supports_duration": true,
+      "supports_instrumental": true,
+      "output_format": "flac",
+      "max_prompt": 2000,
+      "max_lyrics": 4096,
+      "valid_durations": [60, 90, 120, 150, 180, 210]
+    },
+    "stable-audio-25": {
+      "supports_lyrics": false,
+      "supports_duration": true,
+      "supports_instrumental": false,
+      "output_format": "wav",
+      "max_prompt": 500,
+      "min_duration": 1,
+      "max_duration": 180
+    },
+    "elevenlabs-sound-effects-v2": {
+      "supports_lyrics": false,
+      "supports_duration": false,
+      "supports_instrumental": false,
+      "output_format": "mp3",
+      "max_prompt": 500
+    },
+    "mmaudio-v2-text-to-audio": {
+      "supports_lyrics": false,
+      "supports_duration": false,
+      "supports_instrumental": false,
+      "output_format": "mp3",
+      "max_prompt": 500
+    },
+    "sonilo-v1-1-sound-effects": {
+      "supports_lyrics": false,
+      "supports_duration": false,
+      "supports_instrumental": false,
+      "output_format": "mp3",
+      "max_prompt": 500
+    }
+  },
+  "rejected_candidates": {}
+}

@@ -30,16 +30,23 @@ import requests
 # ── Configuration ──────────────────────────────────────────────
 VENICE_API_KEY = os.environ.get("VENICE_API_KEY", "")
 if not VENICE_API_KEY:
-    for conf_path in ["/opt/data/config.yaml", "D:/hermes-music/data/config.yaml", "/opt/data/.env", "D:/hermes-music/.env"]:
+    for conf_path in [
+        "/opt/data/config.yaml",
+        "D:/hermes-music/data/config.yaml",
+        "D:/sp2/data/config.yaml",
+        "/opt/data/.env",
+        "D:/hermes-music/.env",
+        "D:/sp2/.env",
+    ]:
         if os.path.exists(conf_path):
             try:
                 with open(conf_path, "r", encoding="utf-8") as f:
                     for line in f:
                         if "api_key:" in line:
-                            VENICE_API_KEY = line.split(":", 1)[1].strip()
+                            VENICE_API_KEY = line.split(":", 1)[1].strip().strip('"').strip("'")
                             break
                         elif line.startswith("VENICE_API_KEY="):
-                            VENICE_API_KEY = line.split("=", 1)[1].strip()
+                            VENICE_API_KEY = line.split("=", 1)[1].strip().strip('"').strip("'")
                             break
             except Exception:
                 pass
@@ -447,7 +454,15 @@ def main():
         "--force", action="store_true",
         help="Regenerate even if output file already exists"
     )
+    parser.add_argument(
+        "--api-key", default=None,
+        help="Venice API key"
+    )
     args = parser.parse_args()
+
+    global VENICE_API_KEY
+    if args.api_key:
+        VENICE_API_KEY = args.api_key
 
     if not args.image and not args.playlist_id and not args.track_id:
         parser.print_help()

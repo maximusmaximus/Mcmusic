@@ -10,22 +10,30 @@
 *credentials/
 id_rsa*
 id_ed25519*
-config.yaml
-**/config.yaml
-data/config.yaml
+config.yaml*
+**/config.yaml*
+data/config.yaml*
 data/.soundcloud_auth/
 data/auth.lock
+*.m3u8
 
 # Runtime state — exclude (generated music, logs, sessions, caches)
 data/logs/
 data/sessions/
 data/home/
 data/dawagent/
+data/patches/
+data/skins/
+data/get_hex_code.py
+data/SOUL.md
 data/music/productions/
 data/music/albums/
 data/music/releases/
 data/music/exports/
 data/music/proposals/
+data/music/sfx_vault/
+data/music/venice_balance_status.json
+data/music/pipeline_state.json
 data/music/profiles/*/batches/
 data/productions/
 data/snapshots/
@@ -51,6 +59,25 @@ data/skills/.*
 data/test_*.png
 **/cloudflared
 **/cloudflared.exe
+.pytest_cache/
+**/.pytest_cache/
+
+# Exclude generic non-music Hermes bundled skills
+data/skills/apple/
+data/skills/autonomous-ai-agents/
+data/skills/data-science/
+data/skills/devops/
+data/skills/dogfood/
+data/skills/email/
+data/skills/github/
+data/skills/media/
+data/skills/mlops/
+data/skills/note-taking/
+data/skills/productivity/
+data/skills/research/
+data/skills/smart-home/
+data/skills/social-media/
+data/skills/software-development/
 
 # Python bytecode
 **/__pycache__/
@@ -70,10 +97,17 @@ data/test_*.png
 Thumbs.db
 
 # Source — explicitly tracked (override runtime exclusions above)
+!data/config/
+data/config/sp2_update_state.json
+data/config/*runtime*.json
+!data/reports/
+data/reports/canary_artifacts/
 !data/scripts/
 !data/skills/
 !data/music/profiles/
 !data/soul/
+!tests/
+!.github/
 
 # Re-apply critical exclusions inside tracked source directories
 data/**/__pycache__/

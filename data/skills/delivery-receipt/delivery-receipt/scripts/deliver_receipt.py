@@ -299,7 +299,7 @@ def generate_receipt(session_name, send_telegram_flag=True):
 
 def main():
     parser = argparse.ArgumentParser(description="Generate delivery receipt with FLAC links and VLC playlist")
-    parser.add_argument("--session", required=True, help="Session name (e.g., spatial-ship)")
+    parser.add_argument("--session", "--release", dest="session", required=True, help="Session or release name (e.g., spatial-ship)")
     parser.add_argument("--send-telegram", action="store_true", default=True, help="Send via Telegram (default: true)")
     parser.add_argument("--no-send", action="store_true", help="Don't send via Telegram (generate only)")
     args = parser.parse_args()

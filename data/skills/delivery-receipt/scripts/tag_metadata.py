@@ -70,6 +70,8 @@ def find_cover_for_track(target_dir, release_name, track_title, track_num=None):
     if target_dir:
         td = Path(target_dir)
         search_dirs.append(td)
+        if (td / "covers").exists():
+            search_dirs.append(td / "covers")
         if (td / "artwork").exists():
             search_dirs.append(td / "artwork")
     
@@ -77,6 +79,12 @@ def find_cover_for_track(target_dir, release_name, track_title, track_num=None):
         alb_art = ALBUMS_DIR / slug_hyphen / "artwork"
         if alb_art.exists():
             search_dirs.append(alb_art)
+        alb_cov = ALBUMS_DIR / slug_hyphen / "covers"
+        if alb_cov.exists():
+            search_dirs.append(alb_cov)
+        rel_cov = RELEASES_DIR / slug_hyphen / "covers"
+        if rel_cov.exists():
+            search_dirs.append(rel_cov)
         art_sub = ARTWORK_DIR / slug_hyphen
         if art_sub.exists():
             search_dirs.append(art_sub)
@@ -87,15 +95,17 @@ def find_cover_for_track(target_dir, release_name, track_title, track_num=None):
     if ARTWORK_DIR.exists():
         search_dirs.append(ARTWORK_DIR)
 
-    # 1. Per-track cover search
+    # 1. Per-track cover search: title match first
     for sdir in search_dirs:
         if not sdir.exists():
             continue
         is_generic_root = (sdir == ARTWORK_DIR)
         for ext in ["*.png", "*.jpg", "*.jpeg"]:
-            for f in sdir.glob(ext):
+            for f in sorted(sdir.glob(ext)):
                 fn_up = f.name.upper()
                 fn_low = f.name.lower()
+                if "_bg" in fn_low or "bg_" in fn_low:
+                    continue
                 # If searching in generic root, must belong to this album or match exact track title
                 if is_generic_root and slug_hyphen and (slug_hyphen not in fn_low and slug_under not in fn_low):
                     if len(title_clean) >= 5 and title_clean in fn_up:
@@ -103,7 +113,17 @@ def find_cover_for_track(target_dir, release_name, track_title, track_num=None):
                     continue
                 if (title_slug and title_slug in fn_up) or (title_clean and title_clean in fn_up):
                     return f
-                if track_num is not None and not is_generic_root:
+
+    # 1b. Per-track cover search: track number fallback
+    if track_num is not None:
+        for sdir in search_dirs:
+            if not sdir.exists() or sdir == ARTWORK_DIR:
+                continue
+            for ext in ["*.png", "*.jpg", "*.jpeg"]:
+                for f in sorted(sdir.glob(ext)):
+                    fn_low = f.name.lower()
+                    if "_bg" in fn_low or "bg_" in fn_low or "album" in fn_low:
+                        continue
                     if f"{track_num:02d}_" in f.name or f"{track_num}_" in f.name:
                         return f
 
@@ -231,6 +251,32 @@ def tag_directory(target_dir, artist=None, album=None, genre=None,
         album = clean_track_title(name_source).upper()
 
     flacs = sorted(target_dir.glob("*_MASTER.flac")) or sorted(target_dir.glob("*.flac"))
+    
+    # Order flacs by tracklist if available in tracks_meta or release.json
+    track_order = []
+    if tracks_meta:
+        for t in tracks_meta:
+            if isinstance(t, dict) and t.get("title"):
+                track_order.append(clean_track_title(t["title"]).upper())
+    if not track_order and release_name:
+        rel_json_path = (RELEASES_DIR / release_name / "release.json")
+        if rel_json_path.exists():
+            try:
+                rel_data = json.load(open(rel_json_path, encoding="utf-8"))
+                for t in rel_data.get("tracks", []):
+                    track_order.append(clean_track_title(t).upper())
+            except Exception:
+                pass
+
+    if track_order:
+        def get_track_sort_key(flac_path):
+            cl = clean_track_title(flac_path.stem).upper()
+            for idx, name in enumerate(track_order):
+                if name == cl or name in cl or cl in name:
+                    return idx
+            return 999
+        flacs.sort(key=get_track_sort_key)
+
     total_tracks = len(flacs)
 
     meta_lookup = {}

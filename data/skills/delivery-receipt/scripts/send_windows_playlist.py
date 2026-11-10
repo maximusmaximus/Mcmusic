@@ -27,14 +27,17 @@ else:
 
 CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "8293122782")
 
+DEFAULT_SONGPROCESSOR_TOKEN = ""
+
 def get_bot_token():
     for candidate in [
+        Path("D:/hermes-music/.env"),
+        Path("/opt/data/.env"),
+        Path("D:/sp2/.env"),
         Path("D:/sp2/data/config.yaml"),
         Path("/opt/data/config.yaml"),
         Path("D:/hermes-music/data/config.yaml"),
         Path("/mnt/d/sp2/data/config.yaml"),
-        Path("D:/sp2/.env"),
-        Path("/opt/data/.env"),
     ]:
         if candidate.exists():
             try:
@@ -49,7 +52,7 @@ def get_bot_token():
                             return token
             except Exception:
                 pass
-    return os.environ.get("TELEGRAM_BOT_TOKEN", "")
+    return os.environ.get("TELEGRAM_BOT_TOKEN", DEFAULT_SONGPROCESSOR_TOKEN)
 
 def find_target_session(requested_session=None):
     if requested_session:
@@ -71,26 +74,27 @@ def find_target_session(requested_session=None):
     subdirs.sort(key=lambda p: p.stat().st_mtime, reverse=True)
     return subdirs[0]
 
+def get_win_session_path(session_dir: Path) -> str:
+    session_name = session_dir.name
+    sub_type = "releases" if "releases" in [p.lower() for p in session_dir.parts] else "exports"
+    return f"{WIN_MUSIC_ROOT}\\{sub_type}\\{session_name}"
+
 def ensure_windows_playlist(session_dir):
     session_name = session_dir.name
-    # Check for existing playlist
-    playlists = list(session_dir.glob("*.m3u8")) + list(session_dir.glob("*.m3u"))
-    if playlists:
-        return playlists[0]
-
     # Look for audio files
     audio_files = []
     for ext in ["*.flac", "*.mp3", "*.wav"]:
         audio_files.extend(list(session_dir.glob(ext)))
     
     if not audio_files:
-        return None
+        playlists = list(session_dir.glob("*.m3u8")) + list(session_dir.glob("*.m3u"))
+        return playlists[0] if playlists else None
 
     # Sort audio files by name
     audio_files.sort(key=lambda p: p.name)
 
     playlist_path = session_dir / f"{session_name}_playlist.m3u8"
-    win_session_path = f"{WIN_MUSIC_ROOT}\\exports\\{session_name}"
+    win_session_path = get_win_session_path(session_dir)
     album_title = session_name.replace("-", " ").replace("_", " ").upper()
 
     with open(playlist_path, "w", encoding="utf-8") as f:
@@ -172,7 +176,7 @@ def send_telegram_msg(token, chat_id, text):
 
 def main():
     parser = argparse.ArgumentParser(description="Send Windows playlist and review package to Telegram")
-    parser.add_argument("--session", default=None, help="Session name (defaults to most recent export)")
+    parser.add_argument("--session", "--release", dest="session", default=None, help="Session or release name (defaults to most recent export)")
     parser.add_argument("--chat_id", default=CHAT_ID, help="Telegram chat ID")
     args = parser.parse_args()
 
@@ -211,7 +215,8 @@ def main():
     external_link = package_and_get_link(session_dir)
 
     # 3. Format paths
-    win_playlist = f"{WIN_MUSIC_ROOT}\\exports\\{session_name}\\{playlist_path.name}" if playlist_path else "N/A"
+    win_folder = get_win_session_path(session_dir)
+    win_playlist = f"{win_folder}\\{playlist_path.name}" if playlist_path else "N/A"
     album_title = session_name.replace("-", " ").replace("_", " ").upper()
 
     # 4. Send Playlist file to Telegram
@@ -224,8 +229,8 @@ def main():
     msg_lines = [
         f"📀 <b>{album_title} — Windows Review Package</b>",
         "━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
-        f"📂 <b>Local Win Path:</b> <code>{WIN_MUSIC_ROOT}\\exports\\{session_name}</code>",
-        f"🎶 <b>VLC Playlist:</b> <code>{win_playlist}</code>",
+        f"📁 <b>Windows Local Folder:</b> <code>{win_folder}</code>",
+        f"🎶 <b>Windows VLC Playlist:</b> <code>{win_playlist}</code>",
         "",
     ]
 

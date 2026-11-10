@@ -24,19 +24,20 @@ python3 /opt/data/skills/master-producer/master-producer/scripts/master-producer
   [--chat-id TELEGRAM_CHAT_ID]
 ```
 
-### Album / Batch (PREFERRED for multiple tracks)
+### Album / Batch (PREFERRED for multiple tracks — Option 1B Pacing)
 ```bash
 python3 /opt/data/skills/master-producer/master-producer/scripts/produce-album.py \
   --brief "ALBUM BRIEF" \
   --tracks 5 \
-  --duration 180 \
-  --quality standard \
-  [--vocals-pct 5]
+  --duration 175 \
+  --closer-duration 215 \
+  --quality hyperspatial \
+  [--vocals-pct 0]
 ```
 
 **IMPORTANT RULES:**
 1. Use `terminal` tool, NOT `process` — this is a long-running multi-step pipeline
-2. Warn the user this takes **3-15 minutes per track** and costs ~$2.30/track
+2. Warn the user this takes **3-10 minutes per track** and costs **~$2.24/track avg** (~$11.18 audio + ~$0.52 covers = **~$11.70/album** in Option 1B)
 3. **ONLY send the final mastered file** to the user, NOT stems or intermediate files
 4. **Do NOT paste JSON output** in chat — parse it and respond naturally
 
@@ -103,18 +104,31 @@ PHASE 5: Delivery (Telegram audio + batch tracking)
 
 | Tier | Stems | Est. Time | Est. Cost | Best For |
 |------|-------|-----------|-----------|----------|
-| `quick` | 2 (main + texture) | 3-5 min | ~$1 | Demos, previews |
-| `standard` | 3 (main + texture + accent) | 5-10 min | ~$2.30 | Good quality tracks |
-| `premium` | 4 (main + texture + accent + atmosphere) | 8-15 min | ~$3 | Release-ready productions |
+| `quick` | 2 (main + Demucs texture) | 2-4 min | ~$2.08 | Demos, previews |
+| `standard` | 3 (main + Demucs texture + vault accent) | 3-5 min | ~$2.08 | Good quality tracks |
+| `ultra` | 5 (main + Demucs texture/atmosphere + vault accent) | 4-6 min | ~$2.08 | Rich layered productions |
+| `hyperspatial` | 7 (main + Demucs chord-locked texture/atmosphere/spatial + SFX vault riser/accent + foley) | 4-7 min | ~$2.10 single / ~$2.78 closer | Default VØIDRIDE Option 1B Hit Productions |
+
+## 💳 Live Venice AI Balance & Track Completion Capacity Check
+- Both `album_pipeline.py` and `produce-album.py` automatically query `GET https://api.venice.ai/api/v1/api_keys/rate_limits` (with `Authorization: Bearer $VENICE_API_KEY`) before starting production, before each track, and whenever an HTTP `402` or incomplete batch occurs.
+- Live balance and track capacity are persisted to `/opt/data/music/venice_balance_status.json` (and `/tmp/venice_balance_status.json`), containing:
+  - `total_usd` (`usd` + `diem`), `cost_per_track` (`~$2.24` avg in Option 1B `hyperspatial` mode: `$2.10` for Tracks 1–4 @ `170–178s` + `$2.78` for Track 5 closer @ `215s`), `remaining_tracks`, `completable_tracks`, `tracks_needed_cost` (`~$11.18`), `cover_cost` (`~$0.52`), and `shortfall_total` (full album avg `~$11.70 USD`).
+- **Agent Directive**: Whenever inference runs out or a production pauses, ALWAYS inspect `/opt/data/music/venice_balance_status.json` (or query `/api/v1/api_keys/rate_limits`) and tell the user:
+  1. The exact **remaining Venice balance** (`$X.XX USD` / `DIEM`).
+  2. **How many tracks** the remaining balance can complete (`X/Y remaining tracks` at `~$2.10` per single / `~$2.78` closer).
+  3. The exact **shortfall** needed to finish all remaining tracks + covers (`$Z.ZZ USD`).
 
 ## Stem Model Selection
 
-| Stem | Default Model | Role |
-|------|--------------|------|
-| **Main** | `elevenlabs-music` (instrumental) / `ace-step-15` (structured vocals) | Core track |
-| **Texture** | `stable-audio-25` | Ambient harmonic support |
-| **Accent** | `elevenlabs-sound-effects-v2` | Short transition SFX |
-| **Atmosphere** | `stable-audio-25` | Wide ambient bed |
+| Stem | Default Model / Source | Role |
+|------|------------------------|------|
+| **Main** | `elevenlabs-music-v2-5` (instrumental hit arrangement) / `ace-step-15` (vocals) | Core track with time-stamped intro/drop/breakdown/climax |
+| **Texture** | `demucs-harmonic-synth` (derived from `main` Demucs `other` stem, `$0.00`) | 100% chord-locked warm shimmer pad |
+| **Atmosphere** | `demucs-harmonic-synth` (half-speed Paulstretch nocturne bed, `$0.00`) | 100% chord-locked wide nocturnal bed |
+| **Spatial / Sub** | `demucs-harmonic-synth` (`-12st` octave sub-harmonic dark bed, `$0.00`) | 100% key-locked low-mid foundation |
+| **Riser** | `voidride-sfx-vault` (click-free filtered analog riser, `$0.00`) | Velvet-smooth pre-drop tension sweep |
+| **Accent** | `voidride-sfx-vault` (warm dark sub-impact bloom, `$0.00`) | Section downbeat bloom |
+| **Foley** | `elevenlabs-sound-effects-v2` (`$0.02`) | Bespoke 3D binaural mechanical/spatial ear candy |
 
 ## DJ Profiles & Sonic DNA
 
@@ -136,19 +150,20 @@ For batch production of multiple tracks:
 
 ### Album Arguments
 ```
---brief TEXT       Album description
---tracks N         Number of tracks (default: 5)
---duration SECS    Per-track duration (default: 60)
---quality TIER     quick/standard/premium
---vocals-pct N     Percentage of tracks with vocals (default: 0)
---preview          Force MP3-only delivery (no FLAC)
+--brief TEXT             Album description
+--tracks N               Number of tracks (default: 5)
+--duration SECS          Singles duration for Tracks 1-4 (default: 175)
+--closer-duration SECS   Extended closer duration for final track (default: 215)
+--quality TIER           quick/standard/premium/ultra/hyperspatial
+--vocals-pct N           Percentage of tracks with vocals (default: 0)
+--preview                Force MP3-only delivery (no FLAC)
 ```
 
 ## Target Profiles
 
 | Profile | Loudness | Format | Use Case |
 |---------|----------|--------|----------|
-| `streaming` | -14 LUFS | MP3 320k / FLAC 48k-24bit | Spotify, Apple, YouTube |
+| `streaming` | -10.0 LUFS (-0.8 dBTP, 2-pass linear loudnorm) | MP3 320k / FLAC 48k-24bit | Competitive Trap/Phonk Streaming & SoundCloud |
 | `l-acoustics` | -18 LUFS | AIFF 96k/24-bit + L-ISA stems | L-Acoustics PA rigs |
 | `club` | -8 LUFS | WAV 48k/24-bit | Club systems, DJ sets |
 | `headphones` | -16 LUFS | FLAC 48k/24-bit | Critical listening |
