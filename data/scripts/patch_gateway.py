@@ -943,8 +943,8 @@ PATCH_CODE = '''
                                 break
                     except Exception:
                         pass
-                _avg_track = 0.48 if _mode == "sample" else 2.24
-                _avg_tracks_total = round(_avg_track * 5, 2) if _mode == "sample" else 11.18
+                _avg_track = 0.48 if _mode == "sample" else 3.16
+                _avg_tracks_total = round(_avg_track * 5, 2) if _mode == "sample" else 15.80
                 _avg_covers = 0.0 if _mode == "sample" else 0.52
                 _avg_album = round(_avg_tracks_total + _avg_covers, 2)
                 if not _key:
@@ -1002,7 +1002,7 @@ PATCH_CODE = '''
                 _check_mode = (_pending or {}).get("mode", "full")
                 _b = _query_venice_budget_live(_check_mode)
                 _tot = _b.get("total_usd", 0.0)
-                _avg_alb = _b.get("avg_album", 11.70)
+                _avg_alb = _b.get("avg_album", 16.32)
                 _comp = _b.get("completable", 0)
                 _short = _b.get("shortfall", 0.0)
 
@@ -1024,7 +1024,7 @@ PATCH_CODE = '''
                     return
 
                 # If sufficient (or can complete all 5 tracks) and a pending album was selected, launch it now!
-                if _b.get("sufficient") or _tot >= _b.get("avg_tracks_total", 11.18):
+                if _b.get("sufficient") or _tot >= _b.get("avg_tracks_total", 15.80):
                     await query.answer(text=f'✅ Verified: ${_tot:.2f} USD available!')
                     if _pending and _pending.get("idx"):
                         _p_idx = int(_pending["idx"])
@@ -1035,7 +1035,7 @@ PATCH_CODE = '''
                         try:
                             await query.message.reply_text(
                                 f"✅ <b>Venice Credits Verified: ${_tot:.2f} USD!</b>\\n"
-                                f"Avg Full Album Cost: <b>~${_avg_alb:.2f} USD</b> (5/5 tracks funded — Option 1B).\\n"
+                                f"Avg Full Album Cost: <b>~${_avg_alb:.2f} USD</b> (5/5 tracks funded — Cohesive VØIDRIDE).\\n"
                                 f"🚀 Launching <b>{_p_album}</b> ({_p_mode} mode) now...",
                                 parse_mode="HTML",
                             )
@@ -1059,7 +1059,7 @@ PATCH_CODE = '''
                         try:
                             await query.message.reply_text(
                                 f"✅ <b>Venice Credits Verified: ${_tot:.2f} USD!</b>\\n"
-                                f"• Avg Full Album Cost: <b>~${_avg_alb:.2f} USD</b> ($11.18 tracks + $0.52 artwork)\\n"
+                                f"• Avg Full Album Cost: <b>~${_avg_alb:.2f} USD</b> ($15.80 tracks + $0.52 artwork)\\n"
                                 f"• Capacity: <b>5/5 tracks funded</b>\\n\\n"
                                 f"👆 Tap any album proposal button above to begin production!",
                                 parse_mode="HTML",
@@ -1088,7 +1088,7 @@ PATCH_CODE = '''
                         await query.message.reply_text(
                             f"⚠️ <b>Venice Credits Still Below Full Album Cost</b>\\n"
                             f"• Current Balance: <b>${_tot:.2f} USD</b> (${_b.get('usd', 0.0):.2f} USD / {_b.get('diem', 0.0):.2f} DIEM)\\n"
-                            f"• Avg Full Album Cost: <b>~${_avg_alb:.2f} USD</b> ($11.18 tracks + $0.52 covers)\\n"
+                            f"• Avg Full Album Cost: <b>~${_avg_alb:.2f} USD</b> ($15.80 tracks + $0.52 covers)\\n"
                             f"• Capacity: Can complete <b>{_comp}/5 tracks</b> (shortfall: <b>${_short:.2f} USD</b>)\\n\\n"
                             f"Add at least <b>${_short:.2f} USD</b> and tap <b>💳 Credit Added</b>, or tap <b>⏸ Pause</b>.",
                             parse_mode="HTML",
@@ -1106,7 +1106,7 @@ PATCH_CODE = '''
                     _f.write('paused')
                 _b = _query_venice_budget_live("full")
                 _tot = _b.get("total_usd", 0.0)
-                _avg_alb = _b.get("avg_album", 11.70)
+                _avg_alb = _b.get("avg_album", 16.32)
                 _comp = _b.get("completable", 0)
                 _short = _b.get("shortfall", 0.0)
                 await query.answer(text='⏸ Production paused until credits are added.')
@@ -1118,7 +1118,7 @@ PATCH_CODE = '''
                     await query.message.reply_text(
                         f"⏸ <b>Paused — Waiting for Venice Credits</b>\\n"
                         f"• Available Balance: <b>${_tot:.2f} USD</b>\\n"
-                        f"• Avg Full Album Cost: <b>~${_avg_alb:.2f} USD</b> ($11.18 tracks + $0.52 covers)\\n"
+                        f"• Avg Full Album Cost: <b>~${_avg_alb:.2f} USD</b> ($15.80 tracks + $0.52 covers)\\n"
                         f"• Current Capacity: <b>{_comp}/5 tracks</b> (shortfall: <b>${_short:.2f} USD</b>)\\n\\n"
                         f"Pipeline is safely paused. Once you add credits, tap <b>💳 Credit Added</b> below to verify and continue!",
                         parse_mode="HTML",
@@ -1158,7 +1158,7 @@ PATCH_CODE = '''
                 _low = bool(_b.get("ok") and not _b.get("sufficient"))
 
                 mode_buttons = [
-                    [{"text": "🚀 Full Album (4 Singles ~3m + 3m35s Closer)", "callback_data": f"ap:prod:{idx}:full"}],
+                    [{"text": "🚀 Full Album (4 Chapters ~3m40s + ~4m Closer)", "callback_data": f"ap:prod:{idx}:full"}],
                     [{"text": "⚡ Sample Previews (20s / track)", "callback_data": f"ap:prod:{idx}:sample"}],
                 ]
                 if _low:
@@ -1187,7 +1187,7 @@ PATCH_CODE = '''
 
                 try:
                     await query.edit_message_text(
-                        text=f"📀 *{album_name}*\\n\\nChoose production mode:\\n• *Full Album (Option 1B):* 4 punchy ~3m singles + 3m35s closer (~$11.70 avg)\\n• *Sample Previews:* Quick snippets (20s per track, ~$2.40 avg){_credit_note}",
+                        text=f"📀 *{album_name}*\\n\\nChoose production mode:\\n• *Full Cohesive Album:* 4 nocturnal chapters (~3m40s) + ~4m closer (~$16.32 avg)\\n• *Sample Previews:* Quick snippets (20s per track, ~$2.40 avg){_credit_note}",
                         parse_mode="Markdown",
                         reply_markup={"inline_keyboard": mode_buttons},
                     )
@@ -1234,7 +1234,7 @@ PATCH_CODE = '''
 
                 album_name = chosen.get("album", "UNKNOWN")
                 album_slug = album_name.lower().replace(" ", "-")
-                desc_mode = "Full Album (4 Singles ~3m + 3m35s Closer)" if prod_mode == "full" else "Sample Previews (20s / track)"
+                desc_mode = "Full Cohesive Album (4 Chapters ~3m40s + ~4m Closer)" if prod_mode == "full" else "Sample Previews (20s / track)"
 
                 # Pre-launch Venice credit gate (unless user explicitly forced partial production)
                 if not _force_start:

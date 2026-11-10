@@ -93,7 +93,7 @@ def _collect_recent_mastering_qc(cutoff_epoch: float) -> Dict[str, Any]:
     tp_pass = 0
     lufs_values: List[float] = []
     if not os.path.isdir(EXPORTS_DIR):
-        return {"checked": 0, "lufs_pass_rate": 1.0, "tp_pass_rate": 1.0, "avg_lufs": -10.0}
+        return {"checked": 0, "lufs_pass_rate": 1.0, "tp_pass_rate": 1.0, "avg_lufs": -11.5}
 
     for root, _, files in os.walk(EXPORTS_DIR):
         for fn in files:
@@ -105,14 +105,14 @@ def _collect_recent_mastering_qc(cutoff_epoch: float) -> Dict[str, Any]:
                     continue
                 with open(fp, "r", encoding="utf-8") as f:
                     rec = json.load(f)
-                qc = rec.get("post_master_qc") or rec.get("qc") or {}
+                qc = rec.get("measured_master") or rec.get("post_master_qc") or rec.get("qc") or {}
                 lufs = qc.get("integrated_lufs") or qc.get("lufs")
                 tp = qc.get("true_peak_dbtp") or qc.get("true_peak_db")
                 if lufs is not None:
                     checked += 1
                     lv = float(lufs)
                     lufs_values.append(lv)
-                    if -11.5 <= lv <= -8.8:
+                    if -13.2 <= lv <= -9.2:
                         lufs_pass += 1
                     if tp is None or float(tp) <= -0.5:
                         tp_pass += 1
@@ -123,7 +123,7 @@ def _collect_recent_mastering_qc(cutoff_epoch: float) -> Dict[str, Any]:
         "checked": checked,
         "lufs_pass_rate": round(lufs_pass / checked, 3) if checked else 1.0,
         "tp_pass_rate": round(tp_pass / checked, 3) if checked else 1.0,
-        "avg_lufs": round(sum(lufs_values) / len(lufs_values), 2) if lufs_values else -10.0,
+        "avg_lufs": round(sum(lufs_values) / len(lufs_values), 2) if lufs_values else -11.5,
     }
 
 

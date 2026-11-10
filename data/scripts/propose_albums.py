@@ -737,14 +737,14 @@ Genres: california bass, west coast bass, melodic nightride trap, dark west coas
 - NEVER use any of these exhausted words in an album title: {forbidden_words_str}
 - NEVER reuse any setting listed under EXHAUSTED / ALREADY-USED VISUAL SCENES above (no hospital bays/ambulances, no pawnshops, no rail yards/locomotives, no police precincts, no radio towers/trucks, no 3AM LA overpasses, no underground parking garages, no desert motels, no subway tunnels).
 
-Propose exactly 5 BRAND-NEW, 100% ORIGINAL HIT-RECORD EP concepts (Option 1B format: Tracks 1-4 are punchy ~3m streaming singles with distinct earworm hooks & bounce archetypes; Track 5 is an epic 3m35s extended widescreen closer). Each must:
-1. Build on the VØIDRIDE sonic identity (infectious foreground melodic earworm hooks within 10s, dynamic tension-and-release builds/bridges, explosive California 808 sub-bass glides, punchy transient kicks, crisp snap snares, and velvet-smooth reverb-washed transitions)
+Propose exactly 5 BRAND-NEW, 100% ORIGINAL COHESIVE VØIDRIDE NOCTURNAL EP concepts (where all 5 tracks on an EP inhabit ONE unified physical & sonic midnight world, locked to a tight <=8 BPM cruising pocket and dark minor key). Each must:
+1. Build on the authentic dark VØIDRIDE sonic identity (touchstones: Salem, Clams Casino, SpaceGhostPurrp, DJ Smokey, Soudiere, Lorn, Eprom, G Jones — massive continuous California 808 sub-bass glides with slow predatory pitch portamento, coiling Reese bass undertones, punchy acoustic-sampled transient kicks, crisp metallic snap snares, detuned analog brass/sine motifs, pitched-down witch-house spectral choir pads, zero mid-track silence drops, and velvet-smooth reverb-washed transitions)
 2. Explore FRESH nocturnal worlds and imagery (e.g., coastal Pacific cliff highways in fog, subterranean flood-control channels, obsidian yachts in dark harbors, derelict aerospace hangars, desert solar-mirror arrays, rooftop helipads in rain, neon botanical conservatories, brutalist hydroelectric dams, shadowy canyon switchbacks, etc.)
-3. Have a completely unique 2-word ALL CAPS album title and 5 ALL CAPS track titles (strictly 2 words each, so every album and song title stacks 1 word per line)
-4. Include BPM range (within 122-154 BPM), key signature (e.g. Dm, Fm, Cm, Gm, Ebm), and specific hit-ready subgenre
+3. Have a completely unique 2-word ALL CAPS album title and 5 ALL CAPS track titles (strictly 2 words each, so every album and song title stacks 1 word per line) that read as 5 chapters of that single nocturnal environment
+4. Include a tight cohesive BPM range (8 BPM span within 122-146 BPM, e.g. "132-140"), dark minor key signature (Cm, Dm, Fm, or Ebm), and unified VØIDRIDE subgenre
 5. Include a 1-line visual concept for cover art (photorealistic, dark, cinematic, zero text)
-6. Include a 50-word production brief detailing the signature earworm lead hook motif, dynamic section contrast (filtered hook tease -> explosive 808 Drop 1 -> switch-up -> stripped bridge -> octave-lifted Climax Drop 2), and smooth hyperspatial depth
-7. VARY the BPM pocket, key, setting, and hook timbre across all 5 proposals
+6. Include a 50-word production brief detailing the shared sonic palette binding all 5 tracks: continuous gliding West Coast 808 sub-bass character, recurring dark detuned analog synth/brass/sine motifs, witch-house spectral choir/reverb space, and hypnotic nocturnal cruising momentum
+7. VARY the nocturnal physical world, BPM pocket, minor key, and subgenre hybrid across the 5 distinct album proposals
 
 RESPOND IN THIS EXACT JSON FORMAT ONLY (no markdown fences, no explanation):
 [
@@ -787,8 +787,8 @@ RESPOND IN THIS EXACT JSON FORMAT ONLY (no markdown fences, no explanation):
         log(f"  Attempt {attempt + 1}/{MAX_RETRIES} (model: {model}, need {needed} more valid proposals to reach {REQUIRED_PROPOSAL_COUNT}, requesting {ask_count})")
 
         prompt = base_prompt.replace(
-            "Propose exactly 5 BRAND-NEW, 100% ORIGINAL HIT-RECORD EP concepts",
-            f"Propose {ask_count} BRAND-NEW, 100% ORIGINAL HIT-RECORD EP concepts (we will select {needed} distinct ones)"
+            "Propose exactly 5 BRAND-NEW, 100% ORIGINAL COHESIVE VØIDRIDE NOCTURNAL EP concepts",
+            f"Propose {ask_count} BRAND-NEW, 100% ORIGINAL COHESIVE VØIDRIDE NOCTURNAL EP concepts (we will select {needed} distinct ones)"
         )
         if seen_in_batch["albums"]:
             prompt += (
@@ -979,12 +979,12 @@ RESPOND IN THIS EXACT JSON FORMAT ONLY (no markdown fences, no explanation):
     return None
 
 
-# ── Venice Credit Check & Telegram (Option 1B Hit-Song & Demucs Harmonic Synth Budget) ──
+# ── Venice Credit Check & Telegram (Cohesive VØIDRIDE Nocturnal Architecture Budget) ──
 
-AVG_TRACK_COST_USD = 2.24      # Avg across 4 singles @ $2.10 ($2.08 elevenlabs-music-v2-5 <=180s + $0.02 foley) + 1 closer @ $2.78 (215s)
-AVG_TRACKS_TOTAL_USD = 11.18   # 4 × $2.10 + 1 × $2.78 = $11.18 (Demucs harmonic beds & SFX vault = $0.00!)
+AVG_TRACK_COST_USD = 3.16      # $2.76 elevenlabs-music (<=240s) + $0.38 (2× stable-audio-25 witch-house texture & atmosphere) + $0.02 foley ($0.00 spatial/vault SFX)
+AVG_TRACKS_TOTAL_USD = 15.80   # 5 × $3.16 = $15.80 (4 chapters @ 216-224s + 1 closer @ 236s)
 AVG_COVERS_COST_USD = 0.52     # 6 covers ($0.24) + 6 post-approval upscales ($0.12) + $0.00 local 3K waveforms + ~$0.16 buffer
-AVG_ALBUM_COST_USD = 11.70     # Average total full album cost (~$11.70 USD — 47% savings vs prior $21.97!)
+AVG_ALBUM_COST_USD = 16.32     # Average total full cohesive VØIDRIDE album cost (~$16.32 USD)
 
 
 def check_venice_album_budget():

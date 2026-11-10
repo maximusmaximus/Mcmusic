@@ -152,17 +152,17 @@ def diff_catalog(
 def benchmark_text_model(api_key: str, model_id: str, live_info: Dict[str, Any]) -> Dict[str, Any]:
     """Run standardized VØIDRIDE structured-JSON canary benchmark on a text model."""
     prompt = (
-        "You are the Executive Showrunner for VØIDRIDE (California 808 nightride bass & witch house).\n"
-        "Return ONLY valid JSON (no markdown fences) proposing 2 contrasting tracks:\n"
-        '{"tracks": [{"track_number": 1, "title": "TWO WORDS", "bpm": 138, "key": "Dm", '
-        '"hook_motif": "Detuned brass lead motif", "main_prompt": "Dynamic hit-arranged California bass at 138 BPM in Dm with [0:00-0:15 Intro] and [0:15-0:55 Drop 1] gliding 808 sub-bass."}]}'
+        "You are the Executive Showrunner for VØIDRIDE (dark nightride trap, California West Coast 808 bass & witch house).\n"
+        "Return ONLY valid JSON (no markdown fences) proposing 2 cohesive nocturnal chapters in Cm (134 and 138 BPM) with continuous dark prose (65-95 words per main_prompt, NO silence drops, NO bracketed timestamps):\n"
+        '{"tracks": [{"track_number": 1, "title": "TWO WORDS", "bpm": 134, "key": "Cm", '
+        '"hook_motif": "Detuned minor-pentatonic brass motif", "main_prompt": "Dark nightride trap & witch house at 134 BPM in Cm with heavy California 808 sub-bass portamento glides, crisp snap snares, and spectral witch-house choir pads. NO silence drops."}]}'
     )
     v_params = model_registry.build_venice_parameters(model_id, role="llm.showrunner", extra={"include_venice_system_prompt": False})
     body = {
         "model": model_id,
         "messages": [{"role": "user", "content": prompt}],
         "temperature": 0.4,
-        "max_tokens": 900,
+        "max_tokens": 1800,
         "venice_parameters": v_params,
     }
     t0 = time.time()
@@ -188,11 +188,15 @@ def benchmark_text_model(api_key: str, model_id: str, live_info: Dict[str, Any])
             two_word_ok = all(len(str(t.get("title", "")).strip().split()) == 2 and str(t.get("title", "")).isupper() for t in tracks[:2])
             if two_word_ok:
                 score += 25
-            prompts_ok = all(len(str(t.get("main_prompt", ""))) >= 60 and "[" in str(t.get("main_prompt", "")) for t in tracks[:2])
+            prompts_ok = all(
+                len(str(t.get("main_prompt", ""))) >= 60
+                and "808" in str(t.get("main_prompt", "")).lower()
+                for t in tracks[:2]
+            )
             if prompts_ok:
                 score += 25
             bpms = {t.get("bpm") for t in tracks[:2]}
-            if len(bpms) == 2:
+            if len(bpms) == 2 and all(122 <= int(t.get("bpm", 0) or 0) <= 156 for t in tracks[:2]):
                 score += 10
 
         usage = res.get("usage", {})
@@ -270,9 +274,9 @@ def benchmark_music_model(api_key: str, model_id: str, live_info: Dict[str, Any]
         return {"ok": False, "model": model_id, "score": 0, "cost_usd": 0.0, "error": f"30s canary cost ${est_cost:.2f} exceeds $0.90 single-clip cap"}
 
     prompt = (
-        "Dark melodic West Coast nightride trap & witch house, 138 BPM, D minor. "
-        "[0:00-0:08 Haunted detuned analog brass hook tease, sub held back] -> "
-        "[0:08-0:30 Explosive California 808 sub-bass portamento glides, punchy transient kicks, crisp snap snares]."
+        "Dark nightride trap & witch house, 136 BPM, C minor. "
+        "California bass and heavy West Coast bass mixed with melodic nightride vibes — massive continuous 808 sub-bass "
+        "portamento glides, punchy transient kicks, crisp metallic snap snares, and spectral witch-house choir pads. NO silence drops."
     )
     queue_body: Dict[str, Any] = {"model": model_id, "prompt": prompt}
     if "durations" in pricing:

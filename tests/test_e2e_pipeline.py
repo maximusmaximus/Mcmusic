@@ -101,7 +101,7 @@ class _StrictVeniceMockHandler(BaseHTTPRequestHandler):
     """Contract-strict Mock Venice AI API enforcing real Venice parameter rules."""
 
     server_state = {
-        "balance_usd": 6.00,  # Intentionally < $11.70 to test low-credit shortfall gate!
+        "balance_usd": 6.00,  # Intentionally < $16.32 to test low-credit shortfall gate!
         "catalog": {},
     }
 
@@ -169,18 +169,18 @@ class _StrictVeniceMockHandler(BaseHTTPRequestHandler):
                         {
                             "track_number": 1,
                             "title": "NIGHT GLIDE",
-                            "bpm": 138,
-                            "key": "Dm",
-                            "hook_motif": "Detuned analog brass hook",
-                            "main_prompt": "Dynamic hit-arranged California bass at 138 BPM in Dm with [0:00-0:15 Intro] and [0:15-0:55 Drop 1] gliding 808 sub-bass.",
+                            "bpm": 134,
+                            "key": "Cm",
+                            "hook_motif": "Detuned minor-pentatonic brass motif",
+                            "main_prompt": "Dark nightride trap & witch house at 134 BPM in Cm with continuous California 808 sub-bass portamento glides, crisp snap snares, and spectral choir pads. NO silence drops.",
                         },
                         {
                             "track_number": 2,
                             "title": "COASTAL SUB",
-                            "bpm": 144,
-                            "key": "Fm",
-                            "hook_motif": "Plucked glass lead motif",
-                            "main_prompt": "West Coast nightride trap at 144 BPM in Fm with [0:00-0:12 Hook Tease] and [0:12-0:50 Drop 1] crisp snap snares.",
+                            "bpm": 138,
+                            "key": "Cm",
+                            "hook_motif": "Cold detuned glass sine motif",
+                            "main_prompt": "West Coast nightride trap & witch house at 138 BPM in Cm with heavy 808 portamento slides, metallic snap snares, and cavernous witch-house choir atmosphere. NO silence drops.",
                         },
                     ]
                 else:
@@ -189,18 +189,18 @@ class _StrictVeniceMockHandler(BaseHTTPRequestHandler):
                         {
                             "track_number": 1,
                             "title": "IRON TIDE",
-                            "bpm": 138,
-                            "key": "Dm",
+                            "bpm": 136,
+                            "key": "Cm",
                             "hook_motif": "Brass lead",
-                            "main_prompt": "Dynamic hit-arranged California bass at 138 BPM in Dm with [0:00-0:15 Intro] and [0:15-0:55 Drop 1] gliding 808 sub-bass.",
+                            "main_prompt": "Dark nightride trap & witch house at 136 BPM in Cm with continuous California 808 sub-bass portamento glides, crisp snap snares, and spectral choir pads. NO silence drops.",
                         },
                         {
                             "track_number": 2,
                             "title": "COLD PIER",
-                            "bpm": 138,
-                            "key": "Fm",
+                            "bpm": 136,
+                            "key": "Cm",
                             "hook_motif": "Synth pluck",
-                            "main_prompt": "West Coast nightride trap at 138 BPM in Fm with [0:00-0:12 Hook Tease] and [0:12-0:50 Drop 1] crisp snap snares.",
+                            "main_prompt": "West Coast nightride trap & witch house at 136 BPM in Cm with heavy 808 portamento slides, metallic snap snares, and cavernous witch-house choir atmosphere. NO silence drops.",
                         },
                     ]
                 content = json.dumps({"tracks": tracks})
@@ -285,12 +285,12 @@ class TestHermeticE2EPipeline(unittest.TestCase):
             # Refuses incomplete batch of 3
             self.assertFalse(propose.send_proposals(proposals[:3], dry_run=True))
 
-            # Accepts full batch of 5 and records low-credit shortfall ($6.00 vs $11.70)
+            # Accepts full batch of 5 and records low-credit shortfall ($6.00 vs $16.32)
             self.assertTrue(propose.send_proposals(proposals, dry_run=True))
             saved = json.loads((propose.PROPOSALS_DIR / "current_proposals.json").read_text(encoding="utf-8"))
             self.assertEqual(len(saved["proposals"]), 5)
             self.assertFalse(saved["venice_budget"]["sufficient"])
-            self.assertAlmostEqual(saved["venice_budget"]["shortfall"], 5.70, places=2)
+            self.assertAlmostEqual(saved["venice_budget"]["shortfall"], 10.32, places=2)
         finally:
             for k, v in old_env.items():
                 if v is None:
@@ -380,7 +380,7 @@ class TestHermeticE2EPipeline(unittest.TestCase):
             fb.record_model_telemetry("music.foley_sfx", "elevenlabs-sound-effects-v2", "timeout", latency_s=30.0)
 
             (exports_dir / "production_receipt.json").write_text(
-                json.dumps({"post_master_qc": {"integrated_lufs": -10.1, "true_peak_dbtp": -0.82}}),
+                json.dumps({"measured_master": {"integrated_lufs": -11.5, "true_peak_dbtp": -1.02}}),
                 encoding="utf-8",
             )
 
@@ -430,7 +430,7 @@ class TestHermeticE2EPipeline(unittest.TestCase):
             )
 
             manifest = {
-                "mastering_profile": {"lufs": -10.0, "true_peak": -0.8, "lra": 9.0},
+                "mastering_profile": {"lufs": -11.5, "true_peak": -1.0, "lra": 9.5},
                 "processing_plan": {"notes": "808 sub glide + spatial stereo shimmer"},
             }
             stems = auto_mod.find_stems(tmp)
@@ -450,9 +450,9 @@ class TestHermeticE2EPipeline(unittest.TestCase):
             qc = auto_mod.measure_loudness(master_flac)
             measured_i = float(qc["input_i"])
             measured_tp = float(qc["input_tp"])
-            self.assertGreaterEqual(measured_i, -11.8, f"Mastered LUFS too quiet: {measured_i}")
-            self.assertLessEqual(measured_i, -8.2, f"Mastered LUFS too hot: {measured_i}")
-            self.assertLessEqual(measured_tp, -0.4, f"True Peak ceiling exceeded: {measured_tp} dBTP")
+            self.assertGreaterEqual(measured_i, -13.0, f"Mastered LUFS too quiet: {measured_i}")
+            self.assertLessEqual(measured_i, -9.8, f"Mastered LUFS too hot: {measured_i}")
+            self.assertLessEqual(measured_tp, -0.6, f"True Peak ceiling exceeded: {measured_tp} dBTP")
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
 

@@ -294,40 +294,40 @@ def interpret_track_from_cover_and_theme(album_name, album_theme, cover_visual, 
 
     norm_title = track_title.strip().upper()
     fallback = base_fallbacks.get(norm_title)
-    default_bpms = [134, 128, 140, 124, 132]
-    default_keys = ["Dm", "Fm", "Cm", "Dm", "Fm"]
-    fb_bpm = default_bpms[(track_num - 1) % len(default_bpms)]
-    fb_key = default_keys[(track_num - 1) % len(default_keys)]
+    cohesive_grid = derive_cohesive_album_grid(album_theme, max(total_tracks, track_num), sonic_dna=sonic_dna)
+    slot_spec = cohesive_grid[(track_num - 1) % len(cohesive_grid)]
+    fb_bpm = slot_spec["bpm"]
+    fb_key = slot_spec["key"]
+    fb_subgenre = slot_spec["subgenre"]
     if not fallback:
         fallback = {
             "direction": (
-                f"Hyperspatial West Coast nightride bass and witch house gravity translating '{track_title}' "
+                f"{slot_spec['chapter']} — {fb_subgenre} translating '{track_title}' "
                 f"into relentless California 808 sub-bass glides, predatory Reese undertones, punchy transient kicks, "
-                f"and detuned analog brass/sine hooks ({fb_bpm} BPM, {fb_key})"
+                f"and detuned witch-house synth/brass motifs ({fb_bpm} BPM, {fb_key})"
             ),
             "rules": [
                 f"Rule 1: Continuous California 808 sub-bass dominance ({fb_bpm} BPM, {fb_key}) with slow predatory pitch portamento glides and centered low-end authority",
                 "Rule 2: Punchy acoustic-sampled transient kicks, crisp snap snares thrown wide into metallic impulse reverb, and rolling syncopated West Coast hi-hats",
-                "Rule 3: Melancholic detuned analog brass stabs and dark minor-pentatonic sine plucks carrying a hypnotic nocturnal cruising melody",
+                "Rule 3: Melancholic detuned analog brass stabs and dark minor-pentatonic sine plucks carrying a hypnotic nocturnal cruising motif",
                 "Rule 4: Spectral pitched-down witch house choir pads and holographic 3D binaural delay throws supporting (never overpowering) the 808 sub",
-                f"Rule 5: Smooth psychological buildup dropping early into full-force West Coast bass weight embodying '{track_title}' — no dead air, no weak/thin leads"
+                f"Rule 5: Smooth psychological buildup dropping early into full-force West Coast bass weight embodying '{track_title}' — zero silence drops, smooth filtered transitions"
             ],
             "bpm": fb_bpm,
             "key": fb_key,
             "stems": {
                 "main": (
-                    f"Hyperspatial nightride bass with witch house gravity, {fb_bpm} BPM, {fb_key}. "
-                    f"California bass and heavy West Coast bass mixed with melodic nightride vibes, nocturnal cruising atmosphere. "
-                    f"Massive continuous sub-bass dominance: gliding West Coast 808 slides with slow predatory pitch portamento, "
-                    f"always centered and thundering. Punchy acoustic-sampled transient kicks, crisp snap snares thrown wide into "
-                    f"metallic impulse reverb, rolling syncopated hi-hats. Detuned analog brass stabs and melancholic sine plucks "
-                    f"trace dark minor-pentatonic hooks over predatory Reese bass growls and spectral pitched-down choir pads. "
-                    f"Hyperspatial 3D binaural delay throws surround the listener while the 808 stays dominant. "
+                    f"{fb_subgenre}, {fb_bpm} BPM, {fb_key}. "
+                    f"California bass and heavy West Coast bass mixed with melodic nightride vibes — massive continuous sub-bass dominance, "
+                    f"gliding West Coast 808 slides with slow predatory pitch portamento, always centered and thundering. "
+                    f"Punchy acoustic-sampled transient kicks, crisp snap snares thrown wide into metallic impulse reverb, rolling syncopated hi-hats. "
+                    f"Detuned analog brass stabs and melancholic sine plucks trace dark minor-pentatonic motifs over predatory Reese bass growls "
+                    f"and spectral pitched-down witch house choir pads. Hyperspatial 3D binaural delay throws surround the listener while the 808 stays dominant. "
                     f"NO four-on-the-floor, NO EDM festival drops, NO cheerful G-funk, NO static loops, NO silence drops."
                 ),
                 "texture": (
-                    f"Dark witch house atmospheric texture, {fb_bpm} BPM, {fb_key}: spectral detuned analog pads, "
-                    f"cold metallic reverb haze, subtle sub swells, nocturnal industrial stillness. Supporting role only, no drums."
+                    f"Dark witch house atmospheric texture, {fb_bpm} BPM, {fb_key}: spectral detuned analog choir pads, "
+                    f"cold metallic reverb haze, subtle harmonic sub swells, nocturnal stillness. Supporting role only, no drums."
                 )[:445],
                 "accent": (
                     f"Warm rounded sub-bass swell impact in {fb_key} ({fb_bpm} BPM): soft low-passed resonance "
@@ -420,7 +420,7 @@ def interpret_track_from_cover_and_theme(album_name, album_theme, cover_visual, 
                 "model": model_name,
                 "messages": [
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": f"Generate dynamic VØIDRIDE hit-record interpretation for Track {track_num}: '{track_title}' based on the cover art and theme."}
+                    {"role": "user", "content": f"Generate cohesive dark VØIDRIDE nocturnal interpretation for Track {track_num}: '{track_title}' ({fb_subgenre}, {fb_bpm} BPM, {fb_key}) based on the cover art and album world."}
                 ],
                 "temperature": 0.55,
                 "max_tokens": 2800,
@@ -473,14 +473,14 @@ def interpret_track_from_cover_and_theme(album_name, album_theme, cover_visual, 
                         raise ValueError("No valid JSON object in response")
 
                 if parsed.get("direction") and parsed.get("rules") and len(parsed["rules"]) >= 3:
-                    # Clamp BPM strictly into VØIDRIDE nightride range (122-144 BPM)
+                    # Clamp BPM & key strictly into the album's cohesive VØIDRIDE cruising pocket
                     try:
                         raw_bpm = int(parsed.get("bpm", fb_bpm))
                     except Exception:
                         raw_bpm = fb_bpm
-                    if raw_bpm < 120 or raw_bpm > 148:
-                        raw_bpm = fb_bpm
+                    raw_bpm = max(slot_spec["bpm_min"], min(slot_spec["bpm_max"], raw_bpm))
                     parsed["bpm"] = raw_bpm
+                    parsed["key"] = fb_key
 
                     stems = parsed.get("stems", {})
                     if not stems:
@@ -497,10 +497,12 @@ def interpret_track_from_cover_and_theme(album_name, album_theme, cover_visual, 
                         for k in ("main", "texture", "accent", "riser", "foley", "atmosphere", "spatial"):
                             if not stems.get(k):
                                 stems[k] = parsed.get(f"{k}_prompt") or fallback["stems"][k]
+                    stems["main"] = re.sub(r"\[\s*\d+:\d+[^\]]*\]\s*", "", stems.get("main", "")).strip()
                     # Ensure main prompt contains the mandatory California West Coast nightride bass anchor
                     if "california bass" not in stems.get("main", "").lower():
                         stems["main"] = (
-                            f"California bass and heavy West Coast bass mixed with melodic nightride vibes, "
+                            f"{fb_subgenre}, {raw_bpm} BPM, {fb_key}. "
+                            f"California bass and heavy West Coast bass mixed with melodic nightride vibes — "
                             f"massive continuous sub-bass dominance, gliding West Coast 808 slides with slow predatory pitch portamento. "
                             f"{stems.get('main', '')}"
                         )
@@ -516,105 +518,216 @@ def interpret_track_from_cover_and_theme(album_name, album_theme, cover_visual, 
     return fallback
 
 
-GROOVE_ARCHETYPES = [
+ADJACENT_MINOR_KEY = {
+    "Cm": "Fm",
+    "Fm": "Cm",
+    "Dm": "Am",
+    "Am": "Dm",
+    "Gm": "Cm",
+    "Ebm": "Bbm",
+    "Bbm": "Fm",
+    "F#m": "C#m",
+    "C#m": "F#m",
+    "Em": "Am",
+    "Bm": "Em",
+}
+
+COHESIVE_CHAPTER_ROLES = [
     {
-        "slot": 1, "bpm": 138, "key": "Dm",
-        "archetype": "Lead Single West Coast Bounce",
-        "brief": "Immediate within-10s earworm synth/pluck hook, infectious syncopated California 808 lowrider bounce, crisp snap claps, high-replay chorus drop",
+        "slot": 1,
+        "chapter": "Nocturnal Ignition & Portal Entry",
+        "brief": "Immediate atmospheric pull into the album's physical world: brooding witch-house haze opening rapidly into heavy gliding California 808 sub-bass, crisp metallic snap snares, and the album's recurring dark minor synth motif",
     },
     {
-        "slot": 2, "bpm": 150, "key": "Cm",
-        "archetype": "High-Octane Drift-Phonk Club Weapon",
-        "brief": "Aggressive nocturnal metallic bell/brass hook motif, driving double-time hi-hat velocity, predatory 808 portamento slides, explosive climax second drop",
+        "slot": 2,
+        "chapter": "High-Beam Highway Propulsion",
+        "brief": "Relentless midnight freeway momentum: driving syncopated West Coast hi-hat velocity, predatory 808 portamento slides, coiling Reese bass undertow, and cold reverberant analog brass and synth stabs",
     },
     {
-        "slot": 3, "bpm": 126, "key": "Fm",
-        "archetype": "Hypnotic Halftime Reese & Witch-House Roller",
-        "brief": "Spacious halftime pocket, coiling Reese bass growl trading phrases with haunting spectral vocal/synth lead motif, deep cavernous tension bridge",
+        "slot": 3,
+        "chapter": "Subterranean Witch-House Immersion",
+        "brief": "Cavernous cyber-noir depth: pitched-down spectral witch-house choir pads, hypnotic half-time trap weight, deep centered sub-bass pressure, and haunting 3D binaural delay reflections",
     },
     {
-        "slot": 4, "bpm": 134, "key": "Gm",
-        "archetype": "Minimalist Negative-Space Sub-Bounce Single",
-        "brief": "Surgical pocket percussion, bold rhythmic pauses where gliding West Coast 808 sub commands the room, catchy call-and-response minor pluck hook",
+        "slot": 4,
+        "chapter": "Shadow Corridor & Harmonic Shift",
+        "brief": "Late-night psychological tension in the Camelot-adjacent fifth minor key: stark negative space over continuous thundering 808 sub glides, ghostly detuned minor-pentatonic sine plucks, and velvet-filtered noir air",
     },
     {
-        "slot": 5, "bpm": 124, "key": "Ebm",
-        "archetype": "Extended Widescreen Darkwave-Trap Anthem Closer",
-        "brief": "Emotional minor chord progression, soaring detuned analog lead melody, stripped atmospheric middle bridge, towering octave-lifted finale drop",
+        "slot": 5,
+        "chapter": "Horizon Dissolve & Widescreen Nocturnal Finale",
+        "brief": "Expansive widescreen closer returning to the home minor key: full-force California 808 sub authority beneath sweeping detuned analog leads, spectral choir grandeur, and a lingering midnight highway fade",
     },
 ]
 
 
+def derive_cohesive_album_grid(album_theme, total_tracks=5, sonic_dna=None):
+    """Derives a strictly cohesive harmonic, tempo, and subgenre blueprint for an entire VØIDRIDE EP.
+    Guarantees:
+      1. Unified album subgenre across all tracks.
+      2. Harmonic unity: Tracks 1, 2, 3, 5 locked to the album's root minor key; Track 4 in its Camelot-adjacent fifth minor key (>=80% home key).
+      3. Tight nocturnal cruising pocket: <= 10 BPM spread clamped inside the album's proposed BPM window.
+    """
+    theme_text = str(album_theme or "").strip()
+    header_part = theme_text.split("\n---")[0].strip()
+
+    first_clause = header_part.split(".")[0].strip() if header_part else ""
+    if " - " in first_clause:
+        first_clause = first_clause.split(" - ", 1)[1].strip()
+    first_clause = re.sub(r"\b\d{2,3}(?:\s*[-–—]\s*\d{2,3})?\s*BPM\b", "", first_clause, flags=re.IGNORECASE).strip(" ,;-")
+    default_subgenre = "dark nightride trap / witch house / hyperspatial California bass"
+    album_subgenre = first_clause if len(first_clause) >= 6 else default_subgenre
+
+    # Parse root minor key (default Cm or first preferred key from profile)
+    pref_keys = (sonic_dna or {}).get("preferred_keys") or ["Cm", "Dm", "Fm", "Ebm"]
+    root_key = pref_keys[0] if pref_keys else "Cm"
+    key_match = re.search(r"\b(F#m|C#m|Ebm|Bbm|Cm|Dm|Fm|Am|Gm|Em|Bm)\b", header_part, flags=re.IGNORECASE)
+    if key_match:
+        raw_k = key_match.group(1)
+        root_key = raw_k[0].upper() + raw_k[1:-1].lower() + "m"
+        if "#" in raw_k:
+            root_key = raw_k[0].upper() + "#m"
+    adj_key = ADJACENT_MINOR_KEY.get(root_key, root_key)
+
+    # Parse BPM pocket and enforce <= 10 BPM total album spread
+    range_match = re.search(r"(\d{2,3})\s*[-–—]\s*(\d{2,3})\s*BPM", header_part, flags=re.IGNORECASE)
+    single_match = re.search(r"(\d{2,3})\s*BPM", header_part, flags=re.IGNORECASE)
+    if range_match:
+        b1, b2 = sorted([int(range_match.group(1)), int(range_match.group(2))])
+        lo = max(122, min(160, b1))
+        hi = max(lo, min(162, b2))
+        if hi - lo > 10:
+            mid = (lo + hi) // 2
+            lo = mid - 5
+            hi = lo + 10
+        elif hi == lo:
+            lo = max(122, lo - 4)
+            hi = min(162, lo + 8)
+    elif single_match:
+        center = max(124, min(158, int(single_match.group(1))))
+        lo = max(122, center - 4)
+        hi = min(162, center + 4)
+    else:
+        lo, hi = 132, 140
+
+    center_bpm = (lo + hi) // 2
+    bpm_offsets = [0, 3, 1, -3, -1]
+    count = max(1, int(total_tracks))
+    grid = []
+    for idx in range(count):
+        role = COHESIVE_CHAPTER_ROLES[idx % len(COHESIVE_CHAPTER_ROLES)]
+        slot_bpm = max(lo, min(hi, center_bpm + bpm_offsets[idx % len(bpm_offsets)]))
+        slot_key = adj_key if (count >= 4 and idx == 3) else root_key
+        grid.append({
+            "slot": idx + 1,
+            "subgenre": album_subgenre,
+            "bpm": slot_bpm,
+            "bpm_min": lo,
+            "bpm_max": hi,
+            "key": slot_key,
+            "root_key": root_key,
+            "chapter": role["chapter"],
+            "brief": role["brief"],
+        })
+    return grid
+
+
 def plan_album_showrunner(album_name, album_theme, cover_visual, track_names, total_tracks, track_durations, sonic_dna=None):
-    """Single-Pass Album Showrunner: plans all N tracks in ONE cohesive LLM call ($0.005 on qwen-3-7-plus),
-    assigning contrasting BPM pockets, distinct minor keys, named foreground earworm hooks, and time-stamped
-    section-scripted prompts for elevenlabs-music-v2-5!
+    """Single-Pass Cohesive VØIDRIDE Album Showrunner: plans all N tracks in ONE unified LLM call,
+    locking the entire EP into one nocturnal world, one shared sonic palette, unified subgenre,
+    harmonic home key (>=4/5 tracks in root key), and tight <=10 BPM cruising pocket using
+    continuous dark atmospheric prose for `elevenlabs-music` + `stable-audio-25` witch-house beds.
     Returns dict {track_num (1..N): plan_dict} or {} on failure.
     """
     api_key = os.environ.get("VENICE_API_KEY", "")
     if not api_key:
         return {}
 
+    cohesive_grid = derive_cohesive_album_grid(album_theme, total_tracks, sonic_dna=sonic_dna)
+    album_subgenre = cohesive_grid[0]["subgenre"]
+    root_key = cohesive_grid[0]["root_key"]
+    pocket_lo = cohesive_grid[0]["bpm_min"]
+    pocket_hi = cohesive_grid[0]["bpm_max"]
+
     slots_desc = []
     for idx in range(total_tracks):
         t_num = idx + 1
         t_title = track_names[idx].strip().upper() if idx < len(track_names) and track_names[idx] else f"TRACK {t_num}"
-        arch = GROOVE_ARCHETYPES[idx % len(GROOVE_ARCHETYPES)]
-        dur_s = track_durations[idx] if idx < len(track_durations) else 175
+        slot = cohesive_grid[idx]
+        dur_s = track_durations[idx] if idx < len(track_durations) else 220
         m_end = f"{dur_s // 60}:{dur_s % 60:02d}"
         slots_desc.append(
-            f"- Track {t_num}: title=\"{t_title}\", duration={dur_s}s ({m_end}), target_bpm={arch['bpm']}, "
-            f"target_key=\"{arch['key']}\", archetype=\"{arch['archetype']}\" ({arch['brief']})"
+            f"- Track {t_num}: title=\"{t_title}\", duration={dur_s}s ({m_end}), locked_subgenre=\"{slot['subgenre']}\", "
+            f"locked_bpm={slot['bpm']}, locked_key=\"{slot['key']}\", chapter_role=\"{slot['chapter']}\" ({slot['brief']})"
         )
 
-    dna_summary = json.dumps(sonic_dna, indent=2) if sonic_dna else "VØIDRIDE: California 808 nightride bass, witch house & dark trap"
+    dna_summary = json.dumps(sonic_dna, indent=2) if sonic_dna else "VØIDRIDE: California 808 nightride bass, witch house & dark cyber-noir trap"
     sys_prompt = (
-        "You are the Executive Hit-Record Showrunner for VØIDRIDE.\n"
-        "Plan an entire cohesive yet dynamically varied EP in ONE JSON response.\n\n"
+        "You are the Creative Director and Album Showrunner for VØIDRIDE "
+        "(sonic touchstones: Salem, Clams Casino, SpaceGhostPurrp, DJ Smokey, Soudiere, Lorn, Eprom, G Jones).\n"
+        "Your mission: Design a deeply hypnotic, menacing, SONICALLY COHESIVE nocturnal EP in ONE JSON response "
+        "where every track sounds like an unmistakable chapter of the SAME midnight world.\n\n"
         f"ALBUM TITLE: {album_name}\n"
-        f"ALBUM THEME: {album_theme}\n"
-        f"COVER ART VISUAL SCENE: {cover_visual}\n"
+        f"UNIFIED ALBUM SUBGENRE: {album_subgenre}\n"
+        f"HARMONIC HOME KEY: {root_key} | CRUISING TEMPO POCKET: {pocket_lo}-{pocket_hi} BPM\n"
+        f"ALBUM THEME & BRIEF: {album_theme}\n"
+        f"COVER ART VISUAL WORLD: {cover_visual}\n"
         f"VØIDRIDE SONIC DNA: {dna_summary}\n\n"
-        "TRACK SLOTS TO DESIGN (MANDATORY CONTRAST — NO TWO TRACKS MAY SHARE THE SAME BPM OR HOOK INSTRUMENT):\n"
+        "CHAPTER BLUEPRINT (KEEP ALL TRACKS COHESIVE WITHIN THIS SINGLE WORLD — DO NOT INVENT RANDOM GENRES OR KEYS):\n"
         + "\n".join(slots_desc)
-        + "\n\nHIT-SONG ARRANGEMENT RULES FOR EVERY `main_prompt` (160–280 words each, for `elevenlabs-music-v2-5`):\n"
-        "1. Start with exact subgenre, BPM, minor key, and VØIDRIDE West Coast 808 + nocturnal nightride identity.\n"
-        "2. Define ONE unmistakable, singable FOREGROUND HOOK MOTIF (specific lead synth/pluck/brass/bell/chopped-vocal timbre + rhythmic phrasing) introduced within the first 10 seconds.\n"
-        "3. Include explicit time-stamped dynamic section cues scaled to the track's duration:\n"
-        "   [0:00-0:14 Haunted Hook Tease, filtered motif, sub held back] -> [0:14-0:16 Pre-Drop Breath] -> "
-        "[0:16-0:58 Drop 1: Explosive California 808 glides + punchy transient kicks + full signature hook] -> "
-        "[0:58-1:30 Verse Switch-Up: syncopated counter-groove & Reese growls] -> "
-        "[1:30-1:56 Tension Bridge: drums & sub stripped back, atmospheric suspense] -> "
-        "[1:56-2:36 Climax Drop 2: octave-lifted hook + double-time hat energy + heaviest 808 glides] -> "
-        "[Outro: sleek nocturnal resolve]. (Extend timestamps proportionally for Track 5's 3:35 closer arc!)\n"
-        "4. All special effects / transitions MUST be smooth, warm, low-passed, and reverb-washed — NEVER harsh, clicky, or jarring. NEVER use woodland/organic foley.\n"
-        "5. Also write a bespoke `foley_prompt` (<380 chars) for `elevenlabs-sound-effects-v2` capturing subtle warm cyber-noir scene air from the cover visual.\n\n"
+        + "\n\nMANDATORY VØIDRIDE VIBE & COHESION LAWS:\n"
+        "1. SHARED ALBUM PALETTE FIRST: Define `album_sonic_palette` first (the exact signature California 808 portamento glide character, "
+        "recurring dark detuned analog synth/brass/sine family, and witch-house spectral choir/reverb space inspired by the cover art). "
+        "Every track MUST weave this shared palette so the album plays as one seamless nocturnal journey.\n"
+        "2. CONTINUOUS DARK PROSE FOR `elevenlabs-music` (110–185 words per `main_prompt`):\n"
+        "   - Write rich, brooding, continuous musical prose starting with the locked subgenre, exact BPM, locked minor key, and the VØIDRIDE anchor: "
+        "'California bass and heavy West Coast bass mixed with melodic nightride vibes — massive continuous sub-bass dominance, "
+        "gliding West Coast 808 slides with slow predatory pitch portamento...'\n"
+        "   - STRICTLY FORBIDDEN: NEVER use bracketed timestamps like `[0:00-0:14]`, NEVER use commercial pop/EDM buzzwords "
+        "('earworm', 'singable hook', 'club weapon', 'festival drop', 'octave-lifted', 'moment of silence'), "
+        "NEVER ask for silence drops or bass dropouts, and NEVER use organic/woodland foley.\n"
+        "3. MULTI-STEM DARK DEPTH: For every track, write:\n"
+        "   - `texture_prompt` (<420 chars, for `stable-audio-25`): dark witch-house spectral choir pad & detuned analog harmonic haze in the exact locked key and BPM (supporting role, no drums).\n"
+        "   - `atmosphere_prompt` (<420 chars, for `stable-audio-25`): deep cavernous cyber-noir sub drone & nocturnal mist/rain reflection bed in the exact locked key and BPM (no drums, no melody).\n"
+        "   - `foley_prompt` (<380 chars, for `elevenlabs-sound-effects-v2`): subtle, warm, low-pass filtered cyber-noir environmental air from the cover visual, drenched in dark velvet reverb (smooth, non-jarring, no sharp clicks).\n\n"
         "Return ONLY valid JSON matching this exact structure (no markdown fences):\n"
         "{\n"
+        '  "album_sonic_palette": {\n'
+        '    "signature_808_glide": "Shared West Coast 808 sub-bass & Reese character across all chapters",\n'
+        '    "recurring_lead_motifs": "Shared detuned analog synth/brass/sine family binding the EP",\n'
+        '    "witch_house_pad_and_space": "Shared spectral choir pad & cavernous cyber-noir acoustic space"\n'
+        "  },\n"
         '  "tracks": [\n'
         "    {\n"
         '      "track_number": 1,\n'
         '      "title": "EXACT TRACK TITLE",\n'
-        '      "genre": "West Coast Nightride Trap / Witch House Bass",\n'
-        '      "bpm": 138,\n'
-        '      "key": "Dm",\n'
-        '      "hook_motif": "Short description of signature earworm lead hook",\n'
-        '      "direction": "One-sentence sonic direction",\n'
+        f'      "genre": "{album_subgenre}",\n'
+        f'      "bpm": {cohesive_grid[0]["bpm"]},\n'
+        f'      "key": "{root_key}",\n'
+        '      "direction": "One-sentence nocturnal chapter direction within the shared album world",\n'
         '      "rules": ["Rule 1", "Rule 2", "Rule 3"],\n'
-        '      "main_prompt": "Full 160-280 word section-scripted prompt for elevenlabs-music-v2-5...",\n'
-        '      "foley_prompt": "Warm low-passed cyber-noir ambient texture (<380 chars)..."\n'
+        '      "main_prompt": "110-185 word continuous dark VØIDRIDE prose prompt for elevenlabs-music (NO bracketed timestamps)...",\n'
+        '      "texture_prompt": "Dark witch-house spectral pad prompt for stable-audio-25 (<420 chars, exact key & BPM, no drums)...",\n'
+        '      "atmosphere_prompt": "Cavernous cyber-noir ambient drone prompt for stable-audio-25 (<420 chars, exact key & BPM, no drums)...",\n'
+        '      "foley_prompt": "Warm low-passed cyber-noir scene texture (<380 chars, smooth & reverb-washed)..."\n'
         "    }\n"
         "  ]\n"
         "}"
     )
 
     _sr_chain = ["deepseek-v4-flash", "qwen-3-7-plus", "qwen-3-8-flash"]
+    _main_music_model = "elevenlabs-music"
+    _dark_tex_model = "stable-audio-25"
+    _sfx_model = "elevenlabs-sound-effects-v2"
     for _sd in [os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "scripts")), "/opt/data/scripts"]:
         if os.path.isdir(_sd) and _sd not in sys.path:
             sys.path.insert(0, _sd)
     try:
         import model_registry as _mr
         _sr_chain = _mr.get_role_chain("llm.showrunner", _sr_chain)
+        _main_music_model = _mr.get_primary_model("music.main_instrumental", "elevenlabs-music")
+        _dark_tex_model = _mr.get_primary_model("music.dark_texture", "stable-audio-25")
+        _sfx_model = _mr.get_primary_model("audio.sfx_foley", "elevenlabs-sound-effects-v2")
     except Exception:
         pass
 
@@ -627,10 +740,10 @@ def plan_album_showrunner(album_name, album_theme, cover_visual, track_names, to
                 "model": model_name,
                 "messages": [
                     {"role": "system", "content": sys_prompt},
-                    {"role": "user", "content": f"Design all {total_tracks} contrasting hit tracks for '{album_name}' now."},
+                    {"role": "user", "content": f"Design all {total_tracks} cohesive nocturnal VØIDRIDE chapters for '{album_name}' ({album_subgenre}, {pocket_lo}-{pocket_hi} BPM, {root_key}) now."},
                 ],
-                "temperature": 0.6,
-                "max_tokens": 5500,
+                "temperature": 0.52,
+                "max_tokens": 6000,
                 "venice_parameters": v_params,
             }
             req = urllib.request.Request(
@@ -653,53 +766,90 @@ def plan_album_showrunner(album_name, album_theme, cover_visual, track_names, to
             if not isinstance(tracks_arr, list) or len(tracks_arr) < total_tracks:
                 raise ValueError(f"Expected {total_tracks} tracks, got {len(tracks_arr) if isinstance(tracks_arr, list) else 0}")
 
+            palette = parsed.get("album_sonic_palette") or {}
+            palette_lead = str(palette.get("recurring_lead_motifs") or "").strip()
+            palette_space = str(palette.get("witch_house_pad_and_space") or "").strip()
+
             plans_by_num = {}
             for idx, item in enumerate(tracks_arr[:total_tracks]):
-                t_num = int(item.get("track_number") or (idx + 1))
-                arch = GROOVE_ARCHETYPES[idx % len(GROOVE_ARCHETYPES)]
+                t_num = idx + 1
+                slot = cohesive_grid[idx]
                 t_title = (
                     track_names[idx].strip().upper()
                     if idx < len(track_names) and track_names[idx]
                     else str(item.get("title", f"TRACK {t_num}")).strip().upper()
                 )
                 try:
-                    bpm_val = int(item.get("bpm") or arch["bpm"])
+                    bpm_val = int(item.get("bpm") or slot["bpm"])
                 except Exception:
-                    bpm_val = arch["bpm"]
-                if bpm_val < 120 or bpm_val > 156:
-                    bpm_val = arch["bpm"]
-                key_val = str(item.get("key") or arch["key"]).strip()
+                    bpm_val = slot["bpm"]
+                bpm_val = max(slot["bpm_min"], min(slot["bpm_max"], bpm_val))
+                key_val = slot["key"]
+
                 mp = str(item.get("main_prompt") or "").strip()
-                if len(mp) < 120:
+                # Scrub any leaked bracketed pop timestamps or commercial buzzwords
+                mp = re.sub(r"\[\s*\d+:\d+[^\]]*\]\s*", "", mp)
+                for bad_phrase, repl_phrase in (
+                    ("earworm", "hypnotic nocturnal"),
+                    ("moment of silence", "velvet filter swell"),
+                    ("octave-lifted", "deepened nocturnal"),
+                    ("club weapon", "midnight highway roller"),
+                ):
+                    mp = re.sub(re.escape(bad_phrase), repl_phrase, mp, flags=re.IGNORECASE)
+                mp = re.sub(r"\s{2,}", " ", mp).strip()
+                if len(mp) < 100:
                     raise ValueError(f"Track {t_num} main_prompt too short ({len(mp)} chars)")
-                if "california" not in mp.lower() and "west coast" not in mp.lower():
+                if "california bass" not in mp.lower() and "west coast" not in mp.lower():
                     mp = (
-                        f"Dynamic hit-arranged West Coast nightride trap & California 808 bass, {bpm_val} BPM, {key_val}. "
+                        f"{slot['subgenre']}, {bpm_val} BPM, {key_val}. "
+                        f"California bass and heavy West Coast bass mixed with melodic nightride vibes — "
+                        f"massive continuous sub-bass dominance, gliding West Coast 808 slides with slow predatory pitch portamento. "
                         + mp
                     )
-                fp = str(item.get("foley_prompt") or f"Subtle warm low-passed cyber-noir nocturnal highway wash and velvet reflections for {t_title}.")[:440]
+                if "no silence drops" not in mp.lower():
+                    mp = mp.rstrip(".") + ". NO four-on-the-floor, NO EDM festival drops, NO silence drops."
+
+                tp = str(
+                    item.get("texture_prompt")
+                    or (
+                        f"Dark witch house spectral choir pad and detuned analog harmonic haze in {key_val} at {bpm_val} BPM "
+                        f"({palette_space or 'cold cyber-noir reverb space'}) for {t_title}. Supporting layer only, no drums."
+                    )
+                )[:440]
+                ap = str(
+                    item.get("atmosphere_prompt")
+                    or (
+                        f"Deep cavernous sub-bass ambient drone and nocturnal rain-slicked reflection haze in {key_val} at {bpm_val} BPM "
+                        f"for {t_title}. Warm analog darkness, stereo depth, no drums, no melody."
+                    )
+                )[:440]
+                fp = str(
+                    item.get("foley_prompt")
+                    or f"Subtle warm low-passed cyber-noir nocturnal highway wash and velvet reverb reflections for {t_title}, smooth and understated."
+                )[:420]
 
                 plans_by_num[t_num] = {
                     "title": t_title,
-                    "genre": str(item.get("genre") or "Hyperspatial West Coast Nightride Bass"),
+                    "genre": slot["subgenre"],
                     "bpm": bpm_val,
                     "key": key_val,
-                    "energy": str(item.get("hook_motif") or item.get("direction") or arch["archetype"]),
-                    "direction": str(item.get("direction") or f"{arch['archetype']}: {item.get('hook_motif', '')}"),
-                    "rules": list(item.get("rules") or [arch["brief"]]),
+                    "energy": f"{slot['chapter']}" + (f" — {palette_lead[:80]}" if palette_lead else ""),
+                    "direction": str(item.get("direction") or f"{slot['chapter']}: {slot['brief']}"),
+                    "rules": list(item.get("rules") or [slot["brief"]]),
+                    "album_sonic_palette": palette,
                     "stems": {
                         "main": {
-                            "model": "elevenlabs-music-v2-5",
-                            "prompt": mp[:3900],
+                            "model": _main_music_model,
+                            "prompt": mp[:1950],
                             "instrumental": True,
                         },
                         "texture": {
-                            "model": "demucs-harmonic-synth",
-                            "prompt": f"Warm chord-locked analog chorus pad in {key_val} at {bpm_val} BPM for {t_title}.",
+                            "model": _dark_tex_model,
+                            "prompt": tp,
                         },
                         "atmosphere": {
-                            "model": "demucs-harmonic-synth",
-                            "prompt": f"Cavernous cyber-noir spectral reverb wash in {key_val} at {bpm_val} BPM for {t_title}.",
+                            "model": _dark_tex_model,
+                            "prompt": ap,
                         },
                         "spatial": {
                             "model": "demucs-harmonic-synth",
@@ -707,20 +857,23 @@ def plan_album_showrunner(album_name, album_theme, cover_visual, track_names, to
                         },
                         "accent": {
                             "model": "voidride-sfx-vault",
-                            "prompt": f"Warm rounded subterranean sub-bass impact swell for {t_title}.",
+                            "prompt": f"Warm rounded subterranean sub-bass impact swell in {key_val} for {t_title}.",
                         },
                         "riser": {
                             "model": "voidride-sfx-vault",
-                            "prompt": f"Silky dark analog synth filter sweep into drop for {t_title}.",
+                            "prompt": f"Silky dark analog synth filter sweep in {key_val} for {t_title}.",
                         },
                         "foley": {
-                            "model": "elevenlabs-sound-effects-v2",
+                            "model": _sfx_model,
                             "prompt": fp,
                         },
                     },
                 }
 
-            log(f"  🎬 Showrunner planned all {len(plans_by_num)} contrasting hit tracks in 1 pass ({model_name})")
+            log(
+                f"  🎬 Cohesive Showrunner planned all {len(plans_by_num)} VØIDRIDE chapters in 1 pass "
+                f"({model_name} | {album_subgenre} | {pocket_lo}-{pocket_hi} BPM | home key {root_key})"
+            )
             return plans_by_num
         except Exception as e:
             log(f"  ⚠️ Showrunner pass on {model_name} failed ({e}) — trying next model...")
@@ -733,8 +886,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--brief", required=True, help="Album concept")
     parser.add_argument("--tracks", type=int, default=5)
-    parser.add_argument("--duration", type=int, default=175)
-    parser.add_argument("--closer-duration", type=int, default=215, help="Extended closer duration for final track (Option 1B)")
+    parser.add_argument("--duration", type=int, default=220)
+    parser.add_argument("--closer-duration", type=int, default=236, help="Extended widescreen nocturnal closer duration (<=240s bucket)")
     parser.add_argument("--mode", default=None, choices=["full", "sample", "samples", "full tracks"])
     parser.add_argument("--no-deliver", action="store_true", help="Skip Telegram delivery and status messages")
     parser.add_argument("--resume-tracks", type=int, default=0, help="Number of tracks already completed")
@@ -768,17 +921,17 @@ def main():
         for i in range(vocal_count):
             vocal_positions.add(min(int(round(step * i + step / 2)), args.tracks - 1))
 
-    # Option 1B Hit Duration Architecture:
-    # Tracks 1..(N-1) run at punchy streaming-hit durations (170-178s -> $2.08 Venice <=180s bucket),
-    # while Track N (Closer) runs as an extended 215s (3m35s -> $2.76 bucket) widescreen anthem!
-    single_pockets = [174, 170, 178, 172]
+    # VØIDRIDE Cohesive Nocturnal Duration Architecture:
+    # Tracks 1..(N-1) cruise at hypnotic ~3m38s-3m44s (216-224s -> $2.76 Venice <=240s bucket),
+    # while Track N (Closer) unfolds as an extended 236s (3m56s -> same $2.76 <=240s bucket) finale!
+    single_pockets = [220, 224, 218, 216]
     track_durations = []
     for idx in range(args.tracks):
         if is_sample:
             track_durations.append(args.duration)
         elif idx == args.tracks - 1 and args.tracks >= 2:
             track_durations.append(max(args.closer_duration, args.duration))
-        elif args.duration <= 190:
+        elif 195 <= args.duration <= 235:
             track_durations.append(single_pockets[idx % len(single_pockets)])
         else:
             track_durations.append(args.duration)
@@ -786,7 +939,7 @@ def main():
     dur_summary = (
         f"{args.tracks} × {args.duration}s samples"
         if is_sample
-        else f"Option 1B ({args.tracks - 1} singles @ ~{args.duration}s + Closer @ {track_durations[-1]}s)"
+        else f"Cohesive VØIDRIDE EP ({args.tracks - 1} chapters @ ~{args.duration}s + Closer @ {track_durations[-1]}s)"
     )
     log(f"📀 {args.brief} — {dur_summary}")
 
@@ -818,18 +971,21 @@ def main():
 
     album_name = args.album_name or (args.brief.split(" - ")[0] if " - " in args.brief else args.brief[:30])
     album_theme = args.album_theme or args.brief
+    if args.album_theme and "bpm" not in args.album_theme.lower() and "bpm" in args.brief.lower():
+        brief_head = args.brief.split("\n---")[0].strip()
+        album_theme = f"{args.album_theme.rstrip('. ')}. {brief_head}"
     cover_visual = args.cover_visual or ""
 
     def _track_est_cost(dur_sec):
         if is_sample:
             return 0.48
-        # elevenlabs-music-v2-5 ($2.08 <=180s, $2.76 <=240s) + $0.02 bespoke foley + $0.00 Demucs harmonic beds & vault SFX
-        return 2.10 if dur_sec <= 180 else (2.78 if dur_sec <= 240 else 3.45)
+        # elevenlabs-music ($2.08 <=180s, $2.76 <=240s) + 2x stable-audio-25 ($0.38 texture+atmosphere) + $0.02 foley + $0.00 spatial/vault SFX
+        return 2.48 if dur_sec <= 180 else (3.16 if dur_sec <= 240 else 3.85)
 
     def _query_venice_budget(start_idx):
         api_key = os.environ.get("VENICE_API_KEY", "")
         rem_durs = track_durations[start_idx:]
-        next_cost = _track_est_cost(rem_durs[0]) if rem_durs else 2.10
+        next_cost = _track_est_cost(rem_durs[0]) if rem_durs else 3.16
         rem_total_cost = round(sum(_track_est_cost(d) for d in rem_durs), 2)
         avg_cost = round(rem_total_cost / max(len(rem_durs), 1), 2)
         if not api_key:
@@ -915,7 +1071,7 @@ def main():
         sr_plan = showrunner_plans.get(track_num)
         if sr_plan and not has_vocals:
             variation = {
-                "direction": sr_plan.get("direction", f"Showrunner hit plan for {current_title}"),
+                "direction": sr_plan.get("direction", f"Cohesive VØIDRIDE chapter plan for {current_title}"),
                 "rules": list(sr_plan.get("rules", [])),
                 "bpm": sr_plan.get("bpm"),
                 "key": sr_plan.get("key"),

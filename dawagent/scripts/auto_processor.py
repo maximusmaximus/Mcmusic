@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-auto_processor.py — DAWAGENT Hit-Record Studio Mastering & Stem Processor.
+auto_processor.py — DAWAGENT VØIDRIDE Dark Nightride Studio Mastering & Stem Processor.
 
 Polls the sessions/ directory (every 4s) for pending handoff.json files and processes
-them using a transparent 2-pass linear loudness mastering chain (-10.0 LUFS, -0.8 dBTP,
-sub-90Hz mono crossover, harmonic soft-clipping, zero double-compression), exports
+them using a transparent 2-pass linear loudness mastering chain (-11.5 LUFS, -1.0 dBTP,
+sub-90Hz mono crossover, gentle harmonic soft-clipping, zero double-compression), exports
 24-bit/48kHz FLAC + 320kbps MP3, and writes notification.json + production_receipt.json.
 
 Runs as a daemon inside the dawagent container.
@@ -26,10 +26,10 @@ LOG_FILE = Path(os.environ.get("AUTO_PROCESSOR_LOG", "/opt/dawagent/auto_process
 POLL_INTERVAL = int(os.environ.get("AUTO_PROCESSOR_POLL", "4"))
 MANIFEST_NAME = "handoff.json"
 
-# ── Studio Hit-Record Mastering Targets (VØIDRIDE Streaming/Club) ──
-DEFAULT_LUFS = -10.0
-DEFAULT_TRUE_PEAK = -0.8
-DEFAULT_LRA = 9.0
+# ── VØIDRIDE Dark Sub-Heavy Nightride Mastering Targets ──
+DEFAULT_LUFS = -11.5
+DEFAULT_TRUE_PEAK = -1.0
+DEFAULT_LRA = 9.5
 
 DEFAULT_VOLUMES = {
     "drums": 1.0,
@@ -151,9 +151,10 @@ def build_premix_from_stems(stems, manifest, premix_out, use_sidechain=True):
     return cmd
 
 
-def measure_loudness(filepath, pre_chain=""):
+def measure_loudness(filepath, pre_chain="", lufs=DEFAULT_LUFS, tp=DEFAULT_TRUE_PEAK, lra=DEFAULT_LRA):
     """Run Pass 1 EBU R128 loudness measurement and return stats dict."""
-    af = f"{pre_chain},loudnorm=I=-10:TP=-0.8:LRA=9:print_format=json" if pre_chain else "loudnorm=I=-10:TP=-0.8:LRA=9:print_format=json"
+    ln_probe = f"loudnorm=I={lufs}:TP={tp}:LRA={lra}:print_format=json"
+    af = f"{pre_chain},{ln_probe}" if pre_chain else ln_probe
     cmd = ["ffmpeg", "-hide_banner", "-i", str(filepath), "-af", af, "-f", "null", "-"]
     try:
         res = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
@@ -174,23 +175,23 @@ def master_two_pass(input_wav, manifest, flac_output):
     lra = float(mastering.get("lra", DEFAULT_LRA))
 
     plan_text = json.dumps(manifest.get("processing_plan", {})).lower()
-    sub_gain = 1.5 if ("sub" in plan_text or "808" in plan_text or lufs >= -11.0) else 1.1
-    air_gain = 1.3 if ("air" in plan_text or "spatial" in plan_text or "shimmer" in plan_text) else 1.0
-    side_w = 1.14 if ("stereo" in plan_text or "wide" in plan_text or "haas" in plan_text) else 1.10
+    sub_gain = 1.5 if ("sub" in plan_text or "808" in plan_text or lufs >= -12.0) else 1.2
+    air_gain = 1.1 if ("air" in plan_text or "spatial" in plan_text or "shimmer" in plan_text) else 0.9
+    side_w = 1.12 if ("stereo" in plan_text or "wide" in plan_text or "haas" in plan_text) else 1.08
 
-    # Tone & spatial sculpt BEFORE loudness normalization (NO heavy compressor — preserves transient punch!)
+    # Tone & spatial sculpt BEFORE loudness normalization (NO heavy compressor — preserves 808 sub & transient punch!)
     pre_stages = [
         "highpass=f=24:p=2",
-        f"equalizer=f=50:t=q:w=1.1:g={sub_gain}",
+        f"equalizer=f=50:t=q:w=1.0:g={sub_gain}",
         "equalizer=f=265:t=q:w=1.6:g=-1.3",
-        "equalizer=f=3200:t=q:w=1.2:g=0.9",
+        "equalizer=f=3000:t=q:w=1.3:g=0.8",
         f"equalizer=f=10500:t=h:w=0.7:g={air_gain}",
         f"stereotools=mlev=1.0:slev={side_w}",
     ]
     pre_chain = ",".join(pre_stages)
 
     # Pass 1 measurement
-    stats = measure_loudness(input_wav, pre_chain=pre_chain)
+    stats = measure_loudness(input_wav, pre_chain=pre_chain, lufs=lufs, tp=tp, lra=lra)
     in_i = stats.get("input_i")
     in_tp = stats.get("input_tp")
     in_lra = stats.get("input_lra")
@@ -207,13 +208,13 @@ def master_two_pass(input_wav, manifest, flac_output):
     else:
         ln_filter = f"loudnorm=I={lufs}:TP={tp}:LRA={lra}"
 
-    # Sub-90Hz mono crossover + Pass 2 linear loudnorm + harmonic soft-clip + brickwall true-peak ceiling
+    # Sub-90Hz mono crossover + Pass 2 linear loudnorm + gentle harmonic soft-clip + brickwall true-peak ceiling
     fc = (
         f"[0:a]{pre_chain},acrossover=split=90[low][high];"
         f"[low]pan=stereo|c0=0.5*c0+0.5*c1|c1=0.5*c0+0.5*c1[lowm];"
         f"[lowm][high]amix=inputs=2:duration=longest:normalize=0:weights=1 1,"
         f"{ln_filter},"
-        f"asoftclip=type=sin:param=0.82,"
+        f"asoftclip=type=sin:param=0.65,"
         f"alimiter=limit={tp}dB:level=false[out]"
     )
 
@@ -228,7 +229,7 @@ def master_two_pass(input_wav, manifest, flac_output):
     res = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
     if res.returncode != 0:
         # Clean fallback without acrossover if needed
-        fb_af = f"{pre_chain},{ln_filter},asoftclip=type=sin:param=0.82,alimiter=limit={tp}dB:level=false"
+        fb_af = f"{pre_chain},{ln_filter},asoftclip=type=sin:param=0.65,alimiter=limit={tp}dB:level=false"
         cmd_fb = [
             "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
             "-i", str(input_wav),
@@ -346,7 +347,7 @@ def process_job(session_dir, manifest_path):
                 return False
             master_input = temp_premix
 
-        log(f"  🚀 Running 2-pass linear hit-record mastering...")
+        log(f"  🚀 Running 2-pass linear VØIDRIDE dark nightride mastering...")
         result = master_two_pass(master_input, manifest, flac_output)
         if result.returncode != 0:
             log(f"  ✗ Mastering failed: {result.stderr[-300:]}")
@@ -442,7 +443,7 @@ def scan_and_process():
 
 def main():
     log("=" * 50)
-    log("DAWAGENT Studio Auto-Processor starting (2-pass -10 LUFS)")
+    log("DAWAGENT Studio Auto-Processor starting (2-pass -11.5 LUFS VØIDRIDE)")
     log(f"Sessions: {SESSIONS_DIR}")
     log(f"Exports:  {EXPORTS_DIR}")
     log(f"Poll:     {POLL_INTERVAL}s")

@@ -4,7 +4,7 @@ model_registry.py — Single-Source-of-Truth Venice AI Model Registry Loader & V
 
 Provides zero-dependency lookup of active Venice AI models, ordered fallbacks,
 Venice-specific request parameters (e.g. disable_thinking on hybrid Qwen models),
-and Option 1B budget constants across all VØIDRIDE pipeline scripts.
+and cohesive VØIDRIDE album budget constants across all pipeline scripts.
 """
 
 import json
@@ -14,6 +14,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 REQUIRED_ROLES = {
     "music.main_instrumental",
+    "music.dark_texture",
     "music.main_vocal",
     "music.foley_sfx",
     "llm.proposals",
@@ -32,22 +33,28 @@ DEFAULT_REGISTRY: Dict[str, Any] = {
     "schema_version": "1.0",
     "budget_policy": {
         "weekly_canary_cap_usd": 1.50,
-        "option_1b_durations": {"singles": [174, 170, 178, 172], "closer": 215},
+        "voidride_durations": {"tracks": [220, 224, 218, 216], "closer": 236},
         "estimated_costs_usd": {
-            "single_track": 2.10,
-            "closer_track": 2.78,
-            "tracks_total": 11.18,
+            "single_track": 3.16,
+            "closer_track": 3.16,
+            "tracks_total": 15.80,
             "covers_total": 0.52,
-            "album_total": 11.70,
-            "avg_track": 2.24,
+            "album_total": 16.32,
+            "avg_track": 3.16,
         },
     },
     "roles": {
         "music.main_instrumental": {
-            "primary": "elevenlabs-music-v2-5",
-            "fallbacks": ["elevenlabs-music-v2", "elevenlabs-music"],
+            "primary": "elevenlabs-music",
+            "fallbacks": ["elevenlabs-music-v2", "elevenlabs-music-v2-5"],
             "modality": "music",
-            "params": {"max_prompt_chars": 4096, "supports_duration": True, "supports_instrumental": True},
+            "params": {"max_prompt_chars": 2000, "supports_duration": True, "supports_instrumental": True},
+        },
+        "music.dark_texture": {
+            "primary": "stable-audio-25",
+            "fallbacks": ["mmaudio-v2-text-to-audio"],
+            "modality": "music",
+            "params": {"max_prompt_chars": 500, "supports_duration": True, "supports_instrumental": False},
         },
         "music.main_vocal": {
             "primary": "ace-step-15",

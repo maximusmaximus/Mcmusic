@@ -35,8 +35,9 @@ try:
     import model_registry as _mr
 except Exception:
     _mr = None
-_MAIN_MUSIC_MODEL = _mr.get_primary_model("music.main_instrumental", "elevenlabs-music-v2-5") if _mr else "elevenlabs-music-v2-5"
-_FOLEY_SFX_MODEL = _mr.get_primary_model("music.foley_sfx", "elevenlabs-sound-effects-v2") if _mr else "elevenlabs-sound-effects-v2"
+_MAIN_MUSIC_MODEL = _mr.get_primary_model("music.main_instrumental", "elevenlabs-music") if _mr else "elevenlabs-music"
+_DARK_TEXTURE_MODEL = _mr.get_primary_model("music.dark_texture", "stable-audio-25") if _mr else "stable-audio-25"
+_FOLEY_SFX_MODEL = _mr.get_primary_model("audio.sfx_foley", "elevenlabs-sound-effects-v2") if _mr else "elevenlabs-sound-effects-v2"
 _DIRECTOR_CHAIN = _mr.get_role_chain("llm.creative_director", ["deepseek-v4-flash", "qwen-3-7-plus", "qwen-3-8-flash"]) if _mr else ["deepseek-v4-flash", "qwen-3-7-plus", "qwen-3-8-flash"]
 
 # Telegram progress notifications
@@ -205,26 +206,26 @@ STEM_CONFIG = {
     "main": {
         "model_vocal": "ace-step-15",                # Cheapest vocal ($0.03), structured [Verse]/[Chorus]
         "model_vocal_freeform": "minimax-music-v25", # Structured/freeform vocal ($0.18)
-        "model_vocal_premium": "elevenlabs-music-v2-5",  # Flagship v2.5 ($0.69/min)
-        "model_instrumental": "elevenlabs-music-v2-5",   # Flagship v2.5 ($0.69/min, 4096-char prompt)
+        "model_vocal_premium": _MAIN_MUSIC_MODEL,    # Authentic VØIDRIDE flagship ($0.69/min)
+        "model_instrumental": _MAIN_MUSIC_MODEL,     # Authentic VØIDRIDE flagship (elevenlabs-music)
         "model_instrumental_budget": "lyria-3-pro",
         "prompt_template": "{prompt}",
         "mix_volume": 1.0,   # Full volume for main track
         "pan": 0.0,          # Center
     },
     "texture": {
-        "model": "demucs-harmonic-synth",
-        "fallback_model": "stable-audio-25",
-        "prompt_template": "Smooth complementary background layer for: {prompt}. Warm chords, subtle harmonic support, musical pad that blends naturally",
+        "model": _DARK_TEXTURE_MODEL,
+        "fallback_model": "demucs-harmonic-synth",
+        "prompt_template": "Dark witch house spectral choir pad and detuned analog harmonic haze for: {prompt}. Supporting nocturnal layer, no drums",
         "duration_override": None,
-        "mix_volume": 0.20,  # Subtle chord-locked harmonic warmth
+        "mix_volume": 0.21,  # Dark witch-house harmonic pad depth
         "pan": 0.0,          # Center (wide)
     },
     "accent": {
         "model": "voidride-sfx-vault",
         "fallback_model": "elevenlabs-sound-effects-v2",
         "prompt_template": "Smooth warm sub-bass swell impact with soft low-passed resonance and lush dark cavernous reverb tail, rounded attack, no harsh transients or sharp clicks, blends seamlessly, 5 seconds",
-        "mix_volume": 0.25,  # Tucked smoothly into the mix at transitions
+        "mix_volume": 0.24,  # Tucked smoothly into the mix at transitions
         "pan": 0.0,          # Center for warm low-mid weight
         "placement": "transitions",
         "max_duration": 8,
@@ -233,13 +234,13 @@ STEM_CONFIG = {
         "model": "voidride-sfx-vault",
         "fallback_model": "elevenlabs-sound-effects-v2",
         "prompt_template": "Silky dark analog synth filter sweep and warm reversed reverb swell, gradual smooth crescendo with soft high-frequency roll-off, no harsh white noise or abrupt cutoff, 5 seconds",
-        "mix_volume": 0.23,
+        "mix_volume": 0.22,
         "pan": 0.0,
         "placement": "transitions",
         "max_duration": 8,
     },
     "foley": {
-        "model": "elevenlabs-sound-effects-v2",
+        "model": _FOLEY_SFX_MODEL,
         "prompt_template": "Subtle nocturnal cyber-noir ambient texture: soft distant rain-slicked highway wash, warm low-passed analog hum, and deep velvet reverb reflections, smooth and understated, no sharp clicks, 6 seconds",
         "mix_volume": 0.19,
         "pan": -0.15,
@@ -247,10 +248,10 @@ STEM_CONFIG = {
         "max_duration": 8,
     },
     "atmosphere": {
-        "model": "demucs-harmonic-synth",
-        "fallback_model": "stable-audio-25",
-        "prompt_template": "Ambient atmospheric music bed, slow evolving reverb texture, subtle harmonic undertone for: {prompt}. Soft, musical, cinematic depth",
-        "mix_volume": 0.16,  # Subtle chord-locked depth with Haas/orbital width
+        "model": _DARK_TEXTURE_MODEL,
+        "fallback_model": "demucs-harmonic-synth",
+        "prompt_template": "Deep cavernous cyber-noir sub-bass drone and nocturnal mist reflection wash for: {prompt}. Dark analog depth, no drums, no melody",
+        "mix_volume": 0.16,  # Cavernous nocturnal ambient bed
         "pan": -0.25,
     },
     "spatial": {
@@ -264,13 +265,13 @@ STEM_CONFIG = {
         "model": "demucs-htdemucs",
         "fallback_model": "stable-audio-25",
         "prompt_template": "Atmospheric minimal breakdown version: {prompt}. Sparse, filtered, spacious",
-        "mix_volume": 0.36,  # Audible during breakdown pocket for contrast
+        "mix_volume": 0.34,  # Audible during breakdown pocket for dark depth
         "pan": 0.15,
     },
     "ear_candy_bus": {
         "model": "hybrid-sfx-bus",
         "prompt_template": "Velvet-smooth beat-locked spatial transition bus: gentle S-curve risers, warm low-passed sub swells, recessed ambient foley washes, and lush reverb-drenched harmonic echoes",
-        "mix_volume": 0.26,
+        "mix_volume": 0.24,
         "pan": 0.0,
     },
 }
@@ -278,18 +279,18 @@ STEM_CONFIG = {
 # Target mastering profiles
 TARGET_PROFILES = {
     "streaming": {
-        "description": "Competitive Club/Streaming Hit Master (SoundCloud, Spotify, Apple Music)",
-        "lufs": -10.0, "true_peak": -0.8, "lra": 9,
-        "hp_freq": 25, "hp_order": 2,
+        "description": "VØIDRIDE Dark Sub-Heavy Nightride Master (SoundCloud, Spotify, Apple Music)",
+        "lufs": -11.5, "true_peak": -1.0, "lra": 9.5,
+        "hp_freq": 24, "hp_order": 2,
         "mono_fold_below": 90,
-        "comp_threshold": -16, "comp_ratio": 2.0, "comp_attack": 18, "comp_release": 180, "comp_makeup": 1.0,
+        "comp_threshold": -17, "comp_ratio": 2.0, "comp_attack": 22, "comp_release": 220, "comp_makeup": 1.0,
         "eq": [
-            {"f": 52, "w": 0.9, "g": 1.4},
+            {"f": 50, "w": 0.85, "g": 1.5},
             {"f": 270, "w": 1.6, "g": -1.3},
-            {"f": 3100, "w": 1.4, "g": 1.5},
-            {"f": 10500, "w": 0.9, "g": 1.3},
+            {"f": 3000, "w": 1.4, "g": 1.2},
+            {"f": 10500, "w": 0.9, "g": 1.0},
         ],
-        "stereo_mid": 1.0, "stereo_side": 1.12,
+        "stereo_mid": 1.0, "stereo_side": 1.10,
         "sample_rate": 48000,
         "primary_format": "flac",
         "outputs": ["flac", "mp3"],
@@ -669,13 +670,16 @@ def creative_director(user_prompt, quality_tier, duration, lyrics=None, profile=
     memory_context = ""
     if profile:
         catalog = profile.get("catalog", [])
-        # Get last 5 tracks — compact summary only (no full prompts)
+        # Get last 5 authentic VØIDRIDE tracks — compact summary only (exclude Option 1B v2-5 experiments)
         recent_plans = [
             {"title": c.get("title"), "bpm": c["plan"].get("bpm"),
              "key": c["plan"].get("key"), "genre": c["plan"].get("genre"),
              "models": [v.get("model") for v in c["plan"].get("stems", {}).values() if isinstance(v, dict)]}
-            for c in catalog[-10:]
-            if c.get("plan") and c["plan"].get("bpm") and int(c["plan"].get("bpm", 130) or 130) >= 120
+            for c in catalog[-25:]
+            if c.get("plan")
+            and c["plan"].get("bpm")
+            and int(c["plan"].get("bpm", 130) or 130) >= 120
+            and c["plan"].get("stems", {}).get("main", {}).get("model") != "elevenlabs-music-v2-5"
         ][-5:]
 
         if recent_plans:
@@ -685,12 +689,11 @@ def creative_director(user_prompt, quality_tier, duration, lyrics=None, profile=
         if sonic_dna:
             memory_context += f"\nSONIC DNA for this DJ:\n{json.dumps(sonic_dna, indent=2)}\n"
             memory_context += (
-                "\nMEMORY INSTRUCTIONS (DYNAMIC HIT ARCHITECTURE):\n"
-                "- Preserve the unmistakable VØIDRIDE aesthetic on EVERY track while designing a MEMORABLE HIT SONG with real tension-and-release contrast!\n"
-                "- Keep BPM within 122–154 BPM across distinct bounce pockets (124-130 halftime roller, 134-142 West Coast trap bounce, 146-152 drift-phonk club drive)\n"
-                "- Always use dark minor keys (Dm, Fm, Cm, Gm, Ebm)\n"
-                "- Foreground a NAMED, SINGABLE EARWORM HOOK MOTIF (e.g., portamento analog lead, hypnotic metallic bell/pluck riff, detuned brass call-and-response, or spectral chopped vocal motif) right in the first 12 seconds\n"
-                "- Script dynamic section contrast: filtered hook-tease intro (no sub) -> pre-drop breath -> explosive California 808 Drop 1 -> rhythmic switch-up verse -> stripped-back tension bridge -> octave-lifted Climax Drop 2 -> sleek nocturnal outro\n"
+                "\nMEMORY INSTRUCTIONS (COHESIVE VØIDRIDE NOCTURNAL DNA):\n"
+                "- Preserve the unmistakable dark VØIDRIDE aesthetic on EVERY track (touchstones: Salem, Clams Casino, SpaceGhostPurrp, DJ Smokey, Soudiere, Lorn, Eprom, G Jones).\n"
+                "- Keep BPM within the album's tight nocturnal cruising pocket (122–146 BPM, <= 10 BPM spread across an album) and lock onto the album's dark minor key (Cm, Dm, Fm, Ebm).\n"
+                "- Anchor every track on massive continuous California 808 sub-bass glides with slow predatory pitch portamento, coiling Reese bass undertones, punchy acoustic-sampled kicks, crisp metallic snap snares, detuned analog brass/sine motifs, and spectral witch-house choir pads.\n"
+                "- Write continuous, brooding atmospheric prose (110-185 words) — NEVER use bracketed pop timestamps like [0:00-0:14], NEVER ask for silence drops or bass dropouts, and NEVER use commercial 'earworm' or 'festival drop' clichés.\n"
             )
 
         style = profile.get("style", {})
@@ -764,9 +767,9 @@ def creative_director(user_prompt, quality_tier, duration, lyrics=None, profile=
             album_instructions += f"Previous tracks in this album:\n{prev_summary}\n"
             album_instructions += (
                 "\nALBUM COHESION & VARIATION RULES (MANDATORY):\n"
-                "- EVERY track on the album (including Track 1 Opener and Track 5 Closer) MUST carry the full VØIDRIDE aesthetic: relentless California 808 sub-bass dominance, slow predatory pitch portamento slides, coiling Reese bass growls, punchy acoustic-sampled transient kicks, crisp snap snares with wide metallic impulse reverb, rolling syncopated hi-hats, detuned analog brass stabs, and melancholic minor-pentatonic sine plucks.\n"
-                "- Keep BPM strictly inside the 122–144 BPM nightride pocket (vary by ±4–8 BPM within 122–144 BPM; NEVER drop below 120 BPM).\n"
-                "- Vary the musical key across Dm, Fm, Cm, and Ebm and vary the melodic hook phrasing / rhythmic bounce pattern, NOT the core genre or sub-bass dominance.\n"
+                "- EVERY track on the album (including Track 1 Opener and Track 5 Closer) MUST belong to the SAME nocturnal world and subgenre: relentless California 808 sub-bass dominance, slow predatory pitch portamento slides, coiling Reese bass growls, punchy acoustic-sampled transient kicks, crisp snap snares with wide metallic impulse reverb, rolling syncopated hi-hats, detuned analog brass stabs, and melancholic minor-pentatonic sine plucks.\n"
+                "- Keep BPM strictly inside the album's tight cruising pocket (vary by ±2–5 BPM within <= 10 BPM total spread; NEVER drop below 120 BPM).\n"
+                "- Lock onto the album's home minor key (at least 4/5 tracks in the album's root minor key, with at most 1 track in its Camelot-adjacent fifth minor key) and evolve chapter phrasing within the shared sonic palette.\n"
                 "- NEVER make Track 1 or Track 5 a slow-burn drumless/ambient piece, NEVER add thin whistles or vocal hum leads unless lyrics are explicitly requested, and NEVER let the sub-bass deflate or disappear.\n"
             )
         if album_brief:
@@ -788,48 +791,55 @@ HAS LYRICS: {has_lyrics}
 
 CRITICAL RULES:
 1. Each stem gets its OWN prompt, tailored to that model's max_prompt length
-2. Main stem prompt ("elevenlabs-music-v2-5", 160-320 words): MUST start with genre, BPM (122-154), musical key (Dm/Fm/Cm/Gm/Ebm), a NAMED foreground earworm hook motif, and time-stamped dynamic hit section cues:
-   - [0:00-0:14 Haunted Hook Tease]: Filtered earworm lead motif + nocturnal space, sub-bass held back for anticipation
-   - [0:14-0:16 Pre-Drop Breath]: Filtered snare roll / brief tension pause
-   - [0:16-0:58 Drop 1]: Explosive California 808 sub-bass with predatory pitch portamento slides, punchy transient kicks, crisp snap snares, and full foreground signature hook
-   - [0:58-1:32 Verse Switch-Up]: Syncopated pocket shift / halftime or triplet counter-groove, Reese growl accents
-   - [1:32-1:58 Tension Bridge]: Drums & deep sub stripped back for breath, wide spectral pads + rising filter tension
-   - [1:58-2:38 Climax Drop 2]: Biggest moment of the record — octave-lifted lead hook + double-time hat energy + heaviest West Coast 808 glide variations
-   - [2:38-End Nocturnal Outro]: Clean DJ-friendly resolve letting the hook echo out smoothly
-3. Supporting harmonic beds (texture, atmosphere, spatial): Set model to "demucs-harmonic-synth" with concise harmonic character notes (<360 chars) in the same key and BPM.
-4. Curated transition SFX (accent, riser): Set model to "voidride-sfx-vault" with smooth warm low-passed descriptions (<260 chars).
-5. Bespoke foley stem: Set model to "elevenlabs-sound-effects-v2" (<450 chars) — subtle, warm low-passed cyber-noir ambient texture inspired by the album cover scene and track title (smooth, NO harsh clanks/clicks).
-6. Model assignment rules:
-   - main: "elevenlabs-music-v2-5" (for all instrumental VØIDRIDE tracks)
-   - texture: "demucs-harmonic-synth"
-   - atmosphere: "demucs-harmonic-synth"
+2. Main stem prompt ("{_MAIN_MUSIC_MODEL}", 110-185 words continuous dark prose): MUST start with exact subgenre, BPM (122-146), dark minor key (Cm/Dm/Fm/Ebm), and the VØIDRIDE anchor:
+   "California bass and heavy West Coast bass mixed with melodic nightride vibes — massive continuous sub-bass dominance, gliding West Coast 808 slides with slow predatory pitch portamento..."
+   - Describe continuous centered 808 sub glides, coiling Reese undertones, punchy acoustic-sampled kicks, crisp metallic snap snares, rolling syncopated hi-hats, detuned analog brass/sine motifs, spectral witch-house choir pads, and 3D binaural delay throws.
+   - STRICTLY FORBIDDEN: NEVER use bracketed timestamps like [0:00-0:14], NEVER ask for silence drops or bass dropouts, and NEVER use commercial pop/EDM clichés ("earworm", "octave-lifted Climax Drop 2", "moment of silence").
+3. Dark harmonic & atmospheric beds (texture, atmosphere): Set model to "{_DARK_TEXTURE_MODEL}" (<440 chars) in the exact track key and BPM:
+   - texture: dark witch-house spectral choir pad & detuned analog harmonic haze (supporting layer, no drums)
+   - atmosphere: deep cavernous cyber-noir sub drone & nocturnal mist reflection wash (no drums, no melody)
+4. Spatial 3D reflection stem (spatial): Set model to "demucs-harmonic-synth" (<360 chars) in the exact track key and BPM.
+5. Curated smooth transition SFX (accent, riser): Set model to "voidride-sfx-vault" with velvet-smooth, warm low-passed descriptions (<260 chars).
+6. Bespoke foley stem: Set model to "{_FOLEY_SFX_MODEL}" (<420 chars) — subtle, warm low-passed cyber-noir ambient texture inspired by the album cover scene and track title (smooth, NO harsh clanks/clicks).
+7. Model assignment rules:
+   - main: "{_MAIN_MUSIC_MODEL}" (for all instrumental VØIDRIDE tracks)
+   - texture: "{_DARK_TEXTURE_MODEL}"
+   - atmosphere: "{_DARK_TEXTURE_MODEL}"
    - spatial: "demucs-harmonic-synth"
    - accent: "voidride-sfx-vault"
    - riser: "voidride-sfx-vault"
-   - foley: "elevenlabs-sound-effects-v2"
-7. BPM (122-154) and key (Dm/Fm/Cm/Gm/Ebm) MUST appear explicitly in main stem prompt
-8. If lyrics are provided, main model MUST support lyrics
-9. For instrumental tracks, set "instrumental": true on main stem
-10. TITLE must be a unique creative 1-3 word name — NOT the album name, NOT the user's request, NOT generic
-11. NEVER use placeholder text like "..." or "etc" in ANY field.
-12. NEVER use organic/woodland foley ("snapping twigs", "wooden beams") or thin novelty whistles.
+   - foley: "{_FOLEY_SFX_MODEL}"
+8. BPM and dark minor key MUST appear explicitly in main, texture, and atmosphere prompts
+9. If lyrics are provided, main model MUST support lyrics
+10. For instrumental tracks, set "instrumental": true on main stem
+11. TITLE must be a unique creative 1-3 word name — NOT the album name, NOT the user's request, NOT generic
+12. NEVER use placeholder text like "..." or "etc" in ANY field.
+13. NEVER use organic/woodland foley ("snapping twigs", "wooden beams") or thin novelty whistles.
 
 OUTPUT VALID JSON (no markdown, no code fences):
 {{
   "title": "UNIQUE CREATIVE NAME",
-  "genre": "primary genre / subgenre",
-  "bpm": 136,
-  "key": "Dm",
-  "energy": "description of dynamic arc and signature hook — NOT a placeholder",
+  "genre": "dark nightride trap / witch house / hyperspatial California bass",
+  "bpm": 134,
+  "key": "Cm",
+  "energy": "description of nocturnal cruising atmosphere and 808 glide character — NOT a placeholder",
   "stems": {{
     "main": {{
-      "model": "elevenlabs-music-v2-5",
-      "prompt": "DETAILED section-scripted hit prompt with genre, BPM, key, named earworm hook motif, and [Intro]->[Drop 1]->[Switch-Up]->[Bridge]->[Climax Drop 2]->[Outro] arc. 160-320 words.",
+      "model": "{_MAIN_MUSIC_MODEL}",
+      "prompt": "Continuous 110-185 word dark VØIDRIDE prose prompt starting with subgenre, BPM, key, and California bass / heavy West Coast 808 sub-bass dominance, witch-house choir haze, and nocturnal cruising momentum. NO bracketed timestamps, NO silence drops.",
       "instrumental": true
     }},
+    "texture": {{
+      "model": "{_DARK_TEXTURE_MODEL}",
+      "prompt": "Dark witch house spectral choir pad and detuned analog harmonic haze in Cm at 134 BPM, supporting nocturnal layer, no drums."
+    }},
+    "atmosphere": {{
+      "model": "{_DARK_TEXTURE_MODEL}",
+      "prompt": "Deep cavernous cyber-noir sub-bass ambient drone and rain-slicked reflection haze in Cm at 134 BPM, no drums, no melody."
+    }},
     "foley": {{
-      "model": "elevenlabs-sound-effects-v2",
-      "prompt": "Warm low-passed cyber-noir scene texture matching the cover visual."
+      "model": "{_FOLEY_SFX_MODEL}",
+      "prompt": "Warm low-passed cyber-noir scene texture matching the cover visual, smooth velvet reverb reflections."
     }}
   }}
 }}"""
@@ -1322,21 +1332,21 @@ def update_sonic_dna(profile_path):
     }
     if profile.get("slug") == "vidride":
         preferred_models.update({
-            "main": "elevenlabs-music-v2-5",
-            "texture": "demucs-harmonic-synth",
-            "atmosphere": "demucs-harmonic-synth",
+            "main": _MAIN_MUSIC_MODEL,
+            "texture": _DARK_TEXTURE_MODEL,
+            "atmosphere": _DARK_TEXTURE_MODEL,
             "spatial": "demucs-harmonic-synth",
             "accent": "voidride-sfx-vault",
             "riser": "voidride-sfx-vault",
-            "foley": "elevenlabs-sound-effects-v2",
+            "foley": _FOLEY_SFX_MODEL,
         })
     elif preferred_models.get("atmosphere") == "mmaudio-v2-text-to-audio":
         preferred_models["atmosphere"] = "stable-audio-25"
 
     valid_bpms = [b for b in bpms if 120 <= b <= 156]
-    bpm_range = [min(valid_bpms), max(valid_bpms)] if valid_bpms else [122, 154]
+    bpm_range = [min(valid_bpms), max(valid_bpms)] if valid_bpms else [122, 146]
     if bpm_range[0] == bpm_range[1]:
-        bpm_range = [122, 154]
+        bpm_range = [122, 146]
 
     existing_dna = profile.get("sonic_dna", {})
     profile["sonic_dna"] = {
@@ -1372,19 +1382,18 @@ def update_sonic_dna(profile_path):
 # Define how stem volumes change over time to create song structure.
 # Volume floors raised to prevent jarring drops. Crossfade duration (XFADE_SEC)
 # smooths transitions between sections instead of hard cuts.
-XFADE_SEC = 4.0  # seconds of smooth crossfade between sections (prevent jarring jumps while keeping punch)
-MIN_VOLUME_FLOOR = 0.32  # allow genuine tension-and-release dynamic breath between intro/bridge and drops
+XFADE_SEC = 4.5  # seconds of smooth crossfade between sections (hypnotic nocturnal continuity)
+MIN_VOLUME_FLOOR = 0.55  # prevent jarring drops while letting atmospheric beds bloom smoothly
 
 ARRANGEMENT = {
     # Each section: (start%, end%, {stem: volume_multiplier})
-    # Multipliers are applied to STEM_CONFIG base volumes to sculpt real hit macro-dynamics:
-    # filtered intro -> rising build -> full Drop 1 -> stripped tension bridge -> Climax Drop 2 (+0.4dB) -> sleek outro.
-    "intro":     (0.00, 0.14, {"main": 0.78, "texture": 1.00, "accent": 0.45, "riser": 0.72, "foley": 0.92, "atmosphere": 1.12, "b_section": 0.0, "spatial": 1.12, "ear_candy_bus": 0.85}),
-    "build":     (0.14, 0.36, {"main": 0.94, "texture": 0.88, "accent": 0.75, "riser": 0.95, "foley": 0.80, "atmosphere": 0.88, "b_section": 0.0, "spatial": 0.95, "ear_candy_bus": 0.92}),
-    "drop":      (0.36, 0.58, {"main": 1.00, "texture": 0.58, "accent": 0.90, "riser": 0.55, "foley": 0.55, "atmosphere": 0.58, "b_section": 0.0, "spatial": 0.72, "ear_candy_bus": 0.88}),
-    "breakdown": (0.58, 0.73, {"main": 0.72, "texture": 1.05, "accent": 0.65, "riser": 0.92, "foley": 0.95, "atmosphere": 1.18, "b_section": 1.00, "spatial": 1.22, "ear_candy_bus": 0.96}),
-    "drop2":     (0.73, 0.91, {"main": 1.05, "texture": 0.64, "accent": 0.95, "riser": 0.82, "foley": 0.60, "atmosphere": 0.64, "b_section": 0.0, "spatial": 0.85, "ear_candy_bus": 0.92}),
-    "outro":     (0.91, 1.00, {"main": 0.76, "texture": 0.92, "accent": 0.55, "riser": 0.45, "foley": 0.88, "atmosphere": 1.05, "b_section": 0.0, "spatial": 1.08, "ear_candy_bus": 0.80}),
+    # Multipliers preserve continuous VØIDRIDE low-end authority while opening cavernous witch-house haze in the breakdown.
+    "intro":     (0.00, 0.14, {"main": 0.88, "texture": 1.00, "accent": 0.50, "riser": 0.72, "foley": 0.90, "atmosphere": 1.10, "b_section": 0.0, "spatial": 1.08, "ear_candy_bus": 0.82}),
+    "build":     (0.14, 0.36, {"main": 0.96, "texture": 0.88, "accent": 0.75, "riser": 0.92, "foley": 0.80, "atmosphere": 0.90, "b_section": 0.0, "spatial": 0.95, "ear_candy_bus": 0.88}),
+    "drop":      (0.36, 0.58, {"main": 1.00, "texture": 0.68, "accent": 0.88, "riser": 0.58, "foley": 0.60, "atmosphere": 0.66, "b_section": 0.0, "spatial": 0.78, "ear_candy_bus": 0.85}),
+    "breakdown": (0.58, 0.73, {"main": 0.84, "texture": 1.06, "accent": 0.68, "riser": 0.90, "foley": 0.92, "atmosphere": 1.15, "b_section": 1.00, "spatial": 1.18, "ear_candy_bus": 0.92}),
+    "drop2":     (0.73, 0.91, {"main": 1.03, "texture": 0.70, "accent": 0.92, "riser": 0.80, "foley": 0.62, "atmosphere": 0.68, "b_section": 0.0, "spatial": 0.85, "ear_candy_bus": 0.88}),
+    "outro":     (0.91, 1.00, {"main": 0.84, "texture": 0.95, "accent": 0.58, "riser": 0.50, "foley": 0.88, "atmosphere": 1.05, "b_section": 0.0, "spatial": 1.06, "ear_candy_bus": 0.80}),
 }
 
 
@@ -1930,28 +1939,25 @@ def validate_voidride_main_stem(filepath, requested_duration):
             metrics["drop_sub_active_pct"] = round(drop_sub_pct, 1)
             metrics["sub_mean_rms"] = round(float(np.mean(sub_rms_wins)), 4)
 
-            if requested_duration and requested_duration >= 60 and drop_sub_pct < 48.0 and sub_active_pct < 36.0:
+            if requested_duration and requested_duration >= 60 and sub_active_pct < 54.0 and drop_sub_pct < 62.0:
                 issues.append(
-                    f"Weak 808 sub-bass in drops: active in {drop_sub_pct:.1f}% of drop windows ({sub_active_pct:.1f}% overall)"
+                    f"Weak California 808 sub-bass continuity: active in {sub_active_pct:.1f}% of windows ({drop_sub_pct:.1f}% in drops)"
                 )
 
-            # Check genuine multi-window dead-air dropout (>= 2 consecutive 5s windows < -40 dB mid-track)
-            consec_dead = 0
+            # Reject mid-track silence drops (< -35 dB or >18 dB relative hole for >= 5s)
+            median_db = float(np.median([20.0 * np.log10(r + 1e-9) for r in full_rms_wins]))
             dead_at_sec = None
             for idx, r in enumerate(full_rms_wins):
                 t_sec = idx * 5
                 if t_sec < 10 or t_sec > total_sec - 15:
                     continue
                 db = 20.0 * np.log10(r + 1e-9)
-                if db < -40.0:
-                    consec_dead += 1
-                    if consec_dead >= 2 and dead_at_sec is None:
-                        dead_at_sec = t_sec - 5
-                else:
-                    consec_dead = 0
+                if db < -35.0 or (median_db - db) > 18.0:
+                    dead_at_sec = t_sec
+                    break
             if dead_at_sec is not None:
                 issues.append(
-                    f"Severe mid-track dead-air dropout (< -40 dB for >=10s starting at {dead_at_sec}s)"
+                    f"Mid-track silence/dropout hole detected around {dead_at_sec}s (violates VØIDRIDE continuous sub rule)"
                 )
     except Exception as e:
         log(f"  ⚠️ VØIDRIDE stem validation warning: {e}")
@@ -2234,21 +2240,19 @@ def detect_transition_grid(main_path, bpm=132, duration=None):
 
 
 def sculpt_main_with_demucs(main_path, separated_stems, grid, output_dir):
-    """Pillar 4: Use 4-stem Demucs separation to sculpt authentic HIT-RECORD macro-dynamics into the main track:
-      1. Intro Hook-Tease High-Pass: Gently filter deep <95Hz sub out of the first ~10s ramping smoothly into Beat 1
-         so Drop 1 hits with visceral physical contrast.
-      2. Breakdown Tension Pocket: Strip drums down to 0.24x (-12 dB) and filter <85Hz sub during the middle of the
-         breakdown while widening melodic 'other'/vocals (+12% gain) so Climax Drop 2 explodes back in.
-      3. Pre-Drop 2-Beat Vacuum & Dub-Echo Swell + Climax Drop 2 Octave Lift: Smooth 2-beat breath dip right before
-         Drop 1 and Drop 2, +1.0 dB Drop 1 slam, and +1.4 dB Climax Drop 2 slam with a subtle -11 dB +12st octave
-         shimmer layer on the melodic hook during Drop 2!
+    """Pillar 4: Use 4-stem Demucs separation to sculpt authentic dark VØIDRIDE nocturnal dynamics
+    while strictly preserving continuous California 808 sub-bass authority:
+      1. Breakdown Nocturnal Pocket: Smoothly attenuate drums to 0.42x (-7.5 dB) so witch-house choir pads
+         and cavernous atmosphere bloom, while warming 808 sub-bass to 1.08x (+0.65 dB) so low-end never deflates.
+      2. Velvet Pre-Drop Dub-Echo Swell & Gentle Micro-Breath: Subtle half-beat breath (0.84x drums, 0.92x bass —
+         never a silence drop!) with warm band-passed dub-echo reflection before Drop 1 and Drop 2.
+      3. Drop 2 Sub-Bass Authority: Subtle +0.5 dB (1.06x) low-end & kick weight in Drop 2 (zero high-octave EDM pitch shifts).
     """
     if not separated_stems or not all(k in separated_stems for k in ("drums", "bass", "other")):
         return main_path
 
     try:
         import numpy as np
-        import pedalboard
         from pedalboard.io import AudioFile
         from scipy.signal import butter, sosfilt
 
@@ -2277,46 +2281,34 @@ def sculpt_main_with_demucs(main_path, separated_stems, grid, output_dir):
         beat_sec = grid["beat_sec"]
         bar_sec = grid["bar_sec"]
 
-        # 1. Intro Sub-Hold Tease (first min(intro_to_build, 11s)): high-pass bass >95Hz & attenuate drums slightly,
-        # ramping smoothly so the first drop lands with chest-rattling authority!
-        intro_end = int(min(grid["intro_to_build"], 11.5) * sr)
-        if intro_end > int(3.0 * sr) and intro_end < n_frames // 3:
-            sos_hp_intro = butter(2, 95, btype="highpass", fs=sr, output="sos")
-            bass_hp = sosfilt(sos_hp_intro, bass[:, :intro_end], axis=1)
-            ramp = 0.5 * (1.0 - np.cos(np.linspace(0.0, np.pi, intro_end, dtype=np.float32)))
-            bass[:, :intro_end] = bass_hp * (1.0 - ramp[None, :]) + bass[:, :intro_end] * ramp[None, :]
-            drum_intro_env = 0.62 + 0.38 * ramp
-            drums[:, :intro_end] *= drum_intro_env[None, :]
-            log(f"  🎚️ Sculpted intro hook-tease sub ramp (0.0s–{intro_end/sr:.1f}s) for explosive first drop contrast")
-
-        # 2. Breakdown Tension Pocket (breakdown + 0.75 bar -> drop_2 - 1.25 bars)
-        bd_start = int((grid["breakdown"] + bar_sec * 0.75) * sr)
-        bd_end = int((grid["drop_2"] - bar_sec * 1.25) * sr)
+        # 1. Breakdown Nocturnal Pocket (breakdown + 1 bar -> drop_2 - 1 bar):
+        # Smoothly recess drums to 0.42x while keeping 808 sub-bass warm and dominant (1.08x)
+        bd_start = int((grid["breakdown"] + bar_sec * 1.0) * sr)
+        bd_end = int((grid["drop_2"] - bar_sec * 1.0) * sr)
         if 0 < bd_start < bd_end < n_frames and (bd_end - bd_start) > int(bar_sec * 2 * sr):
             seg_n = bd_end - bd_start
             fade_len = min(int(bar_sec * 1.5 * sr), seg_n // 3)
             s_curve = 0.5 * (1.0 - np.cos(np.linspace(0.0, np.pi, fade_len, dtype=np.float32)))
 
-            env_drums = np.ones(seg_n, dtype=np.float32) * 0.24  # -12 dB breakdown drum drop
-            env_drums[:fade_len] = 1.0 - s_curve * (1.0 - 0.24)
-            env_drums[-fade_len:] = 0.24 + s_curve * (1.0 - 0.24)
+            env_drums = np.ones(seg_n, dtype=np.float32) * 0.42
+            env_drums[:fade_len] = 1.0 - s_curve * (1.0 - 0.42)
+            env_drums[-fade_len:] = 0.42 + s_curve * (1.0 - 0.42)
             drums[:, bd_start:bd_end] *= env_drums[None, :]
 
-            # Pull deep sub back to 0.56x during bridge while keeping mid-Reese warmth so Drop 2 hits harder
-            env_bass = np.ones(seg_n, dtype=np.float32) * 0.56
-            env_bass[:fade_len] = 1.0 - s_curve * (1.0 - 0.56)
-            env_bass[-fade_len:] = 0.56 + s_curve * (1.0 - 0.56)
+            # Keep gliding 808 sub-bass warm and centered (+0.65 dB) so VØIDRIDE low-end never hollows out
+            env_bass = np.ones(seg_n, dtype=np.float32) * 1.08
+            env_bass[:fade_len] = 1.0 + s_curve * 0.08
+            env_bass[-fade_len:] = 1.08 - s_curve * 0.08
             bass[:, bd_start:bd_end] *= env_bass[None, :]
 
-            # Lift melodic hook/pads slightly (+1.0 dB) in the open space
-            env_other = np.ones(seg_n, dtype=np.float32) * 1.12
-            env_other[:fade_len] = 1.0 + s_curve * 0.12
-            env_other[-fade_len:] = 1.12 - s_curve * 0.12
+            env_other = np.ones(seg_n, dtype=np.float32) * 1.08
+            env_other[:fade_len] = 1.0 + s_curve * 0.08
+            env_other[-fade_len:] = 1.08 - s_curve * 0.08
             other[:, bd_start:bd_end] *= env_other[None, :]
-            log(f"  🥁 Sculpted dynamic tension bridge ({bd_start/sr:.1f}s–{bd_end/sr:.1f}s: drums -12dB, sub breath, melodic lift)")
+            log(f"  🥁 Sculpted nocturnal breakdown pocket ({bd_start/sr:.1f}s–{bd_end/sr:.1f}s: smooth drum recess, warm 1.08x 808 sub)")
 
-        # 3. Pre-Drop 2-Beat Tension Vacuum & Band-Passed Dub-Echo Swell + Drop Impact Slam
-        sos_bp = butter(2, [240, 4200], btype="bandpass", fs=sr, output="sos")
+        # 2. Velvet Band-Passed Dub-Echo Swell & Gentle Half-Beat Micro-Breath before Drop 1 & Drop 2
+        sos_bp = butter(2, [220, 3600], btype="bandpass", fs=sr, output="sos")
         for drop_key in ("drop_1", "drop_2"):
             drop_frame = int(grid[drop_key] * sr)
             bar_frames = int(bar_sec * sr)
@@ -2329,46 +2321,34 @@ def sculpt_main_with_demucs(main_path, separated_stems, grid, output_dir):
                 o_seg = other[:, swell_start:drop_frame].copy()
                 o_bp = sosfilt(sos_bp, o_seg, axis=1)
                 if seg_len > echo_delay:
-                    o_bp[:, echo_delay:] += 0.48 * o_bp[:, :-echo_delay]
+                    o_bp[:, echo_delay:] += 0.42 * o_bp[:, :-echo_delay]
                 t_norm = np.linspace(0.0, 1.0, seg_len, dtype=np.float32)
-                swell_env = (np.sin(np.pi * t_norm) ** 1.15) * 0.30
+                swell_env = (np.sin(np.pi * t_norm) ** 1.2) * 0.24
                 other[:, swell_start:drop_frame] = o_seg + o_bp * swell_env[None, :]
 
-                # 1.5-beat smooth pre-drop breath (drums -> 0.22x, bass -> 0.28x) right before Beat 1 slam!
-                breath_len = min(max(1, int(beat_frames * 1.5)), seg_len // 2)
+                # Subtle half-beat micro-breath (0.84x drums, 0.92x bass) — preserves continuous 808 cruise
+                breath_len = min(max(1, int(beat_frames * 0.5)), seg_len // 3)
                 b_curve = 0.5 * (1.0 + np.cos(np.linspace(0.0, 2.0 * np.pi, breath_len, dtype=np.float32)))
-                drum_breath = 0.22 + 0.78 * b_curve
-                bass_breath = 0.28 + 0.72 * b_curve
+                drum_breath = 0.84 + 0.16 * b_curve
+                bass_breath = 0.92 + 0.08 * b_curve
                 drums[:, drop_frame - breath_len:drop_frame] *= drum_breath[None, :]
                 bass[:, drop_frame - breath_len:drop_frame] *= bass_breath[None, :]
-                log(f"  🌊 Sculpted pre-drop breath & echo swell at {swell_start/sr:.1f}s → {drop_frame/sr:.1f}s ({drop_key})")
+                log(f"  🌊 Sculpted velvet dub-echo transition at {swell_start/sr:.1f}s → {drop_frame/sr:.1f}s ({drop_key})")
 
-        # 4. Climax Drop 2 Escalation: +1.1 dB bass/drum punch + subtle +12st octave shimmer on melodic hook!
+        # 3. Drop 2 Low-End Authority: subtle +0.5 dB (1.06x) kick/808 weight (no high-octave pitch shifts)
         d2_start = int(grid["drop_2"] * sr)
         d2_end = int(grid["outro"] * sr)
         if 0 < d2_start < d2_end <= n_frames and (d2_end - d2_start) > int(4.0 * sr):
             d2_len = d2_end - d2_start
             ramp_len = min(int(bar_sec * sr), d2_len // 4)
-            d2_env = np.ones(d2_len, dtype=np.float32) * 1.12
+            d2_env = np.ones(d2_len, dtype=np.float32) * 1.06
             if ramp_len > 0:
                 rc = 0.5 * (1.0 - np.cos(np.linspace(0.0, np.pi, ramp_len, dtype=np.float32)))
-                d2_env[:ramp_len] = 1.0 + 0.12 * rc
-                d2_env[-ramp_len:] = 1.12 - 0.12 * rc
+                d2_env[:ramp_len] = 1.0 + 0.06 * rc
+                d2_env[-ramp_len:] = 1.06 - 0.06 * rc
             drums[:, d2_start:d2_end] *= d2_env[None, :]
             bass[:, d2_start:d2_end] *= d2_env[None, :]
-
-            try:
-                oct_board = pedalboard.Pedalboard([
-                    pedalboard.HighpassFilter(cutoff_frequency_hz=320),
-                    pedalboard.PitchShift(semitones=12),
-                    pedalboard.LowpassFilter(cutoff_frequency_hz=7500),
-                    pedalboard.Reverb(room_size=0.65, wet_level=0.45, dry_level=0.55),
-                ])
-                oct_hook = oct_board(other[:, d2_start:d2_end].copy(), sr)
-                other[:, d2_start:d2_end] += oct_hook[:, :d2_len] * 0.24  # -12 dB octave climax lift
-                log(f"  🔥 Added Climax Drop 2 +12st octave hook shimmer & low-end lift ({d2_start/sr:.1f}s–{d2_end/sr:.1f}s)")
-            except Exception:
-                pass
+            log(f"  🔊 Added subtle +0.5 dB Drop 2 sub-bass & kick authority ({d2_start/sr:.1f}s–{d2_end/sr:.1f}s)")
 
         sculpted = np.clip(drums + bass + other + vocals, -0.98, 0.98).astype(np.float32)
         sculpted_path = os.path.join(output_dir, "main_sculpted.wav")
@@ -3345,7 +3325,7 @@ def master_audio(input_path, output_dir, skip_master=False, target="streaming",
     # 7. Harmonic Soft-Clipper + Brickwall True-Peak Limiter + Fades
     filters = list(pre_filters)
     filters.append(loudnorm_stage)
-    filters.append("asoftclip=type=sin:param=0.82")
+    filters.append("asoftclip=type=sin:param=0.65")
     filters.append(f"alimiter=limit={profile['true_peak']}dB:level=false")
     filters.append("afade=t=in:ss=0:d=0.4")
     filters.append(f"afade=t=out:st={fade_out_start}:d={fade_out_dur}")
@@ -3408,7 +3388,7 @@ def master_audio(input_path, output_dir, skip_master=False, target="streaming",
             pre_chain_str = ",".join(pre_filters)
             post_chain_str = ",".join([
                 loudnorm_stage,
-                "asoftclip=type=sin:param=0.82",
+                "asoftclip=type=sin:param=0.65",
                 f"alimiter=limit={profile['true_peak']}dB:level=false",
                 "afade=t=in:ss=0:d=0.4",
                 f"afade=t=out:st={fade_out_start}:d={fade_out_dur}",
@@ -4048,10 +4028,20 @@ def main():
             plan_title_fill = production_plan.get("title", "NIGHTRIDE")
             for ms in stem_names:
                 if ms not in production_plan["stems"]:
-                    if ms in ("texture", "atmosphere", "spatial"):
+                    if ms == "texture":
+                        production_plan["stems"][ms] = {
+                            "model": _DARK_TEXTURE_MODEL,
+                            "prompt": f"Dark witch house spectral choir pad and detuned analog harmonic haze in {plan_key_fill} at {plan_bpm_fill} BPM for {plan_title_fill}. Supporting layer, no drums.",
+                        }
+                    elif ms == "atmosphere":
+                        production_plan["stems"][ms] = {
+                            "model": _DARK_TEXTURE_MODEL,
+                            "prompt": f"Deep cavernous cyber-noir sub-bass ambient drone and rain-slicked reflection haze in {plan_key_fill} at {plan_bpm_fill} BPM for {plan_title_fill}. No drums, no melody.",
+                        }
+                    elif ms == "spatial":
                         production_plan["stems"][ms] = {
                             "model": "demucs-harmonic-synth",
-                            "prompt": f"Chord-locked {ms} harmonic layer derived from main stem in {plan_key_fill} at {plan_bpm_fill} BPM for {plan_title_fill}.",
+                            "prompt": f"Hyperspatial 3D binaural side-shimmer reflections in {plan_key_fill} at {plan_bpm_fill} BPM for {plan_title_fill}.",
                         }
                     elif ms in ("accent", "riser"):
                         production_plan["stems"][ms] = {
@@ -4060,7 +4050,7 @@ def main():
                         }
                     elif ms == "foley":
                         production_plan["stems"][ms] = {
-                            "model": "elevenlabs-sound-effects-v2",
+                            "model": _FOLEY_SFX_MODEL,
                             "prompt": f"Subtle warm low-passed cyber-noir ambient texture for {plan_title_fill}, smooth nocturnal highway air and velvet reflections.",
                         }
             for sn, si in production_plan.get("stems", {}).items():
@@ -4191,10 +4181,11 @@ def main():
             log(f"  📋 Plan [{stem_name}]: {stem_model_override} | \"{stem_prompt[:80]}...\"")
 
         stem_result = None
+        effective_stem_model = stem_model_override or STEM_CONFIG.get(stem_name, {}).get("model")
 
-        # Zero-cost chord-locked harmonic stem synthesis from Demucs 'other' stem
+        # Zero-cost chord-locked harmonic stem synthesis from Demucs 'other' stem (used for spatial 3D reflections or fallback)
         if stem_name in ("texture", "atmosphere", "spatial") and (
-            stem_model_override in (None, "demucs-harmonic-synth")
+            effective_stem_model == "demucs-harmonic-synth"
         ) and separated_demucs:
             synth_file = synthesize_harmonic_stem_from_demucs(stem_name, separated_demucs, stems_dir, args.duration)
             if synth_file and os.path.isfile(synth_file):
@@ -4208,7 +4199,7 @@ def main():
                 }
 
         # Zero-cost curated analog riser / rounded sub-impact SFX vault
-        elif stem_name in ("accent", "riser") and stem_model_override in (None, "voidride-sfx-vault"):
+        elif stem_name in ("accent", "riser") and effective_stem_model == "voidride-sfx-vault":
             vault_file = get_or_create_vault_sfx(
                 stem_name, stems_dir,
                 bpm=(production_plan.get("bpm", 134) if production_plan else 134),
@@ -4225,13 +4216,13 @@ def main():
                     "cost": {"cost_usd": 0.0, "credits": 0},
                 }
 
-        # Generative API stem (main on elevenlabs-music-v2-5, bespoke foley on elevenlabs-sound-effects-v2, or fallback)
+        # Generative API stem (main on elevenlabs-music, texture/atmosphere on stable-audio-25, bespoke foley on elevenlabs-sound-effects-v2)
         if stem_result is None:
             fallback_override = stem_model_override
             if fallback_override == "demucs-harmonic-synth":
-                fallback_override = STEM_CONFIG.get(stem_name, {}).get("fallback_model", "stable-audio-25")
+                fallback_override = "stable-audio-25"
             elif fallback_override == "voidride-sfx-vault":
-                fallback_override = STEM_CONFIG.get(stem_name, {}).get("fallback_model", "elevenlabs-sound-effects-v2")
+                fallback_override = _FOLEY_SFX_MODEL
 
             stem_result = generate_stem(
                 stem_name=stem_name,
@@ -4242,6 +4233,34 @@ def main():
                 model_override=fallback_override,
                 force_instrumental=stem_instrumental,
             )
+            # Governed fallback chain for main stem if primary model fails transiently
+            if stem_result is None and stem_name == "main" and not args.lyrics and _mr:
+                for alt_model in _mr.get_role_chain("music.main_instrumental")[1:]:
+                    if alt_model != (fallback_override or _MAIN_MUSIC_MODEL):
+                        log(f"  🔄 Retrying main stem on governed fallback model '{alt_model}'...")
+                        stem_result = generate_stem(
+                            stem_name="main",
+                            prompt=stem_prompt,
+                            lyrics=None,
+                            duration=args.duration,
+                            stems_dir=stems_dir,
+                            model_override=alt_model,
+                            force_instrumental=stem_instrumental,
+                        )
+                        if stem_result:
+                            break
+            # Zero-cost Demucs harmonic fallback if stable-audio-25 fails on texture/atmosphere
+            if stem_result is None and stem_name in ("texture", "atmosphere") and separated_demucs:
+                synth_fb = synthesize_harmonic_stem_from_demucs(stem_name, separated_demucs, stems_dir, args.duration)
+                if synth_fb and os.path.isfile(synth_fb):
+                    stem_result = {
+                        "role": stem_name,
+                        "model": "demucs-harmonic-synth",
+                        "prompt": stem_prompt,
+                        "file": synth_fb,
+                        "generation_time": 0.5,
+                        "cost": {"cost_usd": 0.0, "credits": 0},
+                    }
 
         # VØIDRIDE Automated Main-Stem Acoustic QC Gate + Immediate 4-Stem Demucs Separation
         if stem_result and stem_name == "main" and args.duration >= 60:
@@ -4257,11 +4276,11 @@ def main():
                 retry_attempt += 1
                 log(f"  ⚠️ Main stem failed VØIDRIDE acoustic QC (attempt {retry_attempt}/2): {'; '.join(qc_issues)}")
                 reinforced_prompt = (
-                    "Dynamic hit-arranged West Coast nightride trap & California 808 bass: "
-                    "powerful gliding 808 sub-bass dominance throughout Drop 1 and Climax Drop 2, "
-                    "punchy transient kicks, memorable foreground synth hook, and full-length energy through the final bar. "
+                    "CRITICAL VØIDRIDE SUB-BASS REINFORCEMENT: California bass and heavy West Coast bass mixed with melodic nightride vibes — "
+                    "massive continuous 808 sub-bass dominance from start to finish with slow predatory pitch portamento glides, "
+                    "punchy transient kicks, dark witch-house atmosphere, and ZERO mid-track silence drops or bass dropouts. "
                     + stem_prompt
-                )[:3900]
+                )[:1900]
                 retry_stem = generate_stem(
                     stem_name="main",
                     prompt=reinforced_prompt,

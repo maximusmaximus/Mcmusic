@@ -91,14 +91,14 @@ def audit_and_heal():
         except Exception:
             pass
 
-    # 4. Check propose_albums.py & album_pipeline.py credit gates + Option 1B pricing
+    # 4. Check propose_albums.py & album_pipeline.py credit gates + Cohesive VØIDRIDE pricing
     propose_script = os.path.join(SCRIPTS_DIR, "propose_albums.py")
     if os.path.exists(propose_script):
         txt = open(propose_script, "r", encoding="utf-8", errors="ignore").read()
         if "check_venice_album_budget" not in txt or "ap:credit:added" not in txt:
             issues.append("propose_albums.py missing Venice credit check or ap:credit:added button")
-        if "AVG_ALBUM_COST_USD = 11.70" not in txt:
-            issues.append("propose_albums.py missing Option 1B AVG_ALBUM_COST_USD = 11.70")
+        if "AVG_ALBUM_COST_USD = 16.32" not in txt:
+            issues.append("propose_albums.py missing Cohesive VØIDRIDE AVG_ALBUM_COST_USD = 16.32")
         if "REQUIRED_PROPOSAL_COUNT = 5" not in txt or "len(accepted_proposals) >= 3" in txt:
             issues.append("propose_albums.py missing strict REQUIRED_PROPOSAL_COUNT = 5 enforcement")
     else:
@@ -110,7 +110,7 @@ def audit_and_heal():
         if "evaluate_venice_budget" not in txt or "ap:credit:added" not in txt:
             issues.append("album_pipeline.py missing evaluate_venice_budget or ap:credit:added button")
         if "--closer-duration" not in txt:
-            issues.append("album_pipeline.py missing Option 1B --closer-duration handoff")
+            issues.append("album_pipeline.py missing --closer-duration handoff")
     else:
         issues.append("album_pipeline.py missing")
 
@@ -157,14 +157,14 @@ def audit_and_heal():
             soul_txt = open(SOUL_PATH, "r", encoding="utf-8", errors="ignore").read()
             if (
                 "VENICE AI LIVE CREDIT CHECK & WARNING GATE" not in soul_txt
-                or "OPTION 1B HIT-SONG ARCHITECTURE" not in soul_txt
+                or "COHESIVE VØIDRIDE NOCTURNAL ARCHITECTURE" not in soul_txt
                 or "REQUIRED_PROPOSAL_COUNT = 5" not in soul_txt
                 or "WEEKLY VENICE MODEL SCOUT" not in soul_txt
             ):
                 patch_soul = os.path.join(SCRIPTS_DIR, "patch_soul.py")
                 if os.path.exists(patch_soul):
                     subprocess.run([python_bin, patch_soul], capture_output=True, timeout=15)
-                    healed.append("Re-applied patch_soul.py to update /opt/data/SOUL.md with Option 1B, 5-proposal & Model Scout rules")
+                    healed.append("Re-applied patch_soul.py to update /opt/data/SOUL.md with Cohesive VØIDRIDE, 5-proposal & Model Scout rules")
         except Exception as e:
             issues.append(f"SOUL.md check failed: {e}")
 

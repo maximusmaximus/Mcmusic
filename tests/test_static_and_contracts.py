@@ -43,6 +43,7 @@ class TestStaticAndContracts(unittest.TestCase):
             "data/skills/master-producer/master-producer/scripts/produce-album.py",
             "data/skills/dawagent/dawagent/scripts/handoff.py",
             "data/skills/dawagent/dawagent/scripts/auto_processor.py",
+            "dawagent/scripts/auto_processor.py",
         ]
         for rel in extra_rel:
             p = REPO_ROOT / rel
@@ -75,6 +76,9 @@ class TestStaticAndContracts(unittest.TestCase):
         targets = list(self._critical_python_files())
         for extra in [
             CONFIG_DIR / "model_registry.json",
+            REPO_ROOT / "data" / "music" / "profiles" / "vidride" / "profile.json",
+            REPO_ROOT / "data" / "skills" / "master-producer" / "master-producer" / "SKILL.md",
+            REPO_ROOT / "data" / "memories" / "MEMORY.md",
             REPO_ROOT / ".github" / "workflows" / "ci.yml",
         ]:
             if extra.exists():
@@ -136,10 +140,14 @@ class TestStaticAndContracts(unittest.TestCase):
         raw_json = json.dumps(data)
         self.assertNotIn("grok-imagine-image-quality", raw_json)
 
-        # Weekly canary spend cap invariant
+        # Weekly canary spend cap & Cohesive VØIDRIDE budget invariant
         bp = model_registry.get_budget_policy(str(reg_path))
         self.assertLessEqual(float(bp["weekly_canary_cap_usd"]), 1.50)
-        self.assertAlmostEqual(float(bp["estimated_costs_usd"]["album_total"]), 11.70, places=2)
+        self.assertAlmostEqual(float(bp["estimated_costs_usd"]["album_total"]), 16.32, places=2)
+
+        # Authentic VØIDRIDE audio model roles
+        self.assertEqual(data["roles"]["music.main_instrumental"]["primary"], "elevenlabs-music")
+        self.assertEqual(data["roles"]["music.dark_texture"]["primary"], "stable-audio-25")
 
         # Hybrid Qwen thinking starvation protection
         vp_qwen = model_registry.build_venice_parameters("qwen-3-7-plus", role="llm.proposals", custom_path=str(reg_path))
@@ -151,20 +159,85 @@ class TestStaticAndContracts(unittest.TestCase):
         self.assertGreaterEqual(len(chain), 2)
         self.assertEqual(len(chain), len(set(chain)))
 
-    def test_05_pipeline_option_1b_and_five_proposal_contracts(self):
-        """Enforce REQUIRED_PROPOSAL_COUNT == 5, Option 1B ~$11.70 budget, and -10.0 LUFS mastering targets."""
+    def test_05_pipeline_cohesive_voidride_and_five_proposal_contracts(self):
+        """Enforce REQUIRED_PROPOSAL_COUNT == 5, Cohesive VØIDRIDE ~$16.32 budget, and -11.5 LUFS mastering targets."""
         propose_mod = _load_module_from_path("propose_albums_contract", SCRIPTS_DIR / "propose_albums.py")
         self.assertEqual(
             propose_mod.REQUIRED_PROPOSAL_COUNT,
             5,
             "VØIDRIDE strictly requires 5 proposals (never 3)",
         )
-        self.assertAlmostEqual(propose_mod.AVG_ALBUM_COST_USD, 11.70, places=2)
+        self.assertAlmostEqual(propose_mod.AVG_ALBUM_COST_USD, 16.32, places=2)
 
-        auto_proc_path = REPO_ROOT / "data" / "skills" / "dawagent" / "dawagent" / "scripts" / "auto_processor.py"
-        auto_mod = _load_module_from_path("auto_processor_contract", auto_proc_path)
-        self.assertAlmostEqual(auto_mod.DEFAULT_LUFS, -10.0, places=1)
-        self.assertAlmostEqual(auto_mod.DEFAULT_TRUE_PEAK, -0.8, places=1)
+        for rel_auto in (
+            "data/skills/dawagent/dawagent/scripts/auto_processor.py",
+            "dawagent/scripts/auto_processor.py",
+        ):
+            auto_proc_path = REPO_ROOT / rel_auto
+            if auto_proc_path.exists():
+                auto_mod = _load_module_from_path(f"auto_proc_{rel_auto}", auto_proc_path)
+                self.assertAlmostEqual(auto_mod.DEFAULT_LUFS, -11.5, places=1)
+                self.assertAlmostEqual(auto_mod.DEFAULT_TRUE_PEAK, -1.0, places=1)
+                self.assertAlmostEqual(auto_mod.DEFAULT_LRA, 9.5, places=1)
+
+        handoff_txt = (REPO_ROOT / "data" / "skills" / "dawagent" / "dawagent" / "scripts" / "handoff.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('"lufs": -11.5', handoff_txt)
+        self.assertNotIn('"lufs": -10.0', handoff_txt)
+
+    def test_06_voidride_vibe_and_album_cohesion_contracts(self):
+        """Guard classic VØIDRIDE dark nightride sonic DNA, stem stack, DSP sculpting, and strict album-level cohesion."""
+        profile_path = REPO_ROOT / "data" / "music" / "profiles" / "vidride" / "profile.json"
+        self.assertTrue(profile_path.exists(), f"Missing VØIDRIDE profile: {profile_path}")
+        prof_raw = profile_path.read_text(encoding="utf-8")
+        prof = json.loads(prof_raw)
+
+        self.assertEqual(prof["defaults"]["main_model"], "elevenlabs-music")
+        self.assertEqual(prof["sonic_dna"]["preferred_models"]["main"], "elevenlabs-music")
+        self.assertEqual(prof["sonic_dna"]["preferred_models"]["texture"], "stable-audio-25")
+        self.assertEqual(prof["sonic_dna"]["preferred_models"]["atmosphere"], "stable-audio-25")
+        self.assertIn("NO silence drops", prof["sonic_dna"]["anti_patterns"])
+        self.assertAlmostEqual(float(prof["mastering"]["target_lufs"]), -11.5, places=1)
+        active_dna_prose = " ".join(
+            [
+                str(prof.get("description", "")),
+                str(prof["sonic_dna"].get("prompt_prefix", "")),
+                str(prof["sonic_dna"].get("sound_signature", "")),
+            ]
+        ).lower()
+        self.assertNotIn("earworm", active_dna_prose)
+        self.assertNotIn("climax drop 2", active_dna_prose)
+
+        # Verify derive_cohesive_album_grid locks unified subgenre, >=4/5 root minor key, and <=10 BPM cruising pocket
+        pa_path = REPO_ROOT / "data" / "skills" / "master-producer" / "master-producer" / "scripts" / "produce-album.py"
+        pa_mod = _load_module_from_path("produce_album_cohesion", pa_path)
+        grid = pa_mod.derive_cohesive_album_grid(
+            "REFINERY MOON - ritual industrial trap / hyperspatial nightride bass. 138-146 BPM, Cm.",
+            total_tracks=5,
+            sonic_dna=prof["sonic_dna"],
+        )
+        self.assertEqual(len(grid), 5)
+        self.assertEqual(grid[0]["root_key"], "Cm")
+
+        subgenres = {g["subgenre"] for g in grid}
+        self.assertEqual(len(subgenres), 1, f"All 5 tracks must share one unified album subgenre, got: {subgenres}")
+        self.assertEqual([g["key"] for g in grid], ["Cm", "Cm", "Cm", "Fm", "Cm"])
+
+        bpms = [int(g["bpm"]) for g in grid]
+        self.assertTrue(all(138 <= b <= 146 for b in bpms), f"BPMs drifted outside [138, 146]: {bpms}")
+        self.assertLessEqual(max(bpms) - min(bpms), 10, f"Album BPM spread exceeded 10 BPM: {bpms}")
+
+        # Verify master-producer.py preserves sub warmth, uses stable-audio-25 dark beds, and omits +12st PitchShift on main
+        import inspect
+        mp_path = REPO_ROOT / "data" / "skills" / "master-producer" / "master-producer" / "scripts" / "master-producer.py"
+        mp_mod = _load_module_from_path("master_producer_vibe", mp_path)
+        sculpt_src = inspect.getsource(mp_mod.sculpt_main_with_demucs)
+        self.assertNotIn("PitchShift", sculpt_src)
+        self.assertIn("1.08", sculpt_src)
+        self.assertAlmostEqual(float(mp_mod.TARGET_PROFILES["streaming"]["lufs"]), -11.5, places=1)
+        self.assertEqual(mp_mod.STEM_CONFIG["texture"]["model"], "stable-audio-25")
+        self.assertEqual(mp_mod.STEM_CONFIG["atmosphere"]["model"], "stable-audio-25")
 
 
 if __name__ == "__main__":

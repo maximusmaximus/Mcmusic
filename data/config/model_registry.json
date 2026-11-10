@@ -1,35 +1,50 @@
 {
   "schema_version": "1.0",
-  "updated_at": "2026-11-10T18:58:00Z",
+  "updated_at": "2026-11-10T23:05:00Z",
   "budget_policy": {
     "weekly_canary_cap_usd": 1.50,
-    "option_1b_durations": {
-      "singles": [174, 170, 178, 172],
-      "closer": 215
+    "voidride_durations": {
+      "tracks": [220, 224, 218, 216],
+      "closer": 236
     },
     "estimated_costs_usd": {
-      "single_track": 2.10,
-      "closer_track": 2.78,
-      "tracks_total": 11.18,
+      "single_track": 3.16,
+      "closer_track": 3.16,
+      "tracks_total": 15.80,
       "covers_total": 0.52,
-      "album_total": 11.70,
-      "avg_track": 2.24
+      "album_total": 16.32,
+      "avg_track": 3.16
     }
   },
   "roles": {
     "music.main_instrumental": {
-      "primary": "elevenlabs-music-v2-5",
-      "fallbacks": ["elevenlabs-music-v2", "elevenlabs-music"],
+      "primary": "elevenlabs-music",
+      "fallbacks": ["elevenlabs-music-v2", "elevenlabs-music-v2-5"],
       "modality": "music",
-      "description": "Flagship section-scripted hit instrumental main stem",
+      "description": "Authentic VØIDRIDE dark nightride sub-bass & witch-house main stem",
       "params": {
         "supports_duration": true,
         "supports_instrumental": true,
         "supports_lyrics": false,
-        "max_prompt_chars": 4096,
+        "max_prompt_chars": 2000,
         "min_duration": 10,
-        "max_duration": 600,
+        "max_duration": 300,
         "output_format": "mp3"
+      }
+    },
+    "music.dark_texture": {
+      "primary": "stable-audio-25",
+      "fallbacks": ["mmaudio-v2-text-to-audio"],
+      "modality": "music",
+      "description": "Dark witch-house spectral choir pads & cavernous cyber-noir drone beds",
+      "params": {
+        "supports_duration": true,
+        "supports_instrumental": false,
+        "supports_lyrics": false,
+        "max_prompt_chars": 500,
+        "min_duration": 1,
+        "max_duration": 180,
+        "output_format": "wav"
       }
     },
     "music.main_vocal": {
@@ -63,7 +78,7 @@
       "primary": "qwen-3-7-plus",
       "fallbacks": ["deepseek-v4-flash", "qwen-3-8-flash"],
       "modality": "text",
-      "description": "5-proposal VØIDRIDE hit-record concept generator",
+      "description": "5-proposal cohesive VØIDRIDE nocturnal concept generator",
       "params": {
         "temperature": 0.9,
         "max_tokens": 4800,

@@ -24,20 +24,20 @@ python3 /opt/data/skills/master-producer/master-producer/scripts/master-producer
   [--chat-id TELEGRAM_CHAT_ID]
 ```
 
-### Album / Batch (PREFERRED for multiple tracks — Option 1B Pacing)
+### Album / Batch (PREFERRED for multiple tracks — Cohesive VØIDRIDE Nocturnal EP)
 ```bash
 python3 /opt/data/skills/master-producer/master-producer/scripts/produce-album.py \
   --brief "ALBUM BRIEF" \
   --tracks 5 \
-  --duration 175 \
-  --closer-duration 215 \
+  --duration 220 \
+  --closer-duration 236 \
   --quality hyperspatial \
   [--vocals-pct 0]
 ```
 
 **IMPORTANT RULES:**
 1. Use `terminal` tool, NOT `process` — this is a long-running multi-step pipeline
-2. Warn the user this takes **3-10 minutes per track** and costs **~$2.24/track avg** (~$11.18 audio + ~$0.52 covers = **~$11.70/album** in Option 1B)
+2. Warn the user this takes **3-10 minutes per track** and costs **~$3.16/track** (~$15.80 audio + ~$0.52 covers = **~$16.32/album** in Cohesive VØIDRIDE `hyperspatial` mode)
 3. **ONLY send the final mastered file** to the user, NOT stems or intermediate files
 4. **Do NOT paste JSON output** in chat — parse it and respond naturally
 
@@ -104,31 +104,31 @@ PHASE 5: Delivery (Telegram audio + batch tracking)
 
 | Tier | Stems | Est. Time | Est. Cost | Best For |
 |------|-------|-----------|-----------|----------|
-| `quick` | 2 (main + Demucs texture) | 2-4 min | ~$2.08 | Demos, previews |
-| `standard` | 3 (main + Demucs texture + vault accent) | 3-5 min | ~$2.08 | Good quality tracks |
-| `ultra` | 5 (main + Demucs texture/atmosphere + vault accent) | 4-6 min | ~$2.08 | Rich layered productions |
-| `hyperspatial` | 7 (main + Demucs chord-locked texture/atmosphere/spatial + SFX vault riser/accent + foley) | 4-7 min | ~$2.10 single / ~$2.78 closer | Default VØIDRIDE Option 1B Hit Productions |
+| `quick` | 2 (main + dark witch-house texture) | 2-4 min | ~$2.95 | Demos, previews |
+| `standard` | 4 (main + texture + vault accent/riser) | 3-5 min | ~$2.95 | Solid dark nightride tracks |
+| `premium` | 6 (main + texture/atmosphere + vault SFX + foley) | 4-6 min | ~$3.16 | Rich layered nocturnal productions |
+| `hyperspatial` | 7 (main `elevenlabs-music` + `stable-audio-25` witch-house texture/atmosphere + Demucs 3D spatial + SFX vault riser/accent + foley) | 4-7 min | ~$3.16/track (~$16.32/album) | Default Cohesive VØIDRIDE Nocturnal Productions |
 
 ## 💳 Live Venice AI Balance & Track Completion Capacity Check
 - Both `album_pipeline.py` and `produce-album.py` automatically query `GET https://api.venice.ai/api/v1/api_keys/rate_limits` (with `Authorization: Bearer $VENICE_API_KEY`) before starting production, before each track, and whenever an HTTP `402` or incomplete batch occurs.
 - Live balance and track capacity are persisted to `/opt/data/music/venice_balance_status.json` (and `/tmp/venice_balance_status.json`), containing:
-  - `total_usd` (`usd` + `diem`), `cost_per_track` (`~$2.24` avg in Option 1B `hyperspatial` mode: `$2.10` for Tracks 1–4 @ `170–178s` + `$2.78` for Track 5 closer @ `215s`), `remaining_tracks`, `completable_tracks`, `tracks_needed_cost` (`~$11.18`), `cover_cost` (`~$0.52`), and `shortfall_total` (full album avg `~$11.70 USD`).
+  - `total_usd` (`usd` + `diem`), `cost_per_track` (`~$3.16` in Cohesive VØIDRIDE `hyperspatial` mode: `216–224s` chapters + `236s` closer in the `<=240s` Venice bucket), `remaining_tracks`, `completable_tracks`, `tracks_needed_cost` (`~$15.80`), `cover_cost` (`~$0.52`), and `shortfall_total` (full album avg `~$16.32 USD`).
 - **Agent Directive**: Whenever inference runs out or a production pauses, ALWAYS inspect `/opt/data/music/venice_balance_status.json` (or query `/api/v1/api_keys/rate_limits`) and tell the user:
   1. The exact **remaining Venice balance** (`$X.XX USD` / `DIEM`).
-  2. **How many tracks** the remaining balance can complete (`X/Y remaining tracks` at `~$2.10` per single / `~$2.78` closer).
+  2. **How many tracks** the remaining balance can complete (`X/Y remaining tracks` at `~$3.16/track`).
   3. The exact **shortfall** needed to finish all remaining tracks + covers (`$Z.ZZ USD`).
 
 ## Stem Model Selection
 
 | Stem | Default Model / Source | Role |
 |------|------------------------|------|
-| **Main** | `elevenlabs-music-v2-5` (instrumental hit arrangement) / `ace-step-15` (vocals) | Core track with time-stamped intro/drop/breakdown/climax |
-| **Texture** | `demucs-harmonic-synth` (derived from `main` Demucs `other` stem, `$0.00`) | 100% chord-locked warm shimmer pad |
-| **Atmosphere** | `demucs-harmonic-synth` (half-speed Paulstretch nocturne bed, `$0.00`) | 100% chord-locked wide nocturnal bed |
-| **Spatial / Sub** | `demucs-harmonic-synth` (`-12st` octave sub-harmonic dark bed, `$0.00`) | 100% key-locked low-mid foundation |
-| **Riser** | `voidride-sfx-vault` (click-free filtered analog riser, `$0.00`) | Velvet-smooth pre-drop tension sweep |
-| **Accent** | `voidride-sfx-vault` (warm dark sub-impact bloom, `$0.00`) | Section downbeat bloom |
-| **Foley** | `elevenlabs-sound-effects-v2` (`$0.02`) | Bespoke 3D binaural mechanical/spatial ear candy |
+| **Main** | `elevenlabs-music` (authentic VØIDRIDE flagship) / `ace-step-15` (vocals) | Core continuous West Coast 808 + dark nightride cruise |
+| **Texture** | `stable-audio-25` (`$0.19`, phase/key-locked to main) | Dark witch-house spectral choir pad & analog harmonic haze |
+| **Atmosphere** | `stable-audio-25` (`$0.19`, phase/key-locked to main) | Deep cavernous cyber-noir sub drone & rain reflection wash |
+| **Spatial** | `demucs-harmonic-synth` (derived from `main` Demucs `other`, `$0.00`) | 100% chord-locked 3D Haas & binaural reflection field |
+| **Riser** | `voidride-sfx-vault` (click-free filtered analog riser, `$0.00`) | Velvet-smooth non-jarring transition sweep |
+| **Accent** | `voidride-sfx-vault` (warm dark sub-impact bloom, `$0.00`) | Smooth low-passed section downbeat swell |
+| **Foley** | `elevenlabs-sound-effects-v2` (`$0.02`) | Bespoke warm low-passed cyber-noir environmental texture |
 
 ## DJ Profiles & Sonic DNA
 
@@ -144,7 +144,7 @@ Profile includes:
 For batch production of multiple tracks:
 - **One updating Telegram message** with phase, elapsed time, ETA, and cost
 - **HERMES_SILENT=1** propagated to all subprocesses — zero spam
-- **Per-track variation rules** (heavy opener, smooth groove, tempo shift, etc.)
+- **Strict album cohesion grid** (`derive_cohesive_album_grid`: unified subgenre, `>=4/5` home minor key, `<=10 BPM` cruising pocket, shared sonic palette)
 - **Post-hoc naming** via Venice text API for any tracks K3 didn't title
 - **Batch tracking** saved to `profiles/<slug>/batches/<timestamp>.json`
 
@@ -152,9 +152,9 @@ For batch production of multiple tracks:
 ```
 --brief TEXT             Album description
 --tracks N               Number of tracks (default: 5)
---duration SECS          Singles duration for Tracks 1-4 (default: 175)
---closer-duration SECS   Extended closer duration for final track (default: 215)
---quality TIER           quick/standard/premium/ultra/hyperspatial
+--duration SECS          Nocturnal chapter duration for Tracks 1-4 (default: 220)
+--closer-duration SECS   Extended closer duration for final track (default: 236)
+--quality TIER           quick/standard/premium/hyperspatial
 --vocals-pct N           Percentage of tracks with vocals (default: 0)
 --preview                Force MP3-only delivery (no FLAC)
 ```
@@ -163,7 +163,7 @@ For batch production of multiple tracks:
 
 | Profile | Loudness | Format | Use Case |
 |---------|----------|--------|----------|
-| `streaming` | -10.0 LUFS (-0.8 dBTP, 2-pass linear loudnorm) | MP3 320k / FLAC 48k-24bit | Competitive Trap/Phonk Streaming & SoundCloud |
+| `streaming` | -11.5 LUFS (-1.0 dBTP, LRA 9.5, 2-pass linear loudnorm) | MP3 320k / FLAC 48k-24bit | VØIDRIDE Dark Sub-Heavy Nightride Streaming & SoundCloud |
 | `l-acoustics` | -18 LUFS | AIFF 96k/24-bit + L-ISA stems | L-Acoustics PA rigs |
 | `club` | -8 LUFS | WAV 48k/24-bit | Club systems, DJ sets |
 | `headphones` | -16 LUFS | FLAC 48k/24-bit | Critical listening |

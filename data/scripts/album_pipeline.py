@@ -706,12 +706,13 @@ def evaluate_venice_budget(remaining_tracks, mode="full", quality="hyperspatial"
         cost_per_track = 0.48
         tracks_needed_cost = round(remaining_tracks * cost_per_track, 2)
     else:
-        # Option 1B: 4 punchy singles @ $2.10 ($2.08 elevenlabs-music-v2-5 <=180s + $0.02 foley + $0.00 Demucs harmonic beds)
-        # + Track 5 Extended Closer @ $2.78 ($2.76 <=240s + $0.02 foley) = $11.18 total ($2.24 avg/track)
-        slot_costs = [2.10, 2.10, 2.10, 2.10, 2.78]
-        rem_slice = slot_costs[max(0, 5 - remaining_tracks):] if remaining_tracks <= 5 else ([2.10] * (remaining_tracks - 1) + [2.78])
+        # Cohesive VØIDRIDE Nocturnal Architecture:
+        # 5 tracks @ $3.16 ($2.76 elevenlabs-music <=240s + $0.38 2× stable-audio-25 witch-house texture & atmosphere + $0.02 foley + $0.00 spatial/vault SFX)
+        # = $15.80 audio + $0.52 covers = $16.32 total ($3.16/track)
+        slot_costs = [3.16, 3.16, 3.16, 3.16, 3.16]
+        rem_slice = slot_costs[max(0, 5 - remaining_tracks):] if remaining_tracks <= 5 else ([3.16] * remaining_tracks)
         tracks_needed_cost = round(sum(rem_slice), 2)
-        cost_per_track = round(tracks_needed_cost / max(remaining_tracks, 1), 2) if remaining_tracks > 0 else 2.24
+        cost_per_track = round(tracks_needed_cost / max(remaining_tracks, 1), 2) if remaining_tracks > 0 else 3.16
 
     cover_cost = 0.52 if include_covers and not is_sample else 0.0
     total_needed_cost = round(tracks_needed_cost + cover_cost, 2)
@@ -1239,7 +1240,7 @@ def phase_1_produce(proposal, profile, redo_track=None, redo_feedback=None, mode
 
     prop_tracks = proposal.get("tracks", [])
     cover_visual = proposal.get("visual", "")
-    album_theme = f"{subgenre}. {proposal.get('brief', '')}".strip()
+    album_theme = f"{subgenre}. {proposal.get('bpm', '134')} BPM, {proposal.get('key', 'Cm')}. {proposal.get('brief', '')}".strip()
     quality = profile.get("defaults", {}).get("quality", "hyperspatial")
     expected_count = len(prop_tracks) if prop_tracks else 5
     remaining_to_produce = max(0, expected_count - resume_count)
@@ -1323,7 +1324,7 @@ def phase_1_produce(proposal, profile, redo_track=None, redo_feedback=None, mode
                 f"(~${budget['tracks_needed_cost']:.2f} USD) + artwork (~${budget['cover_cost']:.2f} USD)."
             )
 
-    closer_duration = profile.get("defaults", {}).get("closer_duration", 215) if profile else 215
+    closer_duration = profile.get("defaults", {}).get("closer_duration", 236) if profile else 236
     cmd = [
         "/opt/hermes/.venv/bin/python3", PRODUCE_SCRIPT,
         "--brief", brief,
@@ -1667,7 +1668,7 @@ def phase_1_produce(proposal, profile, redo_track=None, redo_feedback=None, mode
 
 
 # ── Single Track Redo ───────────────────────────────────────────────────
-def phase_1_redo_single(proposal, profile, tracklist, track_num, feedback=None, duration=175, dashboard=None, state=None):
+def phase_1_redo_single(proposal, profile, tracklist, track_num, feedback=None, duration=220, dashboard=None, state=None):
     album_name = proposal.get('album', 'Unknown Album')
     album_slug = album_name.lower().replace(' ', '-').replace('_', '-')
     subgenre = proposal.get('subgenre', 'dark nightride trap')
@@ -1692,9 +1693,9 @@ def phase_1_redo_single(proposal, profile, tracklist, track_num, feedback=None, 
     bpm = str(bpm_int)
     original['bpm'] = bpm
 
-    # Option 1B duration for redo: 175s for singles, 215s for closer
-    closer_dur = profile.get("defaults", {}).get("closer_duration", 215) if profile else 215
-    duration = closer_dur if (track_num == len(tracklist) and len(tracklist) >= 2 and duration <= 200) else (duration if duration <= 220 else 175)
+    # Cohesive VØIDRIDE duration for redo: 220s for chapters, 236s for closer (both in <=240s Venice bucket)
+    closer_dur = profile.get("defaults", {}).get("closer_duration", 236) if profile else 236
+    duration = closer_dur if (track_num == len(tracklist) and len(tracklist) >= 2 and duration <= 235) else (duration if duration <= 240 else 220)
 
     key = original.get('key') or proposal.get('key', 'Dm')
 
@@ -1841,7 +1842,7 @@ def phase_1_redo_single(proposal, profile, tracklist, track_num, feedback=None, 
 
     # Read production_plan.json from the new session_dir to update actual BPM, Key, and Cost
     plan_file = os.path.join(original.get("production_dir", ""), "production_plan.json")
-    redo_audio_cost = 2.78 if (track_num == len(tracklist) and len(tracklist) >= 2) else 2.10
+    redo_audio_cost = 3.16
     if os.path.isfile(plan_file):
         try:
             with open(plan_file) as pf:
@@ -3548,7 +3549,7 @@ def main():
     clear_flags()
     state = load_state()
     mode = args.mode
-    duration = args.duration if args.duration else (20 if mode == "sample" else 175)
+    duration = args.duration if args.duration else (20 if mode == "sample" else 220)
 
     if args.resume and state.get("proposal"):
         proposal = state["proposal"]
