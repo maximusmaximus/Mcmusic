@@ -1,19 +1,17 @@
 ---
 name: cover-title-overlay
-description: Overlay Unicode-styled song titles onto cover art images with multi-font Unicode fallback (Segoe UI Symbol / Historic / Black / DejaVu Sans), scaled to fill width, neon glow, angled drop shadow, and CMY neon palettes. Supports --bottom (VØIDRIDE scene covers), --top, --auto-color, and centered positioning. Two-step process — generate background via Venice AI flux-2-max (no text), then overlay title.
-tags: [cover-art, title-overlay, neon-text, unicode, album-art, cmy-palette]
+description: Overlay clean geometric stacked song/album titles onto 3000×3000 cover art with album-locked cohesive neon palettes (--album / --album-anchor), WCAG relative luminance floor (Y >= 0.45), adaptive bottom readability scrim, and <= 8 MB JPEG export.
+tags: [cover-art, title-overlay, neon-text, album-art, cohesive-palette]
 ---
 
 # Cover Title Overlay
 
-Overlay a Unicode-styled song title onto a cover art image (background only, no text).
-The title is scaled horizontally to fill ~90% of the image width. Default position is
-centered vertically, but for VØIDRIDE scene covers the preferred position is **bottom**
-(`--bottom` flag) — keeps the title clear of the central scene action.
+Overlay clean geometric stacked uppercase titles (`Montserrat-Black` / `DejaVuSans-Bold`) onto cover art backgrounds (`3000×3000`, no text), locked to one cohesive album neon palette family (`--album` / `--album-anchor`) with guaranteed legibility (`WCAG relative_luminance >= 0.45`, interior glyph opacity floor `>= 0.54`, and adaptive dark bottom readability scrim).
 
-**Unicode Font Fallback Stack**: Automatically searches and chains `SegoeUISymbol.ttf`, `SegoeUIHistoric.ttf`, `SegoeUI-Black.ttf`, and `DejaVuSans-Bold.ttf` to guarantee 100% glyph coverage for all exotic Unicode code points (Coptic, Cyrillic, Latin Extended-B, Currency signs, Math symbols) with zero `.notdef` / tofu boxes.
-
-**CMY Neon Palette**: Supports high-voltage neon colors including Electric Cyan (`#00F0FF`), Hyper Magenta (`#FF007F`), Acid Yellow (`#FAFF00`), Cyan Mint (`#00FFA3`), Laser Fuchsia (`#FF10F0`), and Electric Volt (`#FFE600`), or automatic contrast matching via `--auto-color`.
+**Album-Cohesive Neon Palette (`--album` & `--album-anchor`)**:
+- When rendering the Phase 4 Album Cover (`--album`), `overlay-title.py` extracts the album's 3-hue cohesive neon family and records `_album_family` in `.cover_palettes.json`.
+- When rendering Phase 5 Track Covers (`--album-anchor /path/to/album_cover_bg.png`), all 5 track titles draw harmonious 2–3 stop gradients strictly from that album's neon family instead of scattering across an unrelated 6-color rainbow.
+- Every gradient stop is verified at `WCAG relative_luminance >= 0.45` (dark ultramarine/indigo `#192DFF` is automatically lifted into luminous electric ice-blue/orchid) so titles never sink into dark asphalt or shadows.
 
 ## Script Usage
 

@@ -352,9 +352,15 @@ def build_album_cost_audit(album_name, state=None, proposal=None, tracklist=None
         all_cover_targets.append((f"Track {idx}", t_title, f"{t_title}_cover", f"{idx:02d}_{clean_t}_waveform.png"))
 
     for label, disp_title, cov_stem, wave_fname in all_cover_targets:
-        bg_p = os.path.join(art_dir, f"{cov_stem}_bg.png")
-        fg_p = os.path.join(art_dir, f"{cov_stem}.png")
-        target_p = bg_p if os.path.exists(bg_p) else fg_p
+        clean_stem = sanitize_filename(disp_title) + "_cover" if label != "Album Cover" else cov_stem
+        bg_cands = [os.path.join(art_dir, f"{clean_stem}_bg.png"), os.path.join(art_dir, f"{cov_stem}_bg.png")]
+        fg_cands = [
+            os.path.join(art_dir, f"{clean_stem}.jpg"),
+            os.path.join(art_dir, f"{clean_stem}.png"),
+            os.path.join(art_dir, f"{cov_stem}.jpg"),
+            os.path.join(art_dir, f"{cov_stem}.png"),
+        ]
+        target_p = next((p for p in bg_cands + fg_cands if os.path.exists(p)), fg_cands[0])
         exists_cov = os.path.exists(target_p)
         dim_str = "1024×1024"
         is_3k = False
@@ -584,6 +590,7 @@ def get_env_var(name, default=None, required=True):
 TELEGRAM_BOT_TOKEN = get_env_var('TELEGRAM_BOT_TOKEN', required=False)
 TELEGRAM_CHAT_ID = get_env_var('TELEGRAM_CHAT_ID', '8293122782', required=False)
 VENICE_API_KEY = get_env_var('VENICE_API_KEY', required=False)
+VENICE_API_BASE = os.environ.get('VENICE_API_BASE', 'https://api.venice.ai/api/v1').rstrip('/')
 
 
 def _send_tg_request(method, data=None):
@@ -667,7 +674,7 @@ def get_venice_balance(api_key=None):
     key = api_key or VENICE_API_KEY or get_env_var("VENICE_API_KEY", required=False)
     if not key:
         return {"ok": False, "usd": 0.0, "diem": 0.0, "bundled": 0.0, "total_usd": 0.0, "access_permitted": False, "error": "Missing VENICE_API_KEY"}
-    url = "https://api.venice.ai/api/v1/api_keys/rate_limits"
+    url = f"{VENICE_API_BASE}/api_keys/rate_limits"
     req = urllib.request.Request(url, headers={"Authorization": f"Bearer {key}", "User-Agent": "Mozilla/5.0"})
     for attempt in range(2):
         try:
@@ -773,13 +780,17 @@ def send_photo(photo_path, caption=None, reply_markup=None):
         return None
     actual_path = photo_path
     jpg_candidate = os.path.splitext(photo_path)[0] + '.jpg'
-    if os.path.exists(jpg_candidate):
+    if os.path.exists(jpg_candidate) and os.path.getsize(jpg_candidate) <= 8_500_000:
         actual_path = jpg_candidate
-    elif os.path.exists(photo_path) and os.path.getsize(photo_path) > 9_000_000:
+    elif os.path.exists(photo_path) and (photo_path.lower().endswith('.png') or os.path.getsize(photo_path) > 8_500_000):
         try:
             from PIL import Image
-            im = Image.open(photo_path)
-            im.convert('RGB').save(jpg_candidate, 'JPEG', quality=94)
+            with Image.open(photo_path) as im:
+                rgb = im.convert('RGB')
+                for q in (94, 88, 80):
+                    rgb.save(jpg_candidate, 'JPEG', quality=q)
+                    if os.path.getsize(jpg_candidate) <= 8_500_000:
+                        break
             actual_path = jpg_candidate
         except Exception:
             pass
@@ -947,10 +958,54 @@ class LiveStatusDashboard:
         return
 
 
+def _is_cover_3k_ready(image_path, min_dim=2800):
+    """Return True iff image_path exists on disk and has pixel dimensions >= min_dim x min_dim."""
+    if not image_path or not os.path.exists(image_path):
+        return False
+    try:
+        from PIL import Image
+        with Image.open(image_path) as im:
+            w, h = im.size
+            return w >= min_dim and h >= min_dim
+    except Exception:
+        return False
+
+
+def get_canonical_track_cover_paths(art_dir, title):
+    """
+    Return canonical `(bg_png, cover_png, cover_jpg)` paths using underscore-normalized
+    `sanitize_filename(title)` so space-vs-underscore splits (`OPTIC NERVE_cover.png` vs
+    `OPTIC_NERVE_cover.png`) never occur. Automatically adopts legacy space-named files
+    if the canonical file does not yet exist.
+    """
+    os.makedirs(art_dir, exist_ok=True)
+    clean_stem = "".join(c if c.isalnum() or c in " -_" else "" for c in str(title)).strip().replace(" ", "_").upper()
+    if not clean_stem:
+        clean_stem = "TRACK"
+    bg_png = os.path.join(art_dir, f"{clean_stem}_cover_bg.png")
+    cov_png = os.path.join(art_dir, f"{clean_stem}_cover.png")
+    cov_jpg = os.path.join(art_dir, f"{clean_stem}_cover.jpg")
+
+    legacy_pairs = [
+        (os.path.join(art_dir, f"{title}_cover_bg.png"), bg_png),
+        (os.path.join(art_dir, f"{title}_cover.png"), cov_png),
+        (os.path.join(art_dir, f"{title}_cover.jpg"), cov_jpg),
+    ]
+    for leg_src, canon_dst in legacy_pairs:
+        if os.path.abspath(leg_src) != os.path.abspath(canon_dst) and os.path.exists(leg_src) and not os.path.exists(canon_dst):
+            try:
+                shutil.copy2(leg_src, canon_dst)
+            except Exception:
+                pass
+    return bg_png, cov_png, cov_jpg
+
+
 # ── Album Asset Discovery ──────────────────────────────────────────────
 def discover_existing_album_production(proposal):
     """
-    Checks disk for existing completed masters and artwork for the given album proposal.
+    Checks disk for existing completed masters and 3000x3000 artwork for the given album proposal.
+    Un-upscaled 1024x1024 draft covers do NOT qualify as Phase-6-ready so the pipeline never
+    skips 4x upscaling on resume.
     Returns:
         (tracklist, current_phase, has_all_artwork)
     """
@@ -963,6 +1018,8 @@ def discover_existing_album_production(proposal):
         "/opt/data/dawagent/exports",
         "/opt/data/music/exports"
     ]
+    if ALBUMS_BASE and ALBUMS_BASE != "/opt/data/music/albums":
+        exports_dirs.insert(0, os.path.join(os.path.dirname(ALBUMS_BASE.rstrip("/\\")), "exports"))
 
     found_sessions = {}
     for base_dir in exports_dirs:
@@ -1023,33 +1080,38 @@ def discover_existing_album_production(proposal):
         s["track"] = idx
         tracklist.append(s)
 
-    # 2. Check artwork
+    # 2. Check artwork — STRICT 3000x3000 (>=2800px) gate!
     art_dir = get_album_artwork_dir(album_name)
     has_album_cover = False
     has_all_track_covers = False
 
     if os.path.isdir(art_dir):
-        for ext in [".png", ".jpg"]:
-            if os.path.exists(os.path.join(art_dir, f"album_cover{ext}")):
+        for ext in [".jpg", ".png"]:
+            alb_cand = os.path.join(art_dir, f"album_cover{ext}")
+            if _is_cover_3k_ready(alb_cand):
                 has_album_cover = True
                 break
 
         if len(tracklist) >= 5:
-            track_covers_found = 0
+            track_covers_3k = 0
             for idx, t in enumerate(tracklist, 1):
                 title = t.get("title", f"Track {idx}")
-                clean_title = title.replace(" ", "_")
-                for ext in [".png", ".jpg"]:
+                clean_title = "".join(c if c.isalnum() or c in " -_" else "" for c in str(title)).strip().replace(" ", "_").upper()
+                matched_3k = False
+                for ext in [".jpg", ".png"]:
                     cands = [
-                        os.path.join(art_dir, f"{title}_cover{ext}"),
                         os.path.join(art_dir, f"{clean_title}_cover{ext}"),
+                        os.path.join(art_dir, f"{title}_cover{ext}"),
                         os.path.join(art_dir, f"Track {idx}_cover{ext}"),
+                        os.path.join(art_dir, f"{clean_title}{ext}"),
                         os.path.join(art_dir, f"{title}{ext}"),
                     ]
-                    if any(os.path.exists(c) for c in cands):
-                        track_covers_found += 1
+                    if any(_is_cover_3k_ready(c) for c in cands):
+                        matched_3k = True
                         break
-            if track_covers_found >= len(tracklist):
+                if matched_3k:
+                    track_covers_3k += 1
+            if track_covers_3k >= len(tracklist):
                 has_all_track_covers = True
 
     # 3. Determine phase
@@ -2324,12 +2386,14 @@ def get_current_moon_phase(dt=None):
 
 def sanitize_prompt_for_venice(prompt, max_len=1450):
     """
-    Ensure prompt satisfies Venice AI validation (max 1500 chars) and enforces NO TEXT.
+    Ensure prompt satisfies Venice AI validation (max 1500 chars) and enforces strict NO TEXT / NO GRAFFITI.
     """
     prompt = prompt.strip()
-    suffix = " NO TEXT, NO LETTERS, NO TYPOGRAPHY, NO WORDS"
-    if "NO TEXT" in prompt.upper():
+    suffix = " NO TEXT, NO LETTERS, NO TYPOGRAPHY, NO WORDS, NO GRAFFITI, NO SIGNAGE"
+    if "NO TEXT" in prompt.upper() and "NO GRAFFITI" in prompt.upper():
         suffix = ""
+    elif "NO TEXT" in prompt.upper():
+        suffix = ", NO GRAFFITI, NO SIGNAGE"
     avail_len = max_len - len(suffix)
     if len(prompt) > avail_len:
         trimmed = prompt[:avail_len]
@@ -2345,14 +2409,460 @@ def sanitize_prompt_for_venice(prompt, max_len=1450):
     return (prompt + suffix).strip()
 
 
-def upsample_image_prompt_k3(title, core_concept, subgenre="", is_album=False, custom_notes="", state=None):
+TRACK_SHOT_SCALES = [
+    ("architectural_wide", "Low-angle 24mm anamorphic architectural wide shot establishing a vast sub-space inside the album's world"),
+    ("interior_pov", "Intimate 35mm interior / cockpit / close tactile console perspective inside the album's world"),
+    ("surreal_artifact_mid", "Hypnotic 50mm medium shot on a singular sculptural, organic, or cybernetic focal phenomenon native to the album's world"),
+    ("oblique_geometric_overhead", "High-angle 30-degree oblique geometric shadow and wet-reflection composition inside the album's world"),
+    ("nocturnal_horizon_silhouette", "Sweeping widescreen nocturnal aftermath and distant horizon silhouette closing the album's world"),
+]
+
+OFF_WORLD_LITERAL_PUN_TERMS = [
+    ("shipping container", "dark monolithic urban architecture"),
+    ("shipping containers", "dark monolithic urban structures"),
+    ("cargo port", "rain-slicked midnight avenue"),
+    ("cargo dock", "wet obsidian causeway"),
+    ("ocean pier", "nocturnal concrete overlook"),
+    ("submarine cable", "glowing neural filament"),
+    ("submarine cables", "glowing neural filaments"),
+    ("nuclear cooling tower", "subterranean monolithic heat-exchange shaft"),
+    ("nuclear cooling towers", "subterranean monolithic heat-exchange shafts"),
+    ("nuclear power plant", "dark cybernetic subterranean facility"),
+    ("sunny beach", "mist-shrouded midnight shoreline"),
+    ("bright daylight", "deep midnight chiaroscuro"),
+    ("clear blue sky", "obsidian smog-veiled night sky"),
+]
+
+
+def _hue_to_palette_name(hue_deg):
+    h = hue_deg % 360.0
+    if h < 18 or h >= 342:
+        return "crimson neon red"
+    elif h < 45:
+        return "molten sodium amber"
+    elif h < 72:
+        return "acid volt yellow"
+    elif h < 150:
+        return "electric bioluminescent green"
+    elif h < 205:
+        return "ice electric cyan"
+    elif h < 255:
+        return "cobalt sapphire glow"
+    elif h < 305:
+        return "deep ultraviolet violet"
+    else:
+        return "hyper neon magenta"
+
+
+def extract_album_cover_palette_summary(image_path, fallback_visual=""):
     """
-    Upsample image prompt into a hyper-detailed cinematic scene using kimi-k3 via Venice API.
-    Derives visuals directly from the musical theme / acoustic DNA.
-    Sometimes includes signature recurring motifs:
-      - Shadowed man with fedora
-      - Dynamic current moon phase
-      - Katana
+    Inspect the approved Phase 4 album_cover_bg.png pixel palette so all 5 track covers
+    inherit the exact same lighting color grade. Falls back cleanly to text cues if offline/missing.
+    """
+    if image_path and os.path.exists(image_path):
+        try:
+            import colorsys
+            from PIL import Image
+            with Image.open(image_path) as im:
+                rgb_im = im.convert("RGB")
+                resample = Image.Resampling.BOX if hasattr(Image, "Resampling") else Image.BOX
+                thumb = rgb_im.resize((96, 96), resample)
+            bins = [0.0] * 36
+            hue_rgb_acc = [[0.0, 0.0, 0.0, 0.0] for _ in range(36)]
+            for y in range(96):
+                for x in range(96):
+                    r, g, b = thumb.getpixel((x, y))
+                    hv, sv, vv = colorsys.rgb_to_hsv(r / 255.0, g / 255.0, b / 255.0)
+                    if vv > 0.12 and sv > 0.16:
+                        wgt = (sv ** 1.3) * (vv ** 1.1)
+                        bi = int((hv * 360.0) // 10.0) % 36
+                        bins[bi] += wgt
+                        hue_rgb_acc[bi][0] += r * wgt
+                        hue_rgb_acc[bi][1] += g * wgt
+                        hue_rgb_acc[bi][2] += b * wgt
+                        hue_rgb_acc[bi][3] += wgt
+            if sum(bins) > 0.5:
+                ranked = sorted(range(36), key=lambda i: bins[i], reverse=True)
+                b1 = ranked[0]
+                h1 = (b1 * 10.0 + 5.0) % 360.0
+                b2 = None
+                for cand in ranked[1:]:
+                    hc = (cand * 10.0 + 5.0) % 360.0
+                    dist = abs(hc - h1) % 360.0
+                    dist = 360.0 - dist if dist > 180.0 else dist
+                    if dist >= 35.0 and bins[cand] >= bins[b1] * 0.15:
+                        b2 = cand
+                        break
+
+                def _bin_hex(b_idx):
+                    acc = hue_rgb_acc[b_idx]
+                    if acc[3] <= 0:
+                        return "#00F0FF"
+                    rr = int(round(acc[0] / acc[3]))
+                    gg = int(round(acc[1] / acc[3]))
+                    bb = int(round(acc[2] / acc[3]))
+                    return f"#{rr:02X}{gg:02X}{bb:02X}"
+
+                desc1 = f"{_hue_to_palette_name(h1)} ({_bin_hex(b1)})"
+                if b2 is not None:
+                    h2 = (b2 * 10.0 + 5.0) % 360.0
+                    desc2 = f"{_hue_to_palette_name(h2)} ({_bin_hex(b2)})"
+                    return f"Pitch-black obsidian shadows lit strictly by {desc1} and {desc2}"
+                return f"Pitch-black obsidian shadows lit strictly by {desc1} with cold specular rim reflections"
+        except Exception as e:
+            logger.warning(f"Album cover palette extraction fallback: {e}")
+
+    vis_clean = (fallback_visual or "").strip()
+    if vis_clean:
+        return f"Pitch-black nocturnal shadows anchored to the album visual palette ({vis_clean[:160]})"
+    return "Pitch-black obsidian shadows with electric cyan and deep ultraviolet neon highlights"
+
+
+def _scrub_off_world_puns_and_cap_motifs(tracks_out, album_visual, locked_world, locked_palette, moon_name, moon_desc):
+    """
+    Deterministic guardrail applied to every Album Visual Showrunner plan:
+      1. Strips off-world literal title puns unless explicitly part of `album_visual`.
+      2. Enforces strict album-wide motif caps across all 5 tracks:
+         - fedora silhouette: <= 1 track total
+         - katana blade: <= 1 track total
+         - moon: <= 2 tracks total
+      3. Ensures every track has a distinct shot scale and explicit palette/world lock.
+    """
+    vis_low = (album_visual or "").lower()
+    fedora_seen = 0
+    katana_seen = 0
+    moon_seen = 0
+    used_scales = set()
+
+    fedora_re = re.compile(r"[^.;,]*\b(fedora|wide-brimmed hat|trench\s*coat figure)\b[^.;,]*[.,;]?", re.IGNORECASE)
+    katana_re = re.compile(r"[^.;,]*\b(katana|tsuka|samurai sword|japanese sword)\b[^.;,]*[.,;]?", re.IGNORECASE)
+    moon_re = re.compile(r"[^.;,]*\b(moon|crescent|gibbous|lunar)\b[^.;,]*[.,;]?", re.IGNORECASE)
+
+    cleaned_tracks = []
+    for idx, item in enumerate(tracks_out):
+        default_scale_id, default_scale_desc = TRACK_SHOT_SCALES[idx % len(TRACK_SHOT_SCALES)]
+        scale_id = str(item.get("shot_scale") or default_scale_id).strip().lower().replace(" ", "_")
+        if scale_id in used_scales:
+            scale_id = default_scale_id
+        used_scales.add(scale_id)
+
+        prompt_txt = str(item.get("image_prompt") or "").strip()
+        # 1. Scrub off-world literal title puns unless native to the album's own visual brief
+        for bad_term, safe_repl in OFF_WORLD_LITERAL_PUN_TERMS:
+            if bad_term not in vis_low and bad_term in prompt_txt.lower():
+                prompt_txt = re.sub(re.escape(bad_term), safe_repl, prompt_txt, flags=re.IGNORECASE)
+
+        # 2. Enforce strict motif caps across the 5-track series
+        if fedora_re.search(prompt_txt):
+            if fedora_seen >= 1:
+                prompt_txt = fedora_re.sub(" ", prompt_txt)
+            else:
+                fedora_seen += 1
+        if katana_re.search(prompt_txt):
+            if katana_seen >= 1:
+                prompt_txt = katana_re.sub(" ", prompt_txt)
+            else:
+                katana_seen += 1
+        if moon_re.search(prompt_txt):
+            if moon_seen >= 2:
+                prompt_txt = moon_re.sub(" ", prompt_txt)
+            else:
+                moon_seen += 1
+
+        prompt_txt = re.sub(r"\s{2,}", " ", prompt_txt).strip(" ,;-")
+        if locked_palette and locked_palette[:28].lower() not in prompt_txt.lower():
+            prompt_txt = f"{prompt_txt}. Color & lighting grade: {locked_palette}."
+        if "35mm" not in prompt_txt.lower() and "anamorphic" not in prompt_txt.lower():
+            prompt_txt = f"Photorealistic 35mm anamorphic cinema frame, shallow depth of field, subtle film grain. {prompt_txt}"
+
+        item_clean = {
+            "track_number": idx + 1,
+            "title": str(item.get("title") or f"TRACK {idx + 1}").strip().upper(),
+            "shot_scale": scale_id,
+            "focal_subject": str(item.get("focal_subject") or default_scale_desc).strip(),
+            "image_prompt": sanitize_prompt_for_venice(prompt_txt),
+        }
+        cleaned_tracks.append(item_clean)
+
+    return cleaned_tracks
+
+
+def _build_deterministic_visual_blueprint(proposal, tracklist, locked_palette):
+    """Offline / fallback cohesive 5-cover visual blueprint strictly anchored to the album's world."""
+    album_name = proposal.get("album", "UNKNOWN ALBUM")
+    album_visual = (proposal.get("visual") or "rain-slicked midnight cyberpunk metropolis shrouded in fog").strip()
+    subgenre = proposal.get("subgenre", "dark nightride trap")
+    moon_name, moon_desc = get_current_moon_phase()
+
+    locked_world = f"Unified nocturnal visual universe of '{album_name}': {album_visual}"
+    camera_treatment = "Photorealistic ARRI Alexa 65 anamorphic 35mm film still, wet specular reflections, volumetric haze, razor-sharp textures, subtle halation"
+
+    raw_tracks = []
+    for idx, t in enumerate(tracklist):
+        t_title = str(t.get("title") or f"TRACK {idx + 1}").strip().upper()
+        scale_id, scale_desc = TRACK_SHOT_SCALES[idx % len(TRACK_SHOT_SCALES)]
+        motif_clause = ""
+        if idx == 0:
+            motif_clause = f"High in the mist, {moon_desc} ({moon_name}) casts cold rim light."
+        elif idx == 1:
+            motif_clause = "A matte-black katana hilt rests subtly in deep shadow along the console edge."
+        elif idx == 4:
+            motif_clause = "In the distant background haze stands the motionless dark silhouette of a figure in a wide-brimmed fedora, face completely obscured."
+
+        img_prompt = (
+            f"{camera_treatment}. {scale_desc} set strictly inside the exact world of {album_visual}. "
+            f"Visual chapter interpreting '{t_title}' ({subgenre}) through environmental light, architecture, and atmosphere within this world — "
+            f"never breaking setting continuity. {motif_clause} "
+            f"Color & lighting grade: {locked_palette}."
+        )
+        raw_tracks.append({
+            "track_number": idx + 1,
+            "title": t_title,
+            "shot_scale": scale_id,
+            "focal_subject": f"{scale_id} chapter for {t_title}",
+            "image_prompt": img_prompt,
+        })
+
+    tracks_checked = _scrub_off_world_puns_and_cap_motifs(
+        raw_tracks, album_visual, locked_world, locked_palette, moon_name, moon_desc
+    )
+    return {
+        "album": album_name,
+        "locked_world": locked_world,
+        "locked_palette": locked_palette,
+        "camera_treatment": camera_treatment,
+        "moon_phase": moon_name,
+        "tracks": tracks_checked,
+    }
+
+
+def plan_album_visual_showrunner(proposal, tracklist, album_cover_bg_path=None, state=None, force=False):
+    """
+    Single-Pass 'Album Visual Showrunner' (Phase 5 Art Direction Blueprint):
+    Plans all 5 track covers TOGETHER in one unified LLM pass anchored to the approved
+    Phase 4 Album Cover's world, lighting palette, and lens treatment so:
+      1. Every track cover clearly belongs to the exact same visual world & color grade.
+      2. Zero off-world literal title puns occur (e.g. no daytime shipping ports on an ocular cyber-noir album).
+      3. All 5 tracks get distinct, non-repeating camera scales/framings (no duplicate car-mirror or duplicate iris shots).
+      4. Signature props (fedora, katana, moon) are budgeted across the whole album (<=1-2 tracks total), never spammed on every cover.
+    """
+    album_name = proposal.get("album", "Unknown Album")
+    art_dir = get_album_artwork_dir(album_name)
+    os.makedirs(art_dir, exist_ok=True)
+    plan_path = os.path.join(art_dir, "visual_showrunner_plan.json")
+
+    expected_titles = [str(t.get("title", f"Track {i+1}")).strip().upper() for i, t in enumerate(tracklist)]
+
+    if not force and os.path.exists(plan_path):
+        try:
+            with open(plan_path, "r", encoding="utf-8") as rf:
+                cached = json.load(rf)
+            cached_titles = [str(x.get("title", "")).strip().upper() for x in cached.get("tracks", [])]
+            if len(cached_titles) == len(expected_titles) and cached_titles == expected_titles:
+                return cached
+        except Exception:
+            pass
+
+    if not album_cover_bg_path:
+        cand_bg = os.path.join(art_dir, "album_cover_bg.png")
+        cand_fg = os.path.join(art_dir, "album_cover.png")
+        album_cover_bg_path = cand_bg if os.path.exists(cand_bg) else (cand_fg if os.path.exists(cand_fg) else None)
+
+    album_visual = proposal.get("visual", "")
+    subgenre = proposal.get("subgenre", "dark nightride trap")
+    brief = proposal.get("brief", "")
+    locked_palette = extract_album_cover_palette_summary(album_cover_bg_path, fallback_visual=album_visual)
+    moon_name, moon_desc = get_current_moon_phase()
+
+    blueprint = None
+    if VENICE_API_KEY and len(tracklist) > 0:
+        track_lines = []
+        for idx, t in enumerate(tracklist):
+            t_title = expected_titles[idx]
+            scale_id, scale_desc = TRACK_SHOT_SCALES[idx % len(TRACK_SHOT_SCALES)]
+            dna_snip = _extract_track_dna(t, proposal)
+            track_lines.append(
+                f"  Track {idx+1}: title='{t_title}' | assigned_shot_scale='{scale_id}' ({scale_desc}) | musical_role={dna_snip[:240]}"
+            )
+
+        sys_prompt = (
+            "You are the Executive Visual Showrunner for VØIDRIDE, designing a cohesive 5-track collector's vinyl/digital "
+            "single-cover series that pairs with an already-approved Main Album Cover.\n\n"
+            "ABSOLUTE COHESION & ANTI-DRIFT RULES:\n"
+            "1. ONE SHARED WORLD & COLOR GRADE: Every single track cover MUST take place inside the EXACT SAME physical universe, "
+            "time of night, atmospheric weather, lens/film stock, and locked 2-color neon lighting palette as the Album Cover.\n"
+            "2. FORBID LITERAL OFF-WORLD TITLE PUNS: Interpret track titles poetically/viscerally INSIDE the album's world. "
+            "NEVER leave the album's world for a literal pun (e.g., if the album is ocular neon-noir, 'OPTIC NERVE' must show "
+            "bioluminescent retinal/neural light conduits in that neon-noir night world — NEVER daytime shipping containers or ocean docks; "
+            "if the album is a server complex, 'COOLING TOWER' stays inside the neon server megastructure — NEVER rural nuclear stacks).\n"
+            "3. FIVE DISTINCT NON-REPEATING COMPOSITIONS: Follow each track's `assigned_shot_scale` so all 5 covers have distinct "
+            "camera distances and focal subjects. NEVER repeat car-mirror reflections twice, NEVER repeat the Album Cover's exact hero shot, "
+            "and NEVER repeat the same central prop.\n"
+            "4. STRICT ALBUM-WIDE MOTIF BUDGET: Across ALL 5 tracks combined:\n"
+            "   - Shadowed man in fedora silhouette: include on AT MOST 1 track (0 if pure macro/abstract world).\n"
+            "   - Matte-black katana: include on AT MOST 1 track.\n"
+            f"   - Astronomical moon ({moon_name}: {moon_desc}): include on AT MOST 1-2 exterior tracks.\n"
+            "5. NO TEXT IN ARTWORK: Every `image_prompt` MUST be 90-145 words (<1150 chars), photorealistic 35mm anamorphic cinema photography, "
+            "and explicitly forbid any text, letters, numbers, signage, or graffiti.\n\n"
+            "Return STRICT JSON ONLY (no markdown fences, no commentary) matching this exact schema:\n"
+            "{\n"
+            '  "locked_world": "1-sentence description of the shared physical environment & atmosphere",\n'
+            '  "locked_palette": "exact shared 2-3 color lighting & shadow palette",\n'
+            '  "camera_treatment": "shared lens, film grain & lighting style",\n'
+            '  "tracks": [\n'
+            '    {"track_number": 1, "title": "...", "shot_scale": "...", "focal_subject": "...", "image_prompt": "..."}\n'
+            "  ]\n"
+            "}"
+        )
+
+        user_prompt = (
+            f"Album Title: {album_name}\n"
+            f"Subgenre: {subgenre}\n"
+            f"Approved Main Album Cover Concept (DO NOT DUPLICATE THIS EXACT HERO FRAMING, BUT STAY IN THIS EXACT WORLD): {album_visual}\n"
+            f"Approved Album Cover Extracted Pixel Palette (LOCK ALL 5 COVERS TO THIS PALETTE): {locked_palette}\n"
+            f"Album Sonic Brief: {brief}\n\n"
+            f"Plan cohesive visual prompts for all {len(tracklist)} tracks:\n" + "\n".join(track_lines)
+        )
+
+        url = f"{VENICE_API_BASE}/chat/completions"
+        headers = {"Authorization": f"Bearer {VENICE_API_KEY}", "Content-Type": "application/json"}
+        models_to_try = (
+            _mr.get_role_chain("llm.showrunner", ["deepseek-v4-flash", "qwen-3-7-plus", "qwen-3-8-flash"])
+            if _mr else ["deepseek-v4-flash", "qwen-3-7-plus", "qwen-3-8-flash"]
+        )
+
+        for model_name in models_to_try:
+            v_params = {"strip_thinking_response": True}
+            if "qwen" in model_name.lower():
+                v_params["disable_thinking"] = True
+            payload = {
+                "model": model_name,
+                "messages": [
+                    {"role": "system", "content": sys_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                "temperature": 0.62,
+                "max_tokens": 2200,
+                "venice_parameters": v_params,
+            }
+            try:
+                req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers)
+                with urllib.request.urlopen(req, timeout=60) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
+                msg = (data.get("choices") or [{}])[0].get("message") or {}
+                raw_txt = (msg.get("content") or msg.get("reasoning_content") or "").strip()
+                raw_txt = re.sub(r"^```(?:json)?\s*", "", raw_txt, flags=re.IGNORECASE)
+                raw_txt = re.sub(r"\s*```$", "", raw_txt).strip()
+                start_b = raw_txt.find("{")
+                end_b = raw_txt.rfind("}")
+                if start_b != -1 and end_b > start_b:
+                    parsed = json.loads(raw_txt[start_b:end_b + 1])
+                    tr_arr = parsed.get("tracks") or []
+                    if isinstance(tr_arr, list) and len(tr_arr) >= len(tracklist):
+                        lw = str(parsed.get("locked_world") or f"Unified nocturnal world of {album_name}: {album_visual}").strip()
+                        lp = str(parsed.get("locked_palette") or locked_palette).strip()
+                        ct = str(parsed.get("camera_treatment") or "Photorealistic 35mm anamorphic cinema frame").strip()
+                        for idx_t in range(len(tracklist)):
+                            tr_arr[idx_t]["title"] = expected_titles[idx_t]
+                        checked = _scrub_off_world_puns_and_cap_motifs(
+                            tr_arr[:len(tracklist)], album_visual, lw, lp, moon_name, moon_desc
+                        )
+                        blueprint = {
+                            "album": album_name,
+                            "locked_world": lw,
+                            "locked_palette": lp,
+                            "camera_treatment": ct,
+                            "moon_phase": moon_name,
+                            "model_used": model_name,
+                            "tracks": checked,
+                        }
+                        if state is not None:
+                            add_cost(state, "prompt_upsampling", VENICE_K3_PROMPT_COST * 2)
+                        logger.info(f"Album Visual Showrunner planned {len(checked)} cohesive track covers via {model_name}")
+                        break
+            except Exception as e:
+                logger.warning(f"Visual Showrunner attempt with {model_name} failed: {e}")
+                time.sleep(1)
+
+    if blueprint is None:
+        blueprint = _build_deterministic_visual_blueprint(proposal, tracklist, locked_palette)
+
+    try:
+        with open(plan_path, "w", encoding="utf-8") as wf:
+            json.dump(blueprint, wf, indent=2)
+    except Exception as e:
+        logger.warning(f"Could not save visual_showrunner_plan.json: {e}")
+
+    return blueprint
+
+
+def build_redo_track_prompt_from_blueprint(proposal, tracklist, track_idx, feedback="", state=None):
+    """
+    Generate a replacement prompt for a single track (`track_idx`, 0-based) that stays 100%
+    locked to the album's Visual Showrunner world & color palette while avoiding sibling subjects.
+    """
+    blueprint = plan_album_visual_showrunner(proposal, tracklist, state=state, force=False)
+    tracks_bp = blueprint.get("tracks", [])
+    target_title = str(tracklist[track_idx].get("title", f"Track {track_idx+1}")).strip().upper()
+    scale_id, scale_desc = TRACK_SHOT_SCALES[track_idx % len(TRACK_SHOT_SCALES)]
+
+    sibling_subjects = [
+        f"Track {t.get('track_number')}: {t.get('focal_subject', '')}"
+        for i, t in enumerate(tracks_bp) if i != track_idx
+    ]
+    locked_world = blueprint.get("locked_world", proposal.get("visual", ""))
+    locked_palette = blueprint.get("locked_palette", "")
+    cam = blueprint.get("camera_treatment", "Photorealistic 35mm anamorphic cinema photography")
+
+    director_notes = (
+        f"LOCKED ALBUM WORLD: {locked_world}\n"
+        f"LOCKED ALBUM PALETTE (MANDATORY): {locked_palette}\n"
+        f"CAMERA & FILM TREATMENT: {cam}\n"
+        f"ASSIGNED SHOT SCALE: {scale_id} ({scale_desc})\n"
+        f"DO NOT REPEAT SIBLING SUBJECTS: {'; '.join(sibling_subjects)}\n"
+        f"FORBID LITERAL OFF-WORLD PUNS: Stay strictly inside the locked album world above."
+    )
+    if feedback:
+        director_notes += f"\nUSER REDO FEEDBACK: {feedback}"
+
+    dna = _extract_track_dna(tracklist[track_idx], proposal)
+    fresh_prompt = upsample_image_prompt_k3(
+        target_title,
+        dna,
+        subgenre=proposal.get("subgenre", ""),
+        is_album=False,
+        custom_notes=director_notes,
+        state=state,
+        allow_random_motifs=False,
+    )
+    moon_name, moon_desc = get_current_moon_phase()
+    scrubbed = _scrub_off_world_puns_and_cap_motifs(
+        [{"title": target_title, "shot_scale": scale_id, "focal_subject": scale_desc, "image_prompt": fresh_prompt}],
+        proposal.get("visual", ""),
+        locked_world,
+        locked_palette,
+        moon_name,
+        moon_desc,
+    )[0]["image_prompt"]
+
+    # Update cached blueprint entry on disk so subsequent audits reflect the redo
+    if track_idx < len(tracks_bp):
+        tracks_bp[track_idx]["image_prompt"] = scrubbed
+        art_dir = get_album_artwork_dir(proposal.get("album", "Unknown Album"))
+        try:
+            with open(os.path.join(art_dir, "visual_showrunner_plan.json"), "w", encoding="utf-8") as wf:
+                json.dump(blueprint, wf, indent=2)
+        except Exception:
+            pass
+    return scrubbed
+
+
+def upsample_image_prompt_k3(title, core_concept, subgenre="", is_album=False, custom_notes="", state=None, allow_random_motifs=None):
+    """
+    Upsample image prompt into a hyper-detailed cinematic scene via Venice LLM.
+    For Album Covers (`is_album=True`), subtly weaves at most 1-2 VØIDRIDE motifs if natural.
+    For Track Covers, random per-track motif spamming is disabled by default so the Album Visual
+    Showrunner enforces strict cross-album cohesion.
     """
     if not VENICE_API_KEY:
         logger.warning("VENICE_API_KEY missing, using fallback prompt.")
@@ -2360,35 +2870,31 @@ def upsample_image_prompt_k3(title, core_concept, subgenre="", is_album=False, c
 
     moon_name, moon_desc = get_current_moon_phase()
 
-    import random
-    include_fedora = random.random() < 0.65
-    include_moon = random.random() < 0.75
-    include_katana = random.random() < 0.60
+    if allow_random_motifs is None:
+        allow_random_motifs = bool(is_album)
 
     motifs = []
-    if include_fedora:
-        motifs.append("A mysterious silhouette of a shadowed man in a wide-brimmed fedora (motionless in background doorway or deep shadow, face completely obscured in darkness, trenchcoat hem dissolving into haze)")
-    if include_moon:
-        motifs.append(f"Current astronomical moon phase: {moon_name} ({moon_desc}) visible through skylight, frosted window, or reflected on wet concrete/water")
-    if include_katana:
-        motifs.append("A matte-black katana with textured black tsuka hilt wrapping, resting naturally in the scene (on a brushed steel table, dashboard, or wet floor), subtle razor edge reflection")
+    if allow_random_motifs:
+        import random
+        if random.random() < 0.45:
+            motifs.append("Optional background detail (only if fitting the setting): distant motionless silhouette in a dark wide-brimmed fedora in deep shadow")
+        if random.random() < 0.55:
+            motifs.append(f"Astronomical moon phase if sky/reflection is visible: {moon_name} ({moon_desc})")
 
-    motifs_instruction = "\n".join(f"- {m}" for m in motifs) if motifs else "- Maintain minimalist neon-noir clinical aesthetic"
+    motifs_instruction = "\n".join(f"- {m}" for m in motifs) if motifs else "- Keep props organic to the locked album world; do NOT force unrelated katanas or hats"
 
     system_instruction = (
         "You are an elite cinematic art director and visual prompt engineer for VØIDRIDE, "
         "a dark neon-noir / witch house trap / heavy West Coast bass electronic artist.\n"
-        "Your task: Convert the given song theme, sonic DNA, and visual concept into an extraordinarily "
+        "Your task: Convert the given visual concept and director notes into an extraordinarily "
         "detailed, photorealistic cinematic scene prompt for an AI image generation model.\n\n"
         "Strict Guidelines:\n"
-        "1. NO TEXT, NO LETTERS, NO TYPOGRAPHY, NO WATERMARKS, NO WORDS in the image.\n"
+        "1. NO TEXT, NO LETTERS, NO TYPOGRAPHY, NO WATERMARKS, NO WORDS, NO GRAFFITI, NO SIGNAGE in the image.\n"
         "2. Style: Photorealistic 35mm / anamorphic cinematic photography, ARRI Alexa 65, shallow depth of field, "
         "volumetric fog, film grain, subtle halation, dramatic chiaroscuro lighting, razor-sharp textures.\n"
-        "3. Derive all visual metaphors directly from the song's musical themes, instruments, and mood.\n"
-        "4. Seamlessly incorporate these signature recurring motifs if listed:\n"
-        f"{motifs_instruction}\n"
-        "5. CRITICAL CONSTRAINT: The generated prompt MUST be under 1200 characters (around 150 words). Be densely atmospheric and concise.\n"
-        "6. MAXIMUM SCENE VARIATION: If Type is 'Single Track Cover', depict a completely unique focal subject, architectural sub-setting, and camera perspective that interprets the track title within the album's world. NEVER repeat the exact same vehicle, room layout, or central object across covers.\n\n"
+        "3. WORLD & PALETTE COHESION: Never break out of the album's physical setting or color palette for literal title puns.\n"
+        f"4. Motif discipline:\n{motifs_instruction}\n"
+        "5. CRITICAL CONSTRAINT: The generated prompt MUST be under 1150 characters (around 140 words). Be densely atmospheric and concise.\n\n"
         "Output ONLY the final generated image prompt paragraph. Do NOT include markdown headers, preambles, or conversational filler."
     )
 
@@ -2399,9 +2905,9 @@ def upsample_image_prompt_k3(title, core_concept, subgenre="", is_album=False, c
         f"Core Concept / Theme: {core_concept}\n"
     )
     if custom_notes:
-        user_input += f"Specific Director Notes: {custom_notes}\n"
+        user_input += f"Specific Director Notes:\n{custom_notes}\n"
 
-    url = "https://api.venice.ai/api/v1/chat/completions"
+    url = f"{VENICE_API_BASE}/chat/completions"
     headers = {
         "Authorization": f"Bearer {VENICE_API_KEY}",
         "Content-Type": "application/json"
@@ -2410,7 +2916,7 @@ def upsample_image_prompt_k3(title, core_concept, subgenre="", is_album=False, c
     models_to_try = _mr.get_role_chain("llm.image_prompt", ["deepseek-v4-flash", "qwen-3-7-plus", "qwen-3-8-flash"]) if _mr else ["deepseek-v4-flash", "qwen-3-7-plus", "qwen-3-8-flash"]
     for model_name in models_to_try:
         v_params = {"strip_thinking_response": True}
-        if "qwen" in model_name:
+        if "qwen" in model_name.lower():
             v_params["disable_thinking"] = True
         payload = {
             "model": model_name,
@@ -2418,7 +2924,7 @@ def upsample_image_prompt_k3(title, core_concept, subgenre="", is_album=False, c
                 {"role": "system", "content": system_instruction},
                 {"role": "user", "content": user_input}
             ],
-            "temperature": 0.7,
+            "temperature": 0.65,
             "max_tokens": 900,
             "venice_parameters": v_params,
         }
@@ -2450,10 +2956,11 @@ def generate_artwork_venice(prompt, album_name, state=None):
     parts = album_name.split('/')
     if len(parts) == 2:
         art_dir = get_album_artwork_dir(parts[0])
-        out_path = os.path.join(art_dir, f"{parts[1].replace(' ', '_')}_cover.png")
+        bg_png, _, _ = get_canonical_track_cover_paths(art_dir, parts[1])
+        out_path = bg_png
     else:
         art_dir = get_album_artwork_dir(album_name)
-        out_path = os.path.join(art_dir, "album_cover.png")
+        out_path = os.path.join(art_dir, "album_cover_bg.png")
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
 
     if not VENICE_API_KEY:
@@ -2462,7 +2969,7 @@ def generate_artwork_venice(prompt, album_name, state=None):
 
     clean_prompt = sanitize_prompt_for_venice(prompt)
 
-    url = "https://api.venice.ai/api/v1/images/generations"
+    url = f"{VENICE_API_BASE}/images/generations"
     headers = {"Authorization": f"Bearer {VENICE_API_KEY}", "Content-Type": "application/json"}
     models = _mr.get_role_chain("image.cover_primary", ["qwen-image-3-pro", "grok-imagine-image-2-0", "grok-imagine-image"]) if _mr else ["qwen-image-3-pro", "grok-imagine-image-2-0", "grok-imagine-image"]
 
@@ -2480,8 +2987,9 @@ def generate_artwork_venice(prompt, album_name, state=None):
                     data = json.loads(resp.read().decode('utf-8'))
                     b64 = data.get('data', [{}])[0].get('b64_json')
                     if b64:
+                        raw_bytes = base64.b64decode(b64)
                         with open(out_path, 'wb') as f:
-                            f.write(base64.b64decode(b64))
+                            f.write(raw_bytes)
                         if state:
                             add_cost(state, "cover_generation", VENICE_IMAGE_GEN_COST)
                         logger.info(f"Artwork saved to {out_path} ({os.path.getsize(out_path)} bytes)")
@@ -2510,7 +3018,7 @@ def edit_artwork_venice(image_path, edit_prompt, out_path=None, state=None):
 
     clean_prompt = sanitize_prompt_for_venice(edit_prompt)
 
-    url = "https://api.venice.ai/api/v1/image/edit"
+    url = f"{VENICE_API_BASE}/image/edit"
     headers = {
         "Authorization": f"Bearer {VENICE_API_KEY}",
         "Content-Type": "application/json"
@@ -2545,53 +3053,133 @@ def edit_artwork_venice(image_path, edit_prompt, out_path=None, state=None):
     return None
 
 
-def upscale_artwork_venice(image_path, target_size=3000):
-    if not VENICE_API_KEY or not os.path.exists(image_path):
+def upscale_artwork_venice(image_path, target_size=3000, allow_local_fallback=False):
+    if not os.path.exists(image_path):
         return image_path
-    from PIL import Image
+    from PIL import Image, ImageFilter
     try:
-        img = Image.open(image_path)
-        if img.size[0] >= target_size and img.size[1] >= target_size:
-            return image_path
+        with Image.open(image_path) as img:
+            if img.size[0] >= target_size and img.size[1] >= target_size:
+                return image_path
 
-        with open(image_path, 'rb') as f:
-            img_data = f.read()
+        if VENICE_API_KEY:
+            with open(image_path, 'rb') as f:
+                img_data = f.read()
 
-        boundary = '----VeniceUpscaleBoundary'
-        body = (
-            f'--{boundary}\r\nContent-Disposition: form-data; name="image"; filename="{os.path.basename(image_path)}"\r\n'
-            f'Content-Type: image/png\r\n\r\n'.encode() + img_data + b'\r\n' +
-            f'--{boundary}\r\nContent-Disposition: form-data; name="scale"\r\n\r\n4\r\n'
-            f'--{boundary}\r\nContent-Disposition: form-data; name="creativity"\r\n\r\n0.01\r\n'
-            f'--{boundary}--\r\n'.encode()
-        )
-        url = "https://api.venice.ai/api/v1/image/upscale"
-        req = urllib.request.Request(url, data=body, method='POST', headers={
-            'Authorization': f'Bearer {VENICE_API_KEY}',
-            'Content-Type': f'multipart/form-data; boundary={boundary}',
-        })
+            boundary = '----VeniceUpscaleBoundary'
+            body = (
+                f'--{boundary}\r\nContent-Disposition: form-data; name="image"; filename="{os.path.basename(image_path)}"\r\n'
+                f'Content-Type: image/png\r\n\r\n'.encode() + img_data + b'\r\n' +
+                f'--{boundary}\r\nContent-Disposition: form-data; name="scale"\r\n\r\n4\r\n'
+                f'--{boundary}\r\nContent-Disposition: form-data; name="creativity"\r\n\r\n0.01\r\n'
+                f'--{boundary}--\r\n'.encode()
+            )
+            url = f"{VENICE_API_BASE}/image/upscale"
+            req = urllib.request.Request(url, data=body, method='POST', headers={
+                'Authorization': f'Bearer {VENICE_API_KEY}',
+                'Content-Type': f'multipart/form-data; boundary={boundary}',
+            })
 
-        with urllib.request.urlopen(req, timeout=150) as response:
-            upscaled_data = response.read()
+            for attempt in range(2):
+                try:
+                    with urllib.request.urlopen(req, timeout=150) as response:
+                        upscaled_data = response.read()
 
-        if len(upscaled_data) > 1000:
-            tmp_path = image_path.replace('.png', '_4k.png')
-            with open(tmp_path, 'wb') as f:
-                f.write(upscaled_data)
-            upscaled_img = Image.open(tmp_path)
-            final = upscaled_img.resize((target_size, target_size), Image.LANCZOS)
-            final.save(image_path, 'PNG')
-            if os.path.getsize(image_path) > 5_000_000:
-                jpg_path = os.path.splitext(image_path)[0] + '.jpg'
-                final.convert('RGB').save(jpg_path, 'JPEG', quality=95)
-            if os.path.exists(tmp_path):
-                os.remove(tmp_path)
+                    if len(upscaled_data) > 1000:
+                        tmp_path = image_path + '.4k_tmp.png'
+                        with open(tmp_path, 'wb') as f:
+                            f.write(upscaled_data)
+                        with Image.open(tmp_path) as upscaled_img:
+                            resample = Image.Resampling.LANCZOS if hasattr(Image, "Resampling") else Image.LANCZOS
+                            final = upscaled_img.resize((target_size, target_size), resample)
+                            final.save(image_path, 'PNG')
+                            jpg_path = os.path.splitext(image_path)[0] + '.jpg'
+                            final.convert('RGB').save(jpg_path, 'JPEG', quality=95)
+                        if os.path.exists(tmp_path):
+                            os.remove(tmp_path)
+                        return image_path
+                except Exception as ue:
+                    logger.warning(f"Venice upscale attempt {attempt+1} failed for {os.path.basename(image_path)}: {ue}")
+                    time.sleep(2)
+
+        if allow_local_fallback:
+            with Image.open(image_path) as src_im:
+                resample = Image.Resampling.LANCZOS if hasattr(Image, "Resampling") else Image.LANCZOS
+                up_im = src_im.convert("RGB").resize((target_size, target_size), resample)
+                up_im = up_im.filter(ImageFilter.UnsharpMask(radius=2.0, percent=130, threshold=3))
+                if image_path.lower().endswith(".png"):
+                    up_im.save(image_path, "PNG")
+                else:
+                    up_im.save(image_path, "JPEG", quality=95)
+            logger.info(f"Applied crisp {target_size}x{target_size} Lanczos+Unsharp fallback upscale to {image_path}")
             return image_path
     except Exception as e:
-        logger.error(f"Venice upscale failed: {e}")
+        logger.error(f"Upscale failed for {image_path}: {e}")
         if logger_hub:
             logger_hub.log_failure("UPSCALE_FAIL", str(e), album=os.path.basename(image_path), phase=4)
     return image_path
+
+
+def _resolve_overlay_script_and_python():
+    python_bin = "/opt/hermes/.venv/bin/python3" if os.path.exists("/opt/hermes/.venv/bin/python3") else sys.executable
+    repo_overlay = os.path.normpath(
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "skills", "creative", "cover-title-overlay", "scripts", "overlay-title.py")
+    )
+    for cand in (OVERLAY_TITLE_SCRIPT, repo_overlay):
+        if cand and os.path.exists(cand):
+            return python_bin, cand
+    return python_bin, None
+
+
+def _save_bounded_cover_jpg(src_img_path, jpg_path, max_bytes=8_000_000):
+    """Save an RGB JPEG guaranteed <= max_bytes (well under Telegram's 10MB sendPhoto cap)."""
+    from PIL import Image
+    with Image.open(src_img_path) as im:
+        rgb = im.convert("RGB")
+        for q in (95, 91, 86, 80):
+            rgb.save(jpg_path, "JPEG", quality=q)
+            if os.path.getsize(jpg_path) <= max_bytes:
+                break
+    return jpg_path
+
+
+def _run_overlay_title(bg_path, title, out_path, is_album=False, album_anchor=None, opacity=None):
+    """
+    Run `overlay-title.py` with album-cohesive neon palette anchoring (`--album` or `--album-anchor`),
+    producing both `out_path` and a `< 8 MB` companion `.jpg`.
+    """
+    if not os.path.exists(bg_path):
+        return False
+    python_bin, overlay_script = _resolve_overlay_script_and_python()
+    eff_opacity = opacity if opacity is not None else (0.62 if is_album else 0.68)
+    if overlay_script:
+        styled = stylize_title(title)
+        cmd = [
+            python_bin,
+            overlay_script,
+            "--image", bg_path,
+            "--title", styled,
+            "--stacked",
+            "--bottom",
+            "--auto-color",
+            "--opacity", f"{eff_opacity:.2f}",
+            "--output", out_path,
+        ]
+        if is_album:
+            cmd.append("--album")
+        elif album_anchor and os.path.exists(album_anchor):
+            cmd.extend(["--album-anchor", album_anchor])
+        res = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+        if res.returncode != 0:
+            logger.warning(f"overlay-title warning on {out_path}: {res.stderr[:240]}")
+    if not os.path.exists(out_path):
+        shutil.copy2(bg_path, out_path)
+    jpg_out = os.path.splitext(out_path)[0] + ".jpg"
+    try:
+        _save_bounded_cover_jpg(out_path, jpg_out)
+    except Exception as e:
+        logger.warning(f"Could not write JPEG companion for {out_path}: {e}")
+    return True
 
 
 def sanitize_filename(title):
@@ -2611,7 +3199,10 @@ def generate_waveform_banner(bg_image_path, title_clean, out_dirs=None, track_nu
         from PIL import Image
         import io
         clean_name = sanitize_filename(title_clean)
-        music_root = "/opt/data/music" if os.path.exists("/opt/data/music") else "D:/music"
+        if ALBUMS_BASE and ALBUMS_BASE != "/opt/data/music/albums":
+            music_root = os.path.dirname(ALBUMS_BASE.rstrip("/\\"))
+        else:
+            music_root = "/opt/data/music" if os.path.exists("/opt/data/music") else "D:/music"
         master_dir = os.path.join(music_root, "artwork", "waveforms")
         os.makedirs(master_dir, exist_ok=True)
         master_file = os.path.join(master_dir, f"{clean_name}_waveform.png")
@@ -2748,6 +3339,7 @@ def phase_4_album_cover(proposal, tracklist, state=None, dashboard=None):
     os.makedirs(art_dir, exist_ok=True)
     cover_path = os.path.join(art_dir, "album_cover.png")
     cover_bg = os.path.join(art_dir, "album_cover_bg.png")
+    jpg_path = os.path.join(art_dir, "album_cover.jpg")
 
     force_regen = getattr(phase_4_album_cover, '_force_regen', False)
     phase_4_album_cover._force_regen = False
@@ -2756,7 +3348,7 @@ def phase_4_album_cover(proposal, tracklist, state=None, dashboard=None):
         send_message(f"🎨 <b>Designing album cover for {html.escape(album_name)}...</b>\nUpsampling visual prompt with K3 AI...")
 
         core_concept = f"Album visual: {visual}. Musical brief: {brief}"
-        upsampled_prompt = upsample_image_prompt_k3(album_name, core_concept, subgenre=subgenre, is_album=True)
+        upsampled_prompt = upsample_image_prompt_k3(album_name, core_concept, subgenre=subgenre, is_album=True, state=state)
 
         send_message("🖼️ <b>Synthesizing visual with Venice SOTA image engine (qwen-image-3-pro)...</b>")
         raw_path = generate_artwork_venice(upsampled_prompt, album_name, state=state)
@@ -2764,23 +3356,17 @@ def phase_4_album_cover(proposal, tracklist, state=None, dashboard=None):
             send_message("❌ Failed to generate album cover.")
             return "regen"
 
-        shutil.copy2(raw_path, cover_bg)
+        if os.path.abspath(raw_path) != os.path.abspath(cover_bg):
+            shutil.copy2(raw_path, cover_bg)
+        # Invalidate cached Phase 5 visual blueprint whenever the Album Cover changes so Track Covers re-lock to it
+        bp_cache = os.path.join(art_dir, "visual_showrunner_plan.json")
+        if os.path.exists(bp_cache):
+            try:
+                os.remove(bp_cache)
+            except Exception:
+                pass
 
-    if os.path.exists(OVERLAY_TITLE_SCRIPT) and os.path.exists(cover_bg):
-        styled_album = stylize_title(album_name)
-        logger.info(f"Overlaying title '{styled_album}' stacked & justified onto bottom of cover preview...")
-        subprocess.run(["/opt/hermes/.venv/bin/python3", OVERLAY_TITLE_SCRIPT,
-                        "--image", cover_bg, "--title", styled_album, "--stacked", "--bottom", "--auto-color", "--opacity", "0.60", "--output", cover_path], capture_output=True)
-    elif os.path.exists(cover_bg) and not os.path.exists(cover_path):
-        shutil.copy2(cover_bg, cover_path)
-
-    jpg_path = os.path.splitext(cover_path)[0] + '.jpg'
-    try:
-        from PIL import Image
-        with Image.open(cover_path) as im:
-            im.convert('RGB').save(jpg_path, 'JPEG', quality=95)
-    except Exception as e:
-        logger.warning(f"Could not convert cover to jpg: {e}")
+    _run_overlay_title(cover_bg, album_name, cover_path, is_album=True, opacity=0.62)
 
     def _send_album_review_card():
         buttons = [
@@ -2815,21 +3401,10 @@ def phase_4_album_cover(proposal, tracklist, state=None, dashboard=None):
         if flag == "albumcover_approved":
             send_message("✅ Album cover approved! Upscaling clean master to 3000×3000 & generating panoramic waveform banner...")
             if os.path.exists(cover_bg):
-                upscale_artwork_venice(cover_bg)
+                upscale_artwork_venice(cover_bg, target_size=3000, allow_local_fallback=True)
                 if state:
                     add_cost(state, "cover_upscale", VENICE_UPSCALE_COST)
-                if os.path.exists(OVERLAY_TITLE_SCRIPT):
-                    styled_album = stylize_title(album_name)
-                    subprocess.run(["/opt/hermes/.venv/bin/python3", OVERLAY_TITLE_SCRIPT,
-                                    "--image", cover_bg, "--title", styled_album, "--stacked", "--bottom", "--auto-color", "--opacity", "0.60", "--output", cover_path], capture_output=True)
-                else:
-                    shutil.copy2(cover_bg, cover_path)
-                try:
-                    from PIL import Image
-                    with Image.open(cover_path) as im:
-                        im.convert('RGB').save(jpg_path, 'JPEG', quality=95)
-                except Exception:
-                    pass
+                _run_overlay_title(cover_bg, album_name, cover_path, is_album=True, opacity=0.62)
             alb_bg = cover_bg if os.path.exists(cover_bg) else cover_path
             album_slug = album_name.lower().replace(' ', '-').replace('_', '-')
             wave_res = generate_waveform_banner(alb_bg, album_name, [art_dir, "/opt/data/music/artwork/waveforms"], track_num=None, album_slug=album_slug, force=True)
@@ -2853,27 +3428,17 @@ def phase_4_album_cover(proposal, tracklist, state=None, dashboard=None):
                 shutil.copy2(cover_path, cover_bg)
 
             edit_artwork_venice(cover_bg, edit_directive, cover_bg, state=state)
-
-            if os.path.exists(OVERLAY_TITLE_SCRIPT):
-                styled_album = stylize_title(album_name)
-                logger.info(f"Overlaying title '{styled_album}' stacked & justified onto bottom of 3000x3000 canvas...")
-                subprocess.run(["/opt/hermes/.venv/bin/python3", OVERLAY_TITLE_SCRIPT,
-                                "--image", cover_bg, "--title", styled_album, "--stacked", "--bottom", "--auto-color", "--opacity", "0.60", "--output", cover_path], capture_output=True)
-            else:
-                shutil.copy2(cover_bg, cover_path)
-
-            jpg_path = os.path.splitext(cover_path)[0] + '.jpg'
-            try:
-                from PIL import Image
-                with Image.open(cover_path) as im:
-                    im.convert('RGB').save(jpg_path, 'JPEG', quality=95)
-            except Exception as e:
-                logger.warning(f"Could not convert cover to jpg: {e}")
-
+            bp_cache = os.path.join(art_dir, "visual_showrunner_plan.json")
+            if os.path.exists(bp_cache):
+                try:
+                    os.remove(bp_cache)
+                except Exception:
+                    pass
+            _run_overlay_title(cover_bg, album_name, cover_path, is_album=True, opacity=0.62)
             _send_album_review_card()
 
 
-# ── Phase 5: Track Cover Art ───────────────────────────────────────────
+# ── Phase 5: Track Cover Art (Cohesive Album Visual Showrunner) ────────
 def _extract_track_dna(track_item, proposal):
     title = track_item.get('title', 'Unknown Track')
     visual = proposal.get('visual', '')
@@ -2887,19 +3452,18 @@ def _extract_track_dna(track_item, proposal):
             with open(os.path.join(prod_dir, 'production_plan.json')) as f:
                 plan = json.load(f)
             stems = plan.get('stems', {})
-            main_p = stems.get('main', {}).get('prompt', '')
-            tex_p = stems.get('texture', {}).get('prompt', '')
+            main_p = stems.get('main', {}).get('prompt', '')[:160]
+            tex_p = stems.get('texture', {}).get('prompt', '')[:120]
             energy = plan.get('energy', '')
-            genre = plan.get('genre', subgenre)
             extra_stems = f"Sonic DNA: {main_p}. Texture: {tex_p}. Mood: {energy}."
         except Exception as e:
             logger.warning(f"Failed to read production_plan.json for {title}: {e}")
 
     direction = track_item.get('direction', track_item.get('genre', subgenre))
     return (
-        f"Track Title: '{title}'. Album Universe: '{album}' ({visual}). Musical Style: {direction}. {extra_stems} "
-        f"CRITICAL VISUAL DIRECTIVE: This track cover MUST depict a completely original, distinct sub-environment or focal subject within the '{album}' universe that directly interprets the title '{title}'. "
-        f"Dramatically vary the focal point, camera distance, and composition so it does NOT look like the main album cover or other tracks."
+        f"Track Title: '{title}'. Shared Album World: '{album}' ({visual}). Musical Style: {direction}. {extra_stems} "
+        f"COHESION RULE: Keep this scene strictly inside the physical setting, atmosphere, and color palette of '{album}' — "
+        f"never drift into literal off-world puns."
     )
 
 
@@ -2907,59 +3471,65 @@ def phase_5_track_covers(proposal, tracklist, state=None, dashboard=None):
     if dashboard:
         dashboard.set_phase(5)
     album_name = proposal.get('album', 'Unknown Album')
-    subgenre = proposal.get('subgenre', '')
     track_art_dir = get_album_artwork_dir(album_name)
     os.makedirs(track_art_dir, exist_ok=True)
 
     force_regen_all = getattr(phase_5_track_covers, '_force_regen', False)
     phase_5_track_covers._force_regen = False
 
-    track_cover_paths = []
+    album_anchor = os.path.join(track_art_dir, "album_cover_bg.png")
+    if not os.path.exists(album_anchor):
+        cand_alb = os.path.join(track_art_dir, "album_cover.png")
+        album_anchor = cand_alb if os.path.exists(cand_alb) else None
+
+    # Single-pass Album Visual Showrunner locks world, palette, shot scales, and motif budget across all 5 tracks!
+    send_message(f"🎬 <b>Album Visual Showrunner planning cohesive {len(tracklist)}-cover visual world for {html.escape(album_name)}...</b>")
+    blueprint = plan_album_visual_showrunner(
+        proposal,
+        tracklist,
+        album_cover_bg_path=album_anchor,
+        state=state,
+        force=force_regen_all,
+    )
+    bp_tracks = blueprint.get("tracks", [])
+
+    track_entries = []
 
     for i, t in enumerate(tracklist):
         title = t.get('title', f'Track {i+1}')
-        dna = _extract_track_dna(t, proposal)
-
-        cover_path = os.path.join(track_art_dir, f"{title}_cover.png")
-        bg_backup = os.path.join(track_art_dir, f"{title}_cover_bg.png")
+        bg_backup, cover_path, jpg_cov = get_canonical_track_cover_paths(track_art_dir, title)
+        bp_prompt = bp_tracks[i]["image_prompt"] if i < len(bp_tracks) else sanitize_prompt_for_venice(_extract_track_dna(t, proposal))
 
         if not os.path.exists(bg_backup) or force_regen_all:
-            send_message(f"🖌️ [{(i+1)}/{len(tracklist)}] Upsampling visual for <b>{html.escape(title)}</b> with K3...")
-            upsampled = upsample_image_prompt_k3(title, dna, subgenre=subgenre, is_album=False)
-            raw_path = generate_artwork_venice(upsampled, f"{album_name}/{title}", state=state)
-            if raw_path and os.path.exists(raw_path):
+            send_message(f"🖌️ [{(i+1)}/{len(tracklist)}] Synthesizing cohesive track cover for <b>{html.escape(title)}</b>...")
+            raw_path = generate_artwork_venice(bp_prompt, f"{album_name}/{title}", state=state)
+            if not raw_path or not os.path.exists(raw_path):
+                logger.warning(f"Retrying Track {i+1} ({title}) cover generation with blueprint fallback prompt...")
+                fallback_bp = _build_deterministic_visual_blueprint(
+                    proposal, tracklist, blueprint.get("locked_palette", "")
+                )["tracks"][i]["image_prompt"]
+                raw_path = generate_artwork_venice(fallback_bp, f"{album_name}/{title}", state=state)
+            if not raw_path or not os.path.exists(raw_path):
+                raise RuntimeError(f"Track {i+1} ({title}) cover generation failed after retries — refusing incomplete cover set.")
+            if os.path.abspath(raw_path) != os.path.abspath(bg_backup):
                 shutil.copy2(raw_path, bg_backup)
 
-        if os.path.exists(bg_backup):
-            if os.path.exists(OVERLAY_TITLE_SCRIPT):
-                styled_title = stylize_title(title)
-                subprocess.run(["/opt/hermes/.venv/bin/python3", OVERLAY_TITLE_SCRIPT,
-                                "--image", bg_backup, "--title", styled_title, "--stacked", "--bottom", "--auto-color", "--opacity", "0.68", "--output", cover_path], capture_output=True)
-            else:
-                shutil.copy2(bg_backup, cover_path)
+        _run_overlay_title(bg_backup, title, cover_path, is_album=False, album_anchor=album_anchor, opacity=0.68)
 
-            jpg_cov = os.path.splitext(cover_path)[0] + '.jpg'
-            try:
-                from PIL import Image
-                with Image.open(cover_path) as im:
-                    im.convert('RGB').save(jpg_cov, 'JPEG', quality=95)
-            except Exception:
-                pass
-
-            track_btn = [
-                [
-                    {"text": f"🔄 Regen {title}", "callback_data": f"ap:art:redo:{i+1}"},
-                    {"text": f"✏️ Edit {title}", "callback_data": f"ap:art:edit:{i+1}"}
-                ],
-                [
-                    {"text": "🌑 Darker", "callback_data": f"ap:art:quickedit:{i+1}:darker"},
-                    {"text": "🌫️ Mist", "callback_data": f"ap:art:quickedit:{i+1}:mist"},
-                    {"text": "🗡️ Katana", "callback_data": f"ap:art:quickedit:{i+1}:katana"}
-                ]
+        track_btn = [
+            [
+                {"text": f"🔄 Regen {title}", "callback_data": f"ap:art:redo:{i+1}"},
+                {"text": f"✏️ Edit {title}", "callback_data": f"ap:art:edit:{i+1}"}
+            ],
+            [
+                {"text": "🌑 Darker", "callback_data": f"ap:art:quickedit:{i+1}:darker"},
+                {"text": "🌫️ Mist", "callback_data": f"ap:art:quickedit:{i+1}:mist"},
+                {"text": "🗡️ Katana", "callback_data": f"ap:art:quickedit:{i+1}:katana"}
             ]
-            send_file = jpg_cov if os.path.exists(jpg_cov) else cover_path
-            send_photo(send_file, caption=f"🎨 Track {i+1}: <b>{html.escape(title)}</b>", reply_markup={"inline_keyboard": track_btn})
-            track_cover_paths.append(cover_path)
+        ]
+        send_file = jpg_cov if os.path.exists(jpg_cov) else cover_path
+        send_photo(send_file, caption=f"🎨 Track {i+1}: <b>{html.escape(title)}</b>", reply_markup={"inline_keyboard": track_btn})
+        track_entries.append((i + 1, title, bg_backup, cover_path, jpg_cov))
 
     buttons = [
         [{"text": "✅ Approve All Covers", "callback_data": "ap:trackcovers:approve"}],
@@ -2971,37 +3541,29 @@ def phase_5_track_covers(proposal, tracklist, state=None, dashboard=None):
         flag, content = poll_flags()
         if flag == "trackcovers_approved":
             album_slug = album_name.lower().replace(' ', '-').replace('_', '-')
-            send_message(f"⬆️ <b>Upscaling all {len(track_cover_paths)} track covers to 3000×3000 & generating per-song waveform banners...</b>")
-            for i, cp in enumerate(track_cover_paths):
-                track_title = os.path.basename(cp).replace('_cover.png', '').replace('_cover.jpg', '')
-                bg_path = os.path.join(track_art_dir, f"{track_title}_cover_bg.png")
-                send_message(f"⚙️ [{(i+1)}/{len(track_cover_paths)}] Upscaling & generating waveform for <b>{html.escape(track_title)}</b>...")
+            send_message(f"⬆️ <b>Upscaling all {len(track_entries)} track covers to 3000×3000 & generating per-song waveform banners...</b>")
+            for idx_num, track_title, bg_path, cp, jpg_cp in track_entries:
+                send_message(f"⚙️ [{idx_num}/{len(track_entries)}] Upscaling & generating waveform for <b>{html.escape(track_title)}</b>...")
                 if os.path.exists(bg_path):
-                    upscale_artwork_venice(bg_path)
-                    # Generate clean panoramic waveform banner from un-captioned background
-                    wave_res = generate_waveform_banner(bg_path, track_title, [track_art_dir, "/opt/data/music/artwork/waveforms"], track_num=i+1, album_slug=album_slug, force=True)
-                    if os.path.exists(OVERLAY_TITLE_SCRIPT):
-                        styled_title = stylize_title(track_title)
-                        subprocess.run(["/opt/hermes/.venv/bin/python3", OVERLAY_TITLE_SCRIPT,
-                                        "--image", bg_path, "--title", styled_title, "--stacked", "--bottom", "--auto-color", "--opacity", "0.68", "--output", cp], capture_output=True)
+                    was_already_3k = _is_cover_3k_ready(bg_path)
+                    upscale_artwork_venice(bg_path, target_size=3000, allow_local_fallback=True)
+                    wave_res = generate_waveform_banner(bg_path, track_title, [track_art_dir, "/opt/data/music/artwork/waveforms"], track_num=idx_num, album_slug=album_slug, force=True)
+                    _run_overlay_title(bg_path, track_title, cp, is_album=False, album_anchor=album_anchor, opacity=0.68)
+                    if state and not was_already_3k:
+                        add_cost(state, "cover_upscale", VENICE_UPSCALE_COST)
                 else:
-                    upscale_artwork_venice(cp)
-                    wave_res = generate_waveform_banner(cp, track_title, [track_art_dir, "/opt/data/music/artwork/waveforms"], track_num=i+1, album_slug=album_slug, force=True)
+                    was_already_3k = _is_cover_3k_ready(cp)
+                    upscale_artwork_venice(cp, target_size=3000, allow_local_fallback=True)
+                    _save_bounded_cover_jpg(cp, jpg_cp)
+                    wave_res = generate_waveform_banner(cp, track_title, [track_art_dir, "/opt/data/music/artwork/waveforms"], track_num=idx_num, album_slug=album_slug, force=True)
+                    if state and not was_already_3k:
+                        add_cost(state, "cover_upscale", VENICE_UPSCALE_COST)
                 if isinstance(wave_res, str) and os.path.exists(wave_res):
-                    send_photo(wave_res, caption=f"🌊 Track {i+1} Waveform: <b>{html.escape(track_title)}</b> (1240×400)")
-                if state:
-                    add_cost(state, "cover_upscale", VENICE_UPSCALE_COST)
-                jpg_cp = os.path.splitext(cp)[0] + '.jpg'
-                try:
-                    from PIL import Image
-                    with Image.open(cp) as im:
-                        im.convert('RGB').save(jpg_cp, 'JPEG', quality=95)
-                except Exception:
-                    pass
-            send_message("✅ <b>All track covers upscaled & per-song waveform banners generated!</b> Assembling final release package for your review & confirmation...")
+                    send_photo(wave_res, caption=f"🌊 Track {idx_num} Waveform: <b>{html.escape(track_title)}</b> (1240×400)")
+            send_message("✅ <b>All track covers upscaled to 3000×3000 & per-song waveform banners generated!</b> Assembling final release package for your review & confirmation...")
             return "approved"
         elif flag == "trackcovers_regenall":
-            send_message("🔄 <b>Regenerating all track covers...</b>")
+            send_message("🔄 <b>Regenerating all track covers with fresh Album Visual Showrunner blueprint...</b>")
             phase_5_track_covers._force_regen = True
             if state:
                 add_cost(state, "cover_regeneration", VENICE_IMAGE_GEN_COST * len(tracklist))
@@ -3011,25 +3573,24 @@ def phase_5_track_covers(proposal, tracklist, state=None, dashboard=None):
             return phase_5_track_covers(proposal, tracklist, state=state, dashboard=dashboard)
         elif flag and flag.startswith("art_redo_"):
             try:
-                track_num = int(flag.split("_")[-1])
+                raw_tail = flag.split("_")[-1]
+                if not raw_tail.isdigit():
+                    logger.warning(f"Ignoring malformed art_redo flag '{flag}'")
+                    continue
+                track_num = int(raw_tail)
                 idx = track_num - 1
                 if 0 <= idx < len(tracklist):
                     t = tracklist[idx]
                     title = t.get('title', f'Track {track_num}')
-                    send_message(f"🔄 <b>Regenerating cover for Track {track_num}: {html.escape(title)}...</b>")
-                    dna = _extract_track_dna(t, proposal)
-                    upsampled = upsample_image_prompt_k3(title, dna, subgenre=subgenre, is_album=False)
-                    cover_path = os.path.join(track_art_dir, f"{title}_cover.png")
-                    bg_path = os.path.join(track_art_dir, f"{title}_cover_bg.png")
-                    raw = generate_artwork_venice(upsampled, f"{album_name}/{title}", state=state)
+                    fb_notes = content if content and content.strip().lower() != "redo" else ""
+                    send_message(f"🔄 <b>Regenerating cover for Track {track_num}: {html.escape(title)} (locked to {html.escape(album_name)} visual world)...</b>")
+                    redo_prompt = build_redo_track_prompt_from_blueprint(proposal, tracklist, idx, feedback=fb_notes, state=state)
+                    bg_path, cover_path, jpg_cov = get_canonical_track_cover_paths(track_art_dir, title)
+                    raw = generate_artwork_venice(redo_prompt, f"{album_name}/{title}", state=state)
                     if raw and os.path.exists(raw):
-                        shutil.copy2(raw, bg_path)
-                        if os.path.exists(OVERLAY_TITLE_SCRIPT):
-                            styled_title = stylize_title(title)
-                            subprocess.run(["/opt/hermes/.venv/bin/python3", OVERLAY_TITLE_SCRIPT,
-                                            "--image", bg_path, "--title", styled_title, "--stacked", "--bottom", "--auto-color", "--opacity", "0.68", "--output", cover_path], capture_output=True)
-                        else:
-                            shutil.copy2(bg_path, cover_path)
+                        if os.path.abspath(raw) != os.path.abspath(bg_path):
+                            shutil.copy2(raw, bg_path)
+                        _run_overlay_title(bg_path, title, cover_path, is_album=False, album_anchor=album_anchor, opacity=0.68)
                         track_btn = [
                             [
                                 {"text": f"🔄 Regen {title}", "callback_data": f"ap:art:redo:{track_num}"},
@@ -3041,31 +3602,29 @@ def phase_5_track_covers(proposal, tracklist, state=None, dashboard=None):
                                 {"text": "🗡️ Katana", "callback_data": f"ap:art:quickedit:{track_num}:katana"}
                             ]
                         ]
-                        send_photo(cover_path, caption=f"🎨 Track {track_num}: <b>{html.escape(title)}</b> (Regenerated)", reply_markup={"inline_keyboard": track_btn})
+                        send_photo(jpg_cov if os.path.exists(jpg_cov) else cover_path, caption=f"🎨 Track {track_num}: <b>{html.escape(title)}</b> (Regenerated)", reply_markup={"inline_keyboard": track_btn})
             except Exception as e:
                 logger.error(f"Error redoing track cover: {e}")
         elif flag and flag.startswith("art_edit_"):
             try:
-                track_num = int(flag.split("_")[-1])
+                raw_tail = flag.split("_")[-1]
+                if not raw_tail.isdigit():
+                    logger.warning(f"Ignoring malformed art_edit flag '{flag}'")
+                    continue
+                track_num = int(raw_tail)
                 idx = track_num - 1
                 if 0 <= idx < len(tracklist):
                     t = tracklist[idx]
                     title = t.get('title', f'Track {track_num}')
                     edit_directive = content if content else "deepen shadows, cinematic chiaroscuro, moody atmosphere"
                     send_message(f"✏️ <b>Modifying Track {track_num} ({html.escape(title)}):</b> <i>{html.escape(edit_directive)}</i>\nRunning Venice AI vision edit inference...")
-                    cover_path = os.path.join(track_art_dir, f"{title}_cover.png")
-                    bg_path = os.path.join(track_art_dir, f"{title}_cover_bg.png")
+                    bg_path, cover_path, jpg_cov = get_canonical_track_cover_paths(track_art_dir, title)
                     if not os.path.exists(bg_path) and os.path.exists(cover_path):
                         shutil.copy2(cover_path, bg_path)
 
                     if os.path.exists(bg_path):
                         edit_artwork_venice(bg_path, edit_directive, bg_path, state=state)
-                        if os.path.exists(OVERLAY_TITLE_SCRIPT):
-                            styled_title = stylize_title(title)
-                            subprocess.run(["/opt/hermes/.venv/bin/python3", OVERLAY_TITLE_SCRIPT,
-                                            "--image", bg_path, "--title", styled_title, "--stacked", "--bottom", "--auto-color", "--opacity", "0.68", "--output", cover_path], capture_output=True)
-                        else:
-                            shutil.copy2(bg_path, cover_path)
+                        _run_overlay_title(bg_path, title, cover_path, is_album=False, album_anchor=album_anchor, opacity=0.68)
                         track_btn = [
                             [
                                 {"text": f"🔄 Regen {title}", "callback_data": f"ap:art:redo:{track_num}"},
@@ -3077,16 +3636,50 @@ def phase_5_track_covers(proposal, tracklist, state=None, dashboard=None):
                                 {"text": "🗡️ Katana", "callback_data": f"ap:art:quickedit:{track_num}:katana"}
                             ]
                         ]
-                        send_photo(cover_path, caption=f"🎨 Track {track_num}: <b>{html.escape(title)}</b> (Edited: <i>{html.escape(edit_directive)}</i>)", reply_markup={"inline_keyboard": track_btn})
+                        send_photo(jpg_cov if os.path.exists(jpg_cov) else cover_path, caption=f"🎨 Track {track_num}: <b>{html.escape(title)}</b> (Edited: <i>{html.escape(edit_directive)}</i>)", reply_markup={"inline_keyboard": track_btn})
             except Exception as e:
                 logger.error(f"Error editing track cover: {e}")
+
+
+def _export_3000_release_jpg(src_cover, src_bg, title, dest_jpg, is_album=False, album_anchor=None):
+    """
+    Guarantee every packaged release cover is strictly 3000x3000 RGB JPEG (<= 8 MB).
+    If an un-upscaled (<2800px) cover ever reaches Phase 6, automatically upscales the clean
+    background to 3000x3000 and re-overlays crisp 3000px typography before exporting.
+    """
+    from PIL import Image, ImageFilter
+    chosen = src_cover if (src_cover and os.path.exists(src_cover)) else src_bg
+    if not chosen or not os.path.exists(chosen):
+        return False
+
+    if not _is_cover_3k_ready(chosen, min_dim=2800):
+        logger.info(f"Auto-healing sub-3K cover for '{title}' -> 3000x3000 before release packaging...")
+        if src_bg and os.path.exists(src_bg):
+            upscale_artwork_venice(src_bg, target_size=3000, allow_local_fallback=True)
+            titled_target = src_cover or (os.path.splitext(src_bg)[0].replace("_bg", "") + ".png")
+            _run_overlay_title(src_bg, title, titled_target, is_album=is_album, album_anchor=album_anchor)
+            chosen = titled_target
+        else:
+            upscale_artwork_venice(chosen, target_size=3000, allow_local_fallback=True)
+
+    with Image.open(chosen) as im:
+        rgb = im.convert("RGB")
+        if rgb.size != (3000, 3000):
+            resample = Image.Resampling.LANCZOS if hasattr(Image, "Resampling") else Image.LANCZOS
+            rgb = rgb.resize((3000, 3000), resample)
+            rgb = rgb.filter(ImageFilter.UnsharpMask(radius=1.6, percent=115, threshold=3))
+        for q in (95, 91, 86, 80):
+            rgb.save(dest_jpg, "JPEG", quality=q)
+            if os.path.getsize(dest_jpg) <= 8_000_000:
+                break
+    return True
 
 
 def assemble_release(proposal, tracklist, album_slug):
     """
     Assemble canonical release directory at /opt/data/music/releases/{album_slug}
     - Copies master FLAC files (no MP3 duplicates)
-    - Exactly ONE cover per track + ONE album cover in covers/
+    - Strictly 3000x3000 RGB .jpg covers (<= 8 MB): 1 per song + 1 album_cover.jpg
     - Writes release.json, tracks_meta.json, and m3u8 playlist
     - Embeds artwork and tags directly into FLAC masters via tag_metadata.py
     """
@@ -3112,7 +3705,7 @@ def assemble_release(proposal, tracklist, album_slug):
 
     for idx, t in enumerate(tracklist, 1):
         title = t.get("title", f"Track {idx}")
-        clean_title = title.replace(" ", "_")
+        clean_title = sanitize_filename(title)
         prefix = f"{idx:02d}_{clean_title}_MASTER"
         pdir = t.get("production_dir")
 
@@ -3137,58 +3730,76 @@ def assemble_release(proposal, tracklist, album_slug):
             "genre": t.get("genre", proposal.get("subgenre", "Dark Nightride Trap"))
         })
 
-    # 2. Cover art - exactly 1 image per song + 1 album cover (no extra loose files)
-    art_dir = get_album_artwork_dir(proposal.get("album", album_slug))
-    # Album cover
+    # 2. Cover art - strictly 3000x3000 RGB .jpg (<= 8 MB): 1 per song + 1 album_cover.jpg
+    album_display_name = proposal.get("album", album_slug)
+    art_dir = get_album_artwork_dir(album_display_name)
+    alb_bg = os.path.join(art_dir, "album_cover_bg.png") if os.path.exists(os.path.join(art_dir, "album_cover_bg.png")) else None
     alb_cov = None
     if os.path.exists(art_dir):
-        for ext in [".jpg", ".png"]:
+        for ext in [".png", ".jpg"]:
             c = os.path.join(art_dir, f"album_cover{ext}")
             if os.path.exists(c):
                 alb_cov = c
                 break
-    if alb_cov:
-        ext = os.path.splitext(alb_cov)[1]
-        shutil.copy2(alb_cov, os.path.join(covers_dir, f"album_cover{ext}"))
+    if alb_cov or alb_bg:
+        _export_3000_release_jpg(
+            alb_cov,
+            alb_bg,
+            album_display_name,
+            os.path.join(covers_dir, "album_cover.jpg"),
+            is_album=True,
+        )
+        stale_alb_png = os.path.join(covers_dir, "album_cover.png")
+        if os.path.exists(stale_alb_png):
+            try:
+                os.remove(stale_alb_png)
+            except Exception:
+                pass
 
     for idx, t in enumerate(tracklist, 1):
         title = t.get("title", f"Track {idx}")
-        clean_title = title.replace(" ", "_")
+        clean_title = sanitize_filename(title)
+        bg_cand, cov_png_cand, cov_jpg_cand = get_canonical_track_cover_paths(art_dir, title) if os.path.exists(art_dir) else (None, None, None)
         chosen = None
         if os.path.exists(art_dir):
-            for ext in [".jpg", ".png"]:
-                cands = [
-                    os.path.join(art_dir, f"{title}_cover{ext}"),
-                    os.path.join(art_dir, f"{clean_title}_cover{ext}"),
-                    os.path.join(art_dir, f"Track {idx}_cover{ext}"),
-                    os.path.join(art_dir, f"Track_{idx}_cover{ext}"),
-                    os.path.join(art_dir, f"{title}{ext}"),
-                    os.path.join(art_dir, f"{clean_title}{ext}"),
-                ]
-                for c in cands:
-                    if os.path.exists(c):
-                        chosen = c
-                        break
-                if chosen:
-                    break
-        if chosen:
-            ext = os.path.splitext(chosen)[1]
-            dest_cov = os.path.join(covers_dir, f"{idx:02d}_{clean_title}{ext}")
-            shutil.copy2(chosen, dest_cov)
-            if ("Track " in os.path.basename(chosen) or "Track_" in os.path.basename(chosen)) and os.path.exists(OVERLAY_TITLE_SCRIPT):
+            cands = [
+                cov_png_cand,
+                cov_jpg_cand,
+                os.path.join(art_dir, f"{title}_cover.png"),
+                os.path.join(art_dir, f"{title}_cover.jpg"),
+                os.path.join(art_dir, f"{clean_title}.png"),
+                os.path.join(art_dir, f"{clean_title}.jpg"),
+                os.path.join(art_dir, f"Track {idx}_cover.png"),
+                os.path.join(art_dir, f"Track_{idx}_cover.png"),
+            ]
+            chosen = next((c for c in cands if c and os.path.exists(c)), None)
+
+        dest_jpg = os.path.join(covers_dir, f"{idx:02d}_{clean_title}.jpg")
+        if chosen or (bg_cand and os.path.exists(bg_cand)):
+            # If source was a generic Track_N placeholder, force title re-overlay onto bg first
+            if chosen and ("Track " in os.path.basename(chosen) or "Track_" in os.path.basename(chosen)) and bg_cand and os.path.exists(bg_cand):
+                _run_overlay_title(bg_cand, title, cov_png_cand, is_album=False, album_anchor=alb_bg)
+                chosen = cov_png_cand
+            _export_3000_release_jpg(
+                chosen,
+                bg_cand if (bg_cand and os.path.exists(bg_cand)) else None,
+                title,
+                dest_jpg,
+                is_album=False,
+                album_anchor=alb_bg,
+            )
+            stale_tr_png = os.path.join(covers_dir, f"{idx:02d}_{clean_title}.png")
+            if os.path.exists(stale_tr_png):
                 try:
-                    bg_cand = chosen.replace(f'_cover{ext}', f'_cover_bg{ext}')
-                    bg_img = bg_cand if os.path.exists(bg_cand) else dest_cov
-                    styled_title = stylize_title(title)
-                    subprocess.run([
-                        "/opt/hermes/.venv/bin/python3", OVERLAY_TITLE_SCRIPT,
-                        "--image", bg_img, "--title", styled_title, "--stacked", "--bottom", "--auto-color", "--opacity", "0.68", "--output", dest_cov
-                    ], capture_output=True, timeout=30)
-                except Exception as oe:
-                    logger.warning(f"Re-overlay title error on {dest_cov}: {oe}")
+                    os.remove(stale_tr_png)
+                except Exception:
+                    pass
 
     # 2b. Waveform banners - ensure dedicated waveforms/ folder across all canonical directories
-    music_root = "/opt/data/music" if os.path.exists("/opt/data/music") else "D:/music"
+    if ALBUMS_BASE and ALBUMS_BASE != "/opt/data/music/albums":
+        music_root = os.path.dirname(ALBUMS_BASE.rstrip("/\\"))
+    else:
+        music_root = "/opt/data/music" if os.path.exists("/opt/data/music") else "D:/music"
     master_waves_dir = os.path.join(music_root, "artwork", "waveforms")
     master_waves_sub = os.path.join(master_waves_dir, album_slug)
     art_waves_dir = os.path.join(art_dir, "waveforms")
@@ -3512,6 +4123,197 @@ def phase_6_final_review(proposal, tracklist=None, state=None, dashboard=None):
             return "cancelled"
 
 
+def _is_pipeline_lock_active():
+    """Return (True, pid) if an active album_pipeline.py process currently holds LOCK_FILE."""
+    if not os.path.exists(LOCK_FILE):
+        return False, None
+    try:
+        data = open(LOCK_FILE).read().strip().split(":")
+        pid = int(data[0])
+        if pid == os.getpid():
+            return False, None
+        saved_start = data[1] if len(data) > 1 else ""
+        proc_start_file = f"/proc/{pid}/stat"
+        if os.path.exists(proc_start_file):
+            stat = open(proc_start_file).read().split()
+            current_start = stat[21] if len(stat) > 21 else ""
+            if current_start == saved_start:
+                return True, pid
+            return False, None
+        # Non-procfs fallback
+        os.kill(pid, 0)
+        return True, pid
+    except Exception:
+        return False, None
+
+
+def run_redo_cover_cli(proposal_index, target_spec, feedback=""):
+    """
+    Unified, safe cover regeneration entry point (--redo-cover <album|all|1..5[,N]>).
+    - If an active album_pipeline.py holds LOCK_FILE, NEVER kills it — writes the matching
+      flag into /tmp/pipeline_flags/ so the live Phase 4/5 loop handles it in-world.
+    - If no pipeline is active, regenerates the cover(s) directly using the Album Visual
+      Showrunner blueprint, upscales to 3000x3000, overlays album-cohesive neon typography,
+      crops clean waveform banners, and delivers the preview to Telegram.
+    """
+    spec = str(target_spec or "").strip().lower()
+    if not spec:
+        logger.error("--redo-cover requires 'album', 'all', or 1-based track number(s) like '3' or '2,5'")
+        return 1
+
+    is_active, active_pid = _is_pipeline_lock_active()
+    if is_active:
+        os.makedirs(FLAGS_DIR, exist_ok=True)
+        fb_payload = (feedback or "").strip()
+        written_flags = []
+        if spec == "album":
+            flag_path = os.path.join(FLAGS_DIR, "albumcover_regen")
+            with open(flag_path, "w", encoding="utf-8") as f:
+                f.write(fb_payload or "regen")
+            written_flags.append("albumcover_regen")
+        elif spec == "all":
+            flag_path = os.path.join(FLAGS_DIR, "trackcovers_regenall")
+            with open(flag_path, "w", encoding="utf-8") as f:
+                f.write(fb_payload or "regenall")
+            written_flags.append("trackcovers_regenall")
+        else:
+            nums = [int(x.strip()) for x in spec.split(",") if x.strip().isdigit()]
+            for n in nums:
+                flag_path = os.path.join(FLAGS_DIR, f"art_redo_{n}")
+                with open(flag_path, "w", encoding="utf-8") as f:
+                    f.write(fb_payload or "redo")
+                written_flags.append(f"art_redo_{n}")
+        logger.info(
+            f"Active pipeline detected (PID {active_pid}); signaled {written_flags} without interrupting production."
+        )
+        print(json.dumps({"status": "signaled_active_pipeline", "pid": active_pid, "flags": written_flags}))
+        return 0
+
+    state = load_state()
+    proposal = None
+    if state.get("proposal") and proposal_index is None:
+        proposal = state["proposal"]
+    elif os.path.exists(PROPOSALS_FILE):
+        with open(PROPOSALS_FILE, "r", encoding="utf-8") as f:
+            raw = json.load(f)
+            proposals = raw.get("proposals", raw) if isinstance(raw, dict) else raw
+            idx = proposal_index if proposal_index is not None else 0
+            if 0 <= idx < len(proposals):
+                proposal = proposals[idx]
+    if not proposal and state.get("proposal"):
+        proposal = state["proposal"]
+    if not proposal:
+        logger.error("Could not resolve album proposal for --redo-cover.")
+        return 1
+
+    album_name = proposal.get("album", "Unknown Album")
+    album_slug = album_name.lower().replace(" ", "-").replace("_", "-")
+    art_dir = get_album_artwork_dir(album_name)
+    os.makedirs(art_dir, exist_ok=True)
+
+    tracklist = state.get("completed_tracks") or state.get("tracklist") or []
+    if not tracklist:
+        disc_tracks, _, _ = discover_existing_album_production(proposal)
+        if disc_tracks:
+            tracklist = disc_tracks
+    if not tracklist:
+        tracklist = [
+            {
+                "track": idx + 1,
+                "title": str(t).strip().upper(),
+                "bpm": proposal.get("bpm", 140),
+                "key": proposal.get("key", "Fm"),
+                "genre": proposal.get("subgenre", "Dark Nightride Trap"),
+            }
+            for idx, t in enumerate(proposal.get("tracks", []))
+        ]
+
+    if spec == "album":
+        visual = proposal.get("visual", "")
+        subgenre = proposal.get("subgenre", "")
+        brief = proposal.get("brief", "")
+        extra_fb = f" User visual direction: {feedback}." if feedback else ""
+        core_concept = f"Album visual: {visual}. Musical brief: {brief}.{extra_fb}"
+        upsampled_prompt = upsample_image_prompt_k3(album_name, core_concept, subgenre=subgenre, is_album=True, state=state)
+        raw_path = generate_artwork_venice(upsampled_prompt, album_name, state=state)
+        if not raw_path or not os.path.exists(raw_path):
+            logger.error("Failed to regenerate album cover via Venice.")
+            return 1
+        cover_bg = os.path.join(art_dir, "album_cover_bg.png")
+        cover_path = os.path.join(art_dir, "album_cover.png")
+        jpg_path = os.path.join(art_dir, "album_cover.jpg")
+        if os.path.abspath(raw_path) != os.path.abspath(cover_bg):
+            shutil.copy2(raw_path, cover_bg)
+        bp_cache = os.path.join(art_dir, "visual_showrunner_plan.json")
+        if os.path.exists(bp_cache):
+            try:
+                os.remove(bp_cache)
+            except Exception:
+                pass
+        upscale_artwork_venice(cover_bg, target_size=3000, allow_local_fallback=True)
+        generate_waveform_banner(cover_bg, album_name, [art_dir, "/opt/data/music/artwork/waveforms"], track_num=None, album_slug=album_slug, force=True)
+        _run_overlay_title(cover_bg, album_name, cover_path, is_album=True, opacity=0.62)
+        send_photo(jpg_path if os.path.exists(jpg_path) else cover_path, caption=f"🎨 <b>Album Cover Regenerated: {html.escape(album_name)}</b> (3000×3000)")
+        print(json.dumps({"status": "ok", "target": "album", "cover": cover_path}))
+        return 0
+
+    targets = (
+        list(range(1, len(tracklist) + 1))
+        if spec == "all"
+        else [int(x.strip()) for x in spec.split(",") if x.strip().isdigit()]
+    )
+    if not targets:
+        logger.error(f"No valid track numbers parsed from --redo-cover '{target_spec}'")
+        return 1
+
+    album_anchor = os.path.join(art_dir, "album_cover_bg.png")
+    if not os.path.exists(album_anchor):
+        cand_alb = os.path.join(art_dir, "album_cover.png")
+        album_anchor = cand_alb if os.path.exists(cand_alb) else None
+
+    plan_album_visual_showrunner(
+        proposal,
+        tracklist,
+        album_cover_bg_path=album_anchor,
+        state=state,
+        force=(spec == "all"),
+    )
+
+    regenerated = []
+    for t_num in targets:
+        idx = t_num - 1
+        if not (0 <= idx < len(tracklist)):
+            continue
+        title = tracklist[idx].get("title", f"Track {t_num}")
+        redo_prompt = build_redo_track_prompt_from_blueprint(proposal, tracklist, idx, feedback=feedback or "", state=state)
+        bg_path, cover_path, jpg_cov = get_canonical_track_cover_paths(art_dir, title)
+        raw = generate_artwork_venice(redo_prompt, f"{album_name}/{title}", state=state)
+        if not raw or not os.path.exists(raw):
+            logger.error(f"Failed to regenerate cover for Track {t_num} ({title})")
+            continue
+        if os.path.abspath(raw) != os.path.abspath(bg_path):
+            shutil.copy2(raw, bg_path)
+        upscale_artwork_venice(bg_path, target_size=3000, allow_local_fallback=True)
+        generate_waveform_banner(bg_path, title, [art_dir, "/opt/data/music/artwork/waveforms"], track_num=t_num, album_slug=album_slug, force=True)
+        _run_overlay_title(bg_path, title, cover_path, is_album=False, album_anchor=album_anchor, opacity=0.68)
+        send_photo(jpg_cov if os.path.exists(jpg_cov) else cover_path, caption=f"🎨 Track {t_num}: <b>{html.escape(title)}</b> (Regenerated · 3000×3000)")
+        regenerated.append({"track": t_num, "title": title, "cover": cover_path})
+
+    # If an unpublished release staging directory exists, keep its 3000x3000 covers synchronized
+    staged_rel_json = os.path.join(RELEASES_BASE, album_slug, "release.json")
+    if regenerated and os.path.exists(staged_rel_json):
+        try:
+            with open(staged_rel_json, "r", encoding="utf-8") as rf:
+                rj = json.load(rf)
+            if rj.get("status") != "published" and not rj.get("soundcloud", {}).get("track_ids"):
+                assemble_release(proposal, tracklist, album_slug)
+        except Exception as e:
+            logger.warning(f"Could not sync staged release directory after --redo-cover: {e}")
+
+    print(json.dumps({"status": "ok", "album": album_name, "regenerated": regenerated}))
+    return 0
+
+
 def run_test_mode(proposal_index):
     print(f"--- PIPELINE TEST MODE (Proposal Index: {proposal_index}) ---")
     try:
@@ -3532,15 +4334,24 @@ def run_test_mode(proposal_index):
 
 def main():
     parser = argparse.ArgumentParser(description="VØIDRIDE Album Production Pipeline")
-    parser.add_argument("--proposal-index", type=int, default=0, help="0-based index of proposal")
+    parser.add_argument("--proposal-index", type=int, default=None, help="0-based index of proposal")
     parser.add_argument("--mode", default="full", choices=["full", "sample"])
     parser.add_argument("--duration", type=int, default=None)
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--force", action="store_true", help="Force acquire lock by terminating any existing pipeline")
     parser.add_argument("--redo-tracks", default=None, help="Comma-separated 1-based track numbers to redo immediately (e.g. '1,5')")
     parser.add_argument("--redo-feedback", default=None, help="Feedback direction to apply when redoing tracks")
+    parser.add_argument("--redo-cover", default=None, help="Safely regenerate cover art ('album', 'all', or 1-based track numbers like '3' or '2,4') without killing active pipeline")
+    parser.add_argument("--redo-cover-feedback", default=None, help="Visual direction to apply with --redo-cover")
     parser.add_argument("--test", action="store_true")
     args = parser.parse_args()
+
+    if args.redo_cover is not None:
+        rc = run_redo_cover_cli(args.proposal_index, args.redo_cover, feedback=args.redo_cover_feedback or "")
+        sys.exit(rc)
+
+    if args.proposal_index is None:
+        args.proposal_index = 0
 
     if args.test:
         run_test_mode(args.proposal_index)

@@ -151,7 +151,12 @@ class _StrictVeniceMockHandler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         length = int(self.headers.get("Content-Length", "0"))
-        body = json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
+        raw_req = self.rfile.read(length) if length else b""
+        ctype = self.headers.get("Content-Type", "")
+        if "multipart/form-data" in ctype:
+            body = {}
+        else:
+            body = json.loads(raw_req.decode("utf-8")) if raw_req else {}
 
         if self.path == "/api/v1/chat/completions":
             model = str(body.get("model", ""))
@@ -161,8 +166,59 @@ class _StrictVeniceMockHandler(BaseHTTPRequestHandler):
                 self._send_json(400, {"error": f"Model {model} starved without disable_thinking=True"})
                 return
 
+            sys_msg = str((body.get("messages") or [{}])[0].get("content", ""))
             user_msg = str((body.get("messages") or [{}])[-1].get("content", ""))
-            if "Executive Showrunner" in user_msg:
+            if "Executive Visual Showrunner" in sys_msg:
+                # Phase 5 Album Visual Showrunner LLM call (includes intentional off-world pun + extra fedoras to verify scrubber!)
+                vis_tracks = [
+                    {
+                        "track_number": 1,
+                        "title": "OPTIC NERVE",
+                        "shot_scale": "architectural_wide",
+                        "focal_subject": "Flooded subterranean concrete vault corridor",
+                        "image_prompt": "Photorealistic 35mm anamorphic cinema frame inside the flooded obsidian vault with shipping containers on an ocean pier. A figure in a fedora stands in distant cyan mist.",
+                    },
+                    {
+                        "track_number": 2,
+                        "title": "CHROME BILE",
+                        "shot_scale": "interior_pov",
+                        "focal_subject": "Close tactile glass conduit console",
+                        "image_prompt": "Photorealistic 35mm anamorphic close interior console view inside the obsidian vault, cold cyan coolant mist over wet cables. Another man in a fedora stands nearby.",
+                    },
+                    {
+                        "track_number": 3,
+                        "title": "CAUSTIC LINE",
+                        "shot_scale": "surreal_artifact_mid",
+                        "focal_subject": "Suspended bioluminescent optical prism array",
+                        "image_prompt": "Photorealistic 35mm anamorphic medium shot of a suspended glass prism array dripping emerald-cyan condensation inside the subterranean vault.",
+                    },
+                    {
+                        "track_number": 4,
+                        "title": "VALVE BURN",
+                        "shot_scale": "oblique_geometric_overhead",
+                        "focal_subject": "30-degree high-angle wet concrete sluice grid",
+                        "image_prompt": "Photorealistic 35mm anamorphic 30-degree high-angle view of geometric cyan reflections across flooded concrete channels in the vault.",
+                    },
+                    {
+                        "track_number": 5,
+                        "title": "PHANTOM SUMP",
+                        "shot_scale": "nocturnal_horizon_silhouette",
+                        "focal_subject": "Distant vault airlock opening onto mist-veiled night horizon",
+                        "image_prompt": "Photorealistic 35mm anamorphic widescreen frame of the vault airlock opening onto rain-swept midnight asphalt with cold cyan rim-light.",
+                    },
+                ]
+                content = json.dumps({
+                    "locked_world": "Flooded brutalist subterranean server vault shrouded in cold emerald-cyan coolant mist",
+                    "locked_palette": "Pitch-black obsidian shadows lit strictly by ice electric cyan (#00E5F0) and cold teal (#12BE91)",
+                    "camera_treatment": "Photorealistic ARRI Alexa 65 35mm anamorphic cinema frame",
+                    "tracks": vis_tracks,
+                })
+            elif "Type: Single Track Cover" in user_msg or "Type: Album Cover" in user_msg:
+                content = (
+                    "Photorealistic 35mm anamorphic cinema frame inside the flooded brutalist subterranean server vault, "
+                    "cold electric cyan and emerald coolant mist reflecting across obsidian water, zero text or signage."
+                )
+            elif "Executive Showrunner" in user_msg:
                 # Canary benchmark call from venice_model_scout.benchmark_text_model
                 if model == "deepseek-v5-turbo":
                     tracks = [
@@ -224,8 +280,37 @@ class _StrictVeniceMockHandler(BaseHTTPRequestHandler):
             if int(body.get("width", 1024)) > 1024 or int(body.get("height", 1024)) > 1024:
                 self._send_json(400, {"error": "Dimensions >1024x1024 rejected"})
                 return
-            fake_png = b"\x89PNG\r\n\x1a\n" + (b"\x10" * 12000)
-            self._send_json(200, {"data": [{"b64_json": base64.b64encode(fake_png).decode("ascii")}]})
+            import io
+            from PIL import Image, ImageDraw
+            im = Image.new("RGB", (1024, 1024), (10, 14, 22))
+            dr = ImageDraw.Draw(im)
+            dr.rectangle([80, 180, 940, 460], fill=(0, 225, 240))
+            dr.rectangle([140, 500, 880, 720], fill=(18, 190, 145))
+            # Add deterministic fine noise strip so uncompressed/deflated PNG exceeds 12 KB for benchmark_image_model
+            noise = Image.frombytes("RGB", (256, 64), os.urandom(256 * 64 * 3))
+            im.paste(noise, (0, 0))
+            buf = io.BytesIO()
+            im.save(buf, "PNG", compress_level=1)
+            png_bytes = buf.getvalue()
+            self._send_json(200, {"data": [{"b64_json": base64.b64encode(png_bytes).decode("ascii")}]})
+            return
+
+        if self.path == "/api/v1/image/upscale":
+            import io
+            from PIL import Image, ImageDraw
+            # Return a 3200x3200 PNG so upscale_artwork_venice exercises trimming to exact 3000x3000!
+            im = Image.new("RGB", (3200, 3200), (10, 14, 22))
+            dr = ImageDraw.Draw(im)
+            dr.rectangle([240, 500, 2960, 1400], fill=(0, 225, 240))
+            dr.rectangle([380, 1500, 2820, 2150], fill=(18, 190, 145))
+            buf = io.BytesIO()
+            im.save(buf, "PNG", compress_level=1)
+            raw = buf.getvalue()
+            self.send_response(200)
+            self.send_header("Content-Type", "image/png")
+            self.send_header("Content-Length", str(len(raw)))
+            self.end_headers()
+            self.wfile.write(raw)
             return
 
         self._send_json(404, {"error": f"Unknown POST {self.path}"})
@@ -494,6 +579,128 @@ class TestHermeticE2EPipeline(unittest.TestCase):
             self.assertGreater(os.path.getsize(flac_file), 15_000, "FLAC output was empty/truncated")
             self.assertGreater(os.path.getsize(mp3_file), 15_000, "MP3 output was empty/truncated")
         finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_06_album_visual_showrunner_redo_cover_and_3k_release_gate(self):
+        """E2E Cover Art: Visual Showrunner world-lock, 3000x3000 discovery gate, safe --redo-cover CLI, and 3000x3000 release packaging."""
+        from PIL import Image
+
+        tmp = Path(tempfile.mkdtemp(prefix="e2e_covers_"))
+        old_env = {k: os.environ.get(k) for k in ("VENICE_API_BASE", "VENICE_API_KEY")}
+        try:
+            os.environ["VENICE_API_BASE"] = self.api_base
+            os.environ["VENICE_API_KEY"] = "test-mock-key"
+
+            ap = _load_module("album_pipeline_e2e", SCRIPTS_DIR / "album_pipeline.py")
+            ap.VENICE_API_BASE = self.api_base
+            ap.VENICE_API_KEY = "test-mock-key"
+            ap.ALBUMS_BASE = str(tmp / "albums")
+            ap.RELEASES_BASE = str(tmp / "releases")
+            ap.FLAGS_DIR = str(tmp / "flags")
+            ap.LOCK_FILE = str(tmp / "album_pipeline.lock")
+            ap.STATE_FILE = str(tmp / "pipeline_state.json")
+            ap.PROPOSALS_FILE = str(tmp / "current_proposals.json")
+            # Silence network Telegram calls during hermetic E2E
+            ap.send_message = lambda *a, **kw: 1
+            ap.send_photo = lambda *a, **kw: True
+
+            proposal = {
+                "album": "VAULT MIRAGE",
+                "tracks": ["OPTIC NERVE", "CHROME BILE", "CAUSTIC LINE", "VALVE BURN", "PHANTOM SUMP"],
+                "bpm": "140",
+                "key": "Fm",
+                "subgenre": "dark nightride trap / witch house",
+                "visual": "Flooded brutalist subterranean server vault shrouded in cold emerald-cyan coolant mist",
+                "brief": "Heavy portamento 808 glides and spectral choir pads.",
+            }
+            Path(ap.PROPOSALS_FILE).write_text(json.dumps({"proposals": [proposal]}), encoding="utf-8")
+
+            # Prepare 5 dummy mastered FLAC files in exports/vault-mirage-* so auto-discovery reaches artwork phases
+            exports_root = tmp / "exports"
+            art_dir = Path(ap.ALBUMS_BASE) / "vault-mirage" / "artwork"
+            exports_root.mkdir(parents=True, exist_ok=True)
+            art_dir.mkdir(parents=True, exist_ok=True)
+
+            tracklist = []
+            for idx, title in enumerate(proposal["tracks"], 1):
+                track_slug = title.lower().replace(" ", "_")
+                bname = f"vault-mirage-{track_slug}"
+                sess_dir = exports_root / bname
+                sess_dir.mkdir(parents=True, exist_ok=True)
+                m_flac = sess_dir / f"{bname}_MASTER.flac"
+                m_flac.write_bytes(b"fLaC" + (b"\x00" * 64_000))
+                tracklist.append({
+                    "track": idx,
+                    "title": title,
+                    "bpm": 140,
+                    "key": "Fm",
+                    "genre": proposal["subgenre"],
+                    "master_path": str(m_flac),
+                })
+
+            # Create 3000x3000 approved Phase 4 Album Cover + 1024x1024 un-upscaled Track Covers
+            alb_bg = art_dir / "album_cover_bg.png"
+            alb_cov = art_dir / "album_cover.png"
+            Image.new("RGB", (3000, 3000), (10, 14, 22)).save(alb_bg, "PNG")
+            ap._run_overlay_title(str(alb_bg), "VAULT MIRAGE", str(alb_cov), is_album=True)
+
+            for t in tracklist:
+                _, cov_p, _ = ap.get_canonical_track_cover_paths(str(art_dir), t["title"])
+                Image.new("RGB", (1024, 1024), (12, 18, 28)).save(cov_p, "PNG")
+
+            # 1. Sub-3K covers (1024x1024) MUST stay in Phase 5 — never skip prematurely to Phase 6!
+            disc_tracks, disc_phase, _ = ap.discover_existing_album_production(proposal)
+            self.assertEqual(len(disc_tracks), 5)
+            self.assertEqual(disc_phase, 5, "1024x1024 track covers must stay at Phase 5 until upscaled to 3000x3000")
+
+            # 2. Plan Album Visual Showrunner against Mock Venice Server
+            bp = ap.plan_album_visual_showrunner(proposal, tracklist, album_cover_bg_path=str(alb_bg), force=True)
+            self.assertEqual(len(bp["tracks"]), 5)
+            self.assertNotIn("shipping container", bp["tracks"][0]["image_prompt"].lower())
+            fedora_total = sum(1 for item in bp["tracks"] if "fedora" in item["image_prompt"].lower())
+            self.assertLessEqual(fedora_total, 1)
+
+            # 3. Safe --redo-cover when an active pipeline holds LOCK_FILE: signals flag without killing!
+            ap._is_pipeline_lock_active = lambda: (True, 99999)
+            rc_active = ap.run_redo_cover_cli(0, "3", feedback="deeper emerald reflections")
+            self.assertEqual(rc_active, 0)
+            flag_3 = Path(ap.FLAGS_DIR) / "art_redo_3"
+            self.assertTrue(flag_3.exists(), "--redo-cover must write art_redo_3 flag when pipeline is active")
+            self.assertEqual(flag_3.read_text(encoding="utf-8"), "deeper emerald reflections")
+
+            # 4. Standalone --redo-cover when no pipeline is active: generates + upscales Track 3 to 3000x3000!
+            ap._is_pipeline_lock_active = lambda: (False, None)
+            rc_idle = ap.run_redo_cover_cli(0, "3", feedback="deeper emerald reflections")
+            self.assertEqual(rc_idle, 0)
+            _, cov3_png, cov3_jpg = ap.get_canonical_track_cover_paths(str(art_dir), "CAUSTIC LINE")
+            self.assertTrue(ap._is_cover_3k_ready(cov3_png), "Standalone --redo-cover must produce 3000x3000 cover")
+            self.assertTrue(os.path.exists(cov3_jpg) and os.path.getsize(cov3_jpg) <= 8_000_000)
+
+            # 5. assemble_release() auto-heals remaining 1024x1024 covers to 3000x3000 RGB .jpg (<= 8 MB) and purges stray .pngs
+            rel_covers_dir = Path(ap.RELEASES_BASE) / "vault-mirage" / "covers"
+            rel_covers_dir.mkdir(parents=True, exist_ok=True)
+            (rel_covers_dir / "01_OPTIC_NERVE.png").write_bytes(b"stale_png")
+
+            rel_dir = ap.assemble_release(proposal, tracklist, "vault-mirage")
+            self.assertTrue(os.path.isdir(rel_dir))
+
+            cover_files = sorted(os.listdir(rel_covers_dir))
+            png_covers = [f for f in cover_files if f.endswith(".png") and "waveform" not in f]
+            jpg_covers = [f for f in cover_files if f.endswith(".jpg")]
+            self.assertEqual(png_covers, [], f"No .png cover duplicates allowed in release covers/: {png_covers}")
+            self.assertEqual(len(jpg_covers), 6, f"Expected album_cover.jpg + 5 track .jpg covers, got: {jpg_covers}")
+            for jf in jpg_covers:
+                jp = rel_covers_dir / jf
+                self.assertLessEqual(jp.stat().st_size, 8_000_000)
+                with Image.open(jp) as im:
+                    self.assertEqual(im.size, (3000, 3000), f"{jf} was {im.size} instead of (3000, 3000)")
+                    self.assertEqual(im.mode, "RGB")
+        finally:
+            for k, v in old_env.items():
+                if v is None:
+                    os.environ.pop(k, None)
+                else:
+                    os.environ[k] = v
             shutil.rmtree(tmp, ignore_errors=True)
 
 

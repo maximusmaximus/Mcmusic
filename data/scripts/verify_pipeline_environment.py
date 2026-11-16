@@ -111,8 +111,28 @@ def audit_and_heal():
             issues.append("album_pipeline.py missing evaluate_venice_budget or ap:credit:added button")
         if "--closer-duration" not in txt:
             issues.append("album_pipeline.py missing --closer-duration handoff")
+        if "plan_album_visual_showrunner" not in txt or "--redo-cover" not in txt or "_is_cover_3k_ready" not in txt:
+            issues.append("album_pipeline.py missing cohesive Album Visual Showrunner, --redo-cover CLI, or 3000x3000 gate")
     else:
         issues.append("album_pipeline.py missing")
+
+    # 4b. Check overlay-title.py & gen_artwork.py cohesive 3000x3000 + WCAG luminance contracts
+    overlay_script = "/opt/data/skills/creative/cover-title-overlay/scripts/overlay-title.py"
+    if os.path.exists(overlay_script):
+        ov_txt = open(overlay_script, "r", encoding="utf-8", errors="ignore").read()
+        if "--album-anchor" not in ov_txt or "ensure_luminous_neon_rgb" not in ov_txt:
+            issues.append("overlay-title.py missing --album-anchor or WCAG luminance floor")
+    else:
+        issues.append("overlay-title.py missing")
+
+    for gen_art_path in (
+        "/opt/data/skills/creative/artwork/scripts/gen_artwork.py",
+        "/opt/data/skills/artwork/artwork/scripts/gen_artwork.py",
+    ):
+        if os.path.exists(gen_art_path):
+            ga_txt = open(gen_art_path, "r", encoding="utf-8", errors="ignore").read()
+            if "grok-imagine-image-quality" in ga_txt or "get_cover_model_chain" not in ga_txt:
+                issues.append(f"{gen_art_path} outdated (must use model_registry image.cover_primary, not grok-imagine-image-quality)")
 
     # 5. Sync current working scripts & SKILL.md to bundled-skills as fallback
     if os.path.exists(BUNDLED_DIR) and os.path.exists(prod_album) and os.path.exists(master_prod):
@@ -125,11 +145,16 @@ def audit_and_heal():
         except Exception as e:
             issues.append(f"Could not sync bundled-skills: {e}")
 
-    # 6. Verify Gateway Telegram callback handlers (ap:credit:added, sp2:model_pr:, etc.)
+    # 6. Verify Gateway Telegram callback handlers (ap:credit:added, sp2:model_pr:, art:quickedit index fix, etc.)
     if os.path.exists(GATEWAY_TELEGRAM):
         try:
             tg_txt = open(GATEWAY_TELEGRAM, "r", encoding="utf-8", errors="ignore").read()
-            if "credit:added" not in tg_txt or "credit:pause" not in tg_txt or "sp2:model_pr:" not in tg_txt:
+            if (
+                "credit:added" not in tg_txt
+                or "credit:pause" not in tg_txt
+                or "sp2:model_pr:" not in tg_txt
+                or "if len(parts) >= 4:" not in tg_txt
+            ):
                 patch_gw = os.path.join(SCRIPTS_DIR, "patch_gateway.py")
                 if os.path.exists(patch_gw):
                     subprocess.run([python_bin, patch_gw], capture_output=True, timeout=15)
@@ -160,19 +185,26 @@ def audit_and_heal():
                 or "COHESIVE VØIDRIDE NOCTURNAL ARCHITECTURE" not in soul_txt
                 or "REQUIRED_PROPOSAL_COUNT = 5" not in soul_txt
                 or "WEEKLY VENICE MODEL SCOUT" not in soul_txt
+                or "COHESIVE ALBUM COVER ART" not in soul_txt
             ):
                 patch_soul = os.path.join(SCRIPTS_DIR, "patch_soul.py")
                 if os.path.exists(patch_soul):
                     subprocess.run([python_bin, patch_soul], capture_output=True, timeout=15)
-                    healed.append("Re-applied patch_soul.py to update /opt/data/SOUL.md with Cohesive VØIDRIDE, 5-proposal & Model Scout rules")
+                    healed.append("Re-applied patch_soul.py to update /opt/data/SOUL.md with Cohesive VØIDRIDE, Cover Art, 5-proposal & Model Scout rules")
         except Exception as e:
             issues.append(f"SOUL.md check failed: {e}")
 
-    # 8. Verify .skills_prompt_snapshot.json is not stale relative to SKILL.md
-    if os.path.exists(SKILL_MD):
+    # 8. Verify .skills_prompt_snapshot.json is not stale relative to watched SKILL.md files
+    watched_skill_mds = [
+        SKILL_MD,
+        "/opt/data/skills/creative/artwork/SKILL.md",
+        "/opt/data/skills/creative/cover-title-overlay/SKILL.md",
+    ]
+    existing_skill_mds = [p for p in watched_skill_mds if os.path.exists(p)]
+    if existing_skill_mds:
         try:
-            skill_mtime = os.path.getmtime(SKILL_MD)
-            snap_stale = (not os.path.exists(SKILLS_SNAPSHOT)) or (os.path.getmtime(SKILLS_SNAPSHOT) < skill_mtime)
+            latest_skill_mtime = max(os.path.getmtime(p) for p in existing_skill_mds)
+            snap_stale = (not os.path.exists(SKILLS_SNAPSHOT)) or (os.path.getmtime(SKILLS_SNAPSHOT) < latest_skill_mtime)
             if snap_stale:
                 if os.path.exists(SKILLS_SNAPSHOT):
                     os.remove(SKILLS_SNAPSHOT)

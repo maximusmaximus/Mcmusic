@@ -13,7 +13,7 @@ EXTRA_RULES = r"""7. **NEVER rename file extensions for Telegram** (.m3u8, .flac
 12. **Track titles on SoundCloud MUST be ALL CAPS** (e.g. "GHOST MOTHERBOARD" not "Ghost Motherboard").
 13. **NEVER make up album concepts ad-hoc, and ALWAYS deliver strictly 5 proposals (NEVER 3 or fewer)**. When the user asks for album proposals, ALWAYS run: `python3 /opt/data/scripts/propose_albums.py --force` (or with `--seed-themes "theme here"` if the user specified a theme, or `--refine "direction"` to iterate). `propose_albums.py` enforces `REQUIRED_PROPOSAL_COUNT = 5` and will never send fewer than 5 proposals. When a proposal is selected, `album_pipeline.py` handles production automatically — do NOT run produce-album.py or master-producer.py yourself.
 14. **ALWAYS generate waveform artwork after creating album covers**. Use the waveform-artwork skill: `/opt/hermes/.venv/bin/python3 /opt/data/skills/waveform-artwork/waveform-artwork/scripts/gen_waveform_art.py --playlist-id <ID> --output-dir /opt/data/music/artwork/waveforms`. NEVER use system `python3` — only the venv Python has Pillow. Save all waveforms to `/opt/data/music/artwork/waveforms/`.
-15. **ALWAYS use the "grok-imagine-image-quality" model** when generating image covers on Venice.
+15. **ALWAYS use the `model_registry.json` `image.cover_primary` model chain (`qwen-image-3-pro` -> `grok-imagine-image-2-0` -> `grok-imagine-image`)** when generating image covers on Venice — NEVER hardcode deprecated `grok-imagine-image-quality`.
 16. **NEVER interfere with the album pipeline**. When `[pipeline]` messages arrive, the script-driven album_pipeline.py is running. You may answer user questions about production status, but NEVER run `produce-album.py` or `master-producer.py` yourself when the pipeline is active. The pipeline handles production, review gates, artwork, and publishing autonomously.
 17. **NEVER generate artwork before the user has approved the songs**. Artwork generation is Phase 3 of the pipeline — only after the user explicitly approves the produced tracks in Phase 2. Artwork for songs the user hasn't heard yet is wasted work.
 18. **ALBUM PRODUCTION PIPELINE (6 PHASES)**: Album production is fully orchestrated by `album_pipeline.py`:
@@ -52,6 +52,11 @@ EXTRA_RULES = r"""7. **NEVER rename file extensions for Telegram** (.m3u8, .flac
 25. **WEEKLY VENICE MODEL SCOUT, CI/E2E BENCHMARKING & GITHUB PR GATE**:
     - **Declarative Model Registry**: All Venice AI model bindings (`music.main_instrumental`, `music.dark_texture`, `music.foley_sfx`, `llm.proposals`, `llm.showrunner`, `llm.creative_director`, `llm.image_prompt`, `image.cover_primary`, `image.edit`) live in `/opt/data/config/model_registry.json` (loaded via `model_registry.py`).
     - **Weekly Audit & Canary Benchmarks**: Every Sunday (`recursive_sp2_update.py` -> `venice_model_scout.py`), the agent queries `GET /api/v1/models?type=all`, checks 7-day production feedback (`model_feedback_collector.py`), benchmarks eligible new/replacement models within a `$1.50/week` cap, runs the 3-tier CI & E2E test suite, and opens a GitHub PR on `maximusmaximus/Mcmusic` (`model_pr_manager.py`) gated by GitHub Actions CI + Telegram approval (`sp2:model_pr:merge:<PR>`).
+26. **COHESIVE ALBUM COVER ART, UNIFIED REDO & 3000x3000 INTEGRITY**:
+    - **Single-Pass Album Visual Showrunner**: Phase 5 plans all 5 track covers in one unified pass (`plan_album_visual_showrunner`) anchored to the approved Phase 4 Album Cover (`album_cover_bg.png`). Every track cover stays inside the exact same physical architecture, weather, and neon lighting palette with 5 distinct non-repeating camera scales (`extreme wide` -> `low-angle hero` -> `tight macro` -> `elevated architectural` -> `panoramic horizon`), zero off-world literal title puns, and strict motif budgets (`fedora <= 1`, `katana <= 1`, `moon <= 2` across all 5 tracks).
+    - **Album-Cohesive Luminous Neon Typography (`WCAG Y >= 0.45`)**: `overlay-title.py` locks all 6 covers on an album to the Album Cover's 2–3 hue neon palette family (`--album` / `--album-anchor` -> `.cover_palettes.json` `_album_family`), enforces `WCAG relative_luminance >= 0.45` on every gradient stop (lifting dark ultramarine/indigo into luminous electric ice-blue/orchid), raises glyph interior opacity (`>= 0.54`), and adds an adaptive bottom readability scrim.
+    - **Unified Safe Cover Redo (NEVER Kill Active Pipeline)**: NEVER kill `album_pipeline.py` or call `gen_artwork.py` ad-hoc to redo an album/track cover! Always run `/opt/hermes/.venv/bin/python3 /opt/data/scripts/album_pipeline.py --redo-cover <album|all|1..5> [--redo-cover-feedback "..."]` (which safely signals `/tmp/pipeline_flags/art_redo_<N>` if a pipeline is active, or runs the Showrunner-locked 3000x3000 + cohesive overlay pipeline if idle).
+    - **Strict 3000x3000 RGB `.jpg` (`<= 8 MB`) Release Gate**: `discover_existing_album_production()` verifies `>= 2800x2800` dimensions before treating covers as Phase-6-ready, and `assemble_release()` exports uniform `3000x3000` RGB `.jpg` (`<= 8 MB`) covers with canonical `sanitize_filename()` underscore paths and zero `.png` duplicates.
 """
 
 FILE_DELIVERY_BLOCK = """
@@ -90,7 +95,12 @@ if not content:
 
 changed = False
 
-if "COHESIVE VØIDRIDE NOCTURNAL ARCHITECTURE" not in content or "REQUIRED_PROPOSAL_COUNT = 5" not in content or "WEEKLY VENICE MODEL SCOUT" not in content:
+if (
+    "COHESIVE VØIDRIDE NOCTURNAL ARCHITECTURE" not in content
+    or "REQUIRED_PROPOSAL_COUNT = 5" not in content
+    or "WEEKLY VENICE MODEL SCOUT" not in content
+    or "COHESIVE ALBUM COVER ART" not in content
+):
     if "7. **NEVER rename file extensions" in content:
         start_r = content.find("7. **NEVER rename file extensions")
         end_r = content.find("## 📁 FILE DELIVERY RULES", start_r)

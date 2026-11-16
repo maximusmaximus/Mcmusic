@@ -3,15 +3,18 @@
 Overlay a Unicode-styled song or album title onto a cover art image with:
   1. Stacked 1-word-per-line layout where EACH word is independently scaled up to fill
      the full width of the screen (~92% canvas width).
-  2. Multi-stop color gradients derived from the LEAST-USED colors in the image,
-     with cross-cover deduplication so every cover in an album gets a unique gradient palette.
-  3. Variable opacity across parts of the letterforms (high-opacity crest/rim transitioning
-     into a translucent core so background detail shows through) plus layered drop shadows.
+  2. Album-Cohesive Neon Palette Family (`--album-anchor` / `.cover_palettes.json`) so all
+     covers on an album share one unified 2-3 hue lighting/typography family instead of
+     scattering across a 6-color rainbow.
+  3. Strict WCAG relative-luminance contrast floor (`Y >= 0.45`) + raised minimum interior
+     opacity + adaptive bottom readability scrim so dark-on-dark unreadable text (e.g. deep
+     indigo on pitch black) can never occur.
 
 Usage:
     python3 overlay-title.py --image <bg_image> --title "<TITLE>" [--color <hex>] [--auto-color]
-                             [--opacity 0.68] [--output <path>] [--no-glow] [--no-shadow]
-                             [--top] [--bottom] [--stacked] [--single-line] [--album] [--spacing <px>]
+                             [--album-anchor <album_bg_image>] [--opacity 0.68] [--output <path>]
+                             [--no-glow] [--no-shadow] [--top] [--bottom] [--stacked]
+                             [--single-line] [--album] [--spacing <px>]
 """
 
 import argparse
@@ -46,13 +49,13 @@ CMY_NEON_PALETTE = {
     "neon_cyan": "#00FFFF",
     "deep_cyan": "#00E5FF",
     "cyan_mint": "#00FFA3",
-    "ice_blue": "#38E5FF",
-    "hyper_magenta": "#FF007F",
-    "laser_magenta": "#FF00FF",
-    "neon_fuchsia": "#FF10F0",
-    "electric_violet": "#D000FF",
-    "hot_pink": "#FF1493",
-    "crimson_magenta": "#FF0055",
+    "ice_blue": "#5CE6FF",
+    "hyper_magenta": "#FF2E9F",
+    "laser_magenta": "#FF4DFF",
+    "neon_fuchsia": "#FF3DF0",
+    "electric_violet": "#DF73FF",
+    "hot_pink": "#FF4FA3",
+    "crimson_magenta": "#FF477E",
     "acid_yellow": "#FAFF00",
     "electric_volt": "#FFE600",
     "neon_yellow": "#FFFF00",
@@ -60,9 +63,10 @@ CMY_NEON_PALETTE = {
     "solar_amber": "#FFB700",
     "neon_lime": "#39FF14",
     "radioactive_green": "#00FF66",
-    "blaze_orange": "#FF6600",
+    "blaze_orange": "#FF7A1A",
 }
 
+MIN_NEON_RELATIVE_LUMINANCE = 0.45
 ARTWORK_COVERS_DIR = "/opt/data/music/artwork/covers"
 DEFAULT_TARGET_WIDTH_RATIO = 0.92  # Each word fills 92% of screen width
 
@@ -118,75 +122,191 @@ def _rgb_to_hex(rgb):
     return f"#{rgb[0]:02X}{rgb[1]:02X}{rgb[2]:02X}"
 
 
-def detect_least_used_gradient_colors(image_path, title="", output_path=None, top=False, bottom=True):
+def _srgb_channel_to_linear(channel_255):
+    v = max(0.0, min(1.0, channel_255 / 255.0))
+    return v / 12.92 if v <= 0.04045 else ((v + 0.055) / 1.055) ** 2.4
+
+
+def relative_luminance(rgb):
+    """WCAG 2.1 linear relative luminance in [0.0, 1.0]."""
+    return (
+        0.2126 * _srgb_channel_to_linear(rgb[0])
+        + 0.7152 * _srgb_channel_to_linear(rgb[1])
+        + 0.0722 * _srgb_channel_to_linear(rgb[2])
+    )
+
+
+def ensure_luminous_neon_rgb(h_deg, s=0.92, v=1.0, min_luminance=MIN_NEON_RELATIVE_LUMINANCE):
     """
-    Analyzes the cover image's 360-degree hue distribution (36 bins of 10 degrees each),
-    identifies the LEAST-USED color hues in the image, and selects a 3-stop gradient
-    palette from those least-used colors.
+    Convert HSV hue into an unmistakable, high-contrast neon RGB color guaranteed to satisfy
+    `relative_luminance(rgb) >= min_luminance`.
 
-    Also coordinates via a per-folder `.cover_palettes.json` registry so that every cover
-    in the same album (album cover + each song cover) is guaranteed a unique color signature.
+    Pure indigo/deep-blue hues (~220°-265°) have WCAG luminance as low as 0.08-0.14 even at
+    V=1.0, making text nearly invisible against dark VØIDRIDE cover backgrounds. This helper
+    gently steers deep indigo out of the perceptual dead-zone (toward electric ice-blue or
+    luminous neon violet) and blends white-hot core energy (lowering S while keeping V=1.0)
+    until the luminance floor is met.
     """
-    num_bins = 36  # 10 degrees per bin
-    bin_weights = [0.0] * num_bins
+    hue = h_deg % 360.0
+    val = max(0.96, min(1.0, v))
+    sat = max(0.0, min(1.0, s))
 
-    try:
-        img = Image.open(image_path).convert("RGB")
-        resample = Image.Resampling.BOX if hasattr(Image, "Resampling") else Image.BOX
-        thumb = img.resize((128, 128), resample)
-        w, h = thumb.size
+    base_rgb = _hsv_to_rgb_tuple(hue, sat, val)
+    if relative_luminance(base_rgb) >= min_luminance:
+        return base_rgb
 
-        if top:
-            zone_min_y, zone_max_y = 0, int(h * 0.45)
-        elif bottom:
-            zone_min_y, zone_max_y = int(h * 0.50), h
+    # Nudge pure ultramarine/indigo dead-zone (222°..266°) gently toward ice-cyan or electric orchid
+    adjusted_hue = hue
+    if 222.0 <= hue <= 246.0:
+        adjusted_hue = 206.0 + (hue - 222.0) * 0.45
+    elif 246.0 < hue <= 268.0:
+        adjusted_hue = 276.0 + (hue - 246.0) * 0.45
+
+    cand_rgb = _hsv_to_rgb_tuple(adjusted_hue, sat, val)
+    if relative_luminance(cand_rgb) >= min_luminance:
+        return cand_rgb
+
+    # Binary search on saturation in [0.15, sat] to mix white-hot neon luminance while keeping hue identity
+    lo, hi = 0.12, sat
+    best_rgb = _hsv_to_rgb_tuple(adjusted_hue, lo, 1.0)
+    for _ in range(18):
+        mid = (lo + hi) / 2.0
+        rgb_mid = _hsv_to_rgb_tuple(adjusted_hue, mid, 1.0)
+        if relative_luminance(rgb_mid) >= min_luminance:
+            best_rgb = rgb_mid
+            lo = mid  # Prefer maximum saturation that still meets the luminance floor
         else:
-            zone_min_y, zone_max_y = int(h * 0.25), int(h * 0.75)
+            hi = mid
+    return best_rgb
 
-        for y in range(h):
-            zone_mult = 2.0 if (zone_min_y <= y <= zone_max_y) else 1.0
-            for x in range(w):
-                r, g, b = thumb.getpixel((x, y))
-                rf, gf, bf = r / 255.0, g / 255.0, b / 255.0
-                h_val, s_val, v_val = colorsys.rgb_to_hsv(rf, gf, bf)
 
-                # Count chromatic weight; even low-saturation tints contribute slightly
-                if v_val > 0.06 and s_val > 0.08:
-                    weight = (s_val ** 1.2) * (v_val ** 1.1) * zone_mult
-                    bin_idx = int((h_val * 360.0) // 10.0) % num_bins
-                    bin_weights[bin_idx] += weight
+def ensure_luminous_hex_stops(color_hex, min_luminance=MIN_NEON_RELATIVE_LUMINANCE):
+    """Build a 3-stop luminous neon gradient from an explicit hex/named color while enforcing luminance floor."""
+    if color_hex in CMY_NEON_PALETTE:
+        color_hex = CMY_NEON_PALETTE[color_hex]
+    c_hex = color_hex.lstrip("#")
+    c_raw = tuple(int(c_hex[i:i + 2], 16) for i in (0, 2, 4))
+    h1, s1, _ = colorsys.rgb_to_hsv(c_raw[0] / 255.0, c_raw[1] / 255.0, c_raw[2] / 255.0)
+    base_deg = h1 * 360.0
+    s_use = max(0.75, s1)
+    return [
+        ensure_luminous_neon_rgb(base_deg, s_use, 1.0, min_luminance=min_luminance),
+        ensure_luminous_neon_rgb((base_deg + 26.0) % 360.0, max(0.72, s_use - 0.04), 1.0, min_luminance=min_luminance),
+        ensure_luminous_neon_rgb((base_deg + 52.0) % 360.0, max(0.68, s_use - 0.08), 1.0, min_luminance=min_luminance),
+    ]
 
-        # Circular Gaussian smoothing across neighboring bins so broad color cast is captured
-        smoothed = [0.0] * num_bins
-        kernel = [(0, 0.40), (-1, 0.22), (1, 0.22), (-2, 0.08), (2, 0.08)]
-        for i in range(num_bins):
-            acc = 0.0
-            for offset, kw in kernel:
-                acc += bin_weights[(i + offset) % num_bins] * kw
-            smoothed[i] = acc
 
-        # Rank all 36 hue bins from LEAST used (lowest weight) to most used
-        # Add a tiny deterministic tie-breaker based on title + extension-free stem so ties break uniquely per song
-        stem_key = os.path.splitext(os.path.basename(output_path or image_path))[0].lower()
-        seed_bytes = hashlib.sha256(f"{title}:{stem_key}".encode("utf-8")).digest()
-        ranked_bins = sorted(
-            range(num_bins),
-            key=lambda b_idx: (
-                round(smoothed[b_idx], 4),
-                ((b_idx * 7 + seed_bytes[b_idx % len(seed_bytes)]) % num_bins) * 1e-6,
-            ),
-        )
+def _compute_chromatic_hue_profile(image_path, top=False, bottom=True):
+    """Return smoothed 36-bin (10°/bin) chromatic weight histogram for an image."""
+    num_bins = 36
+    bin_weights = [0.0] * num_bins
+    img = Image.open(image_path).convert("RGB")
+    resample = Image.Resampling.BOX if hasattr(Image, "Resampling") else Image.BOX
+    thumb = img.resize((128, 128), resample)
+    w, h = thumb.size
 
-        # Pool of least-used hues in this image (bottom 26 bins = excluding the top 10 dominant hue bins)
-        least_used_hues = [(b_idx * 10.0 + 5.0) % 360.0 for b_idx in ranked_bins[:26]]
-        hue_rank_map = {b_idx: rank for rank, b_idx in enumerate(ranked_bins)}
+    if top:
+        zone_min_y, zone_max_y = 0, int(h * 0.45)
+    elif bottom:
+        zone_min_y, zone_max_y = int(h * 0.50), h
+    else:
+        zone_min_y, zone_max_y = int(h * 0.25), int(h * 0.75)
 
-        # Check per-album palette registry so every cover in an album gets a distinct primary hue
+    for y in range(h):
+        zone_mult = 1.6 if (zone_min_y <= y <= zone_max_y) else 1.0
+        for x in range(w):
+            r, g, b = thumb.getpixel((x, y))
+            h_val, s_val, v_val = colorsys.rgb_to_hsv(r / 255.0, g / 255.0, b / 255.0)
+            if v_val > 0.10 and s_val > 0.14:
+                weight = (s_val ** 1.3) * (v_val ** 1.1) * zone_mult
+                bin_idx = int((h_val * 360.0) // 10.0) % num_bins
+                bin_weights[bin_idx] += weight
+
+    smoothed = [0.0] * num_bins
+    kernel = [(0, 0.40), (-1, 0.22), (1, 0.22), (-2, 0.08), (2, 0.08)]
+    for i in range(num_bins):
+        acc = 0.0
+        for offset, kw in kernel:
+            acc += bin_weights[(i + offset) % num_bins] * kw
+        smoothed[i] = acc
+    return smoothed
+
+
+def extract_album_neon_family(anchor_image_path):
+    """
+    Derive a cohesive 3-hue Album Signature Neon Family `[h_primary, h_secondary, h_bridge]`
+    directly from the album cover's lighting palette so all 6 covers on an album belong to
+    one unmistakable visual world instead of scattering across 6 unrelated rainbow colors.
+    """
+    smoothed = _compute_chromatic_hue_profile(anchor_image_path, top=False, bottom=False)
+    total_chroma = sum(smoothed)
+
+    if total_chroma < 1.0:
+        # Near-monochrome silver/obsidian cover -> classic VØIDRIDE cyan + violet + mint family
+        return [188.0, 286.0, 156.0]
+
+    ranked_desc = sorted(range(len(smoothed)), key=lambda idx: smoothed[idx], reverse=True)
+    h_dom = (ranked_desc[0] * 10.0 + 5.0) % 360.0
+    dom_weight = smoothed[ranked_desc[0]]
+
+    # Look for a genuine secondary neon lighting accent in the album cover (45°..165° from h_dom)
+    h_sec = None
+    for idx in ranked_desc[1:]:
+        cand_h = (idx * 10.0 + 5.0) % 360.0
+        dist = _hue_dist(cand_h, h_dom)
+        if 45.0 <= dist <= 165.0 and smoothed[idx] >= dom_weight * 0.18:
+            h_sec = cand_h
+            break
+
+    if h_sec is None:
+        # Harmonious split-complementary neon partner that pops cleanly against h_dom
+        h_sec = (h_dom + 135.0) % 360.0
+
+    # Bridge hue sits 38° along the shorter arc from h_sec toward h_dom for smooth 3-stop gradients
+    diff = ((h_dom - h_sec + 540.0) % 360.0) - 180.0
+    step_sign = 1.0 if diff >= 0 else -1.0
+    h_bridge = (h_sec + step_sign * min(42.0, abs(diff) * 0.5)) % 360.0
+    return [round(h_dom, 1), round(h_sec, 1), round(h_bridge, 1)]
+
+
+def _discover_album_anchor_path(image_path, output_path=None, explicit_anchor=None):
+    if explicit_anchor and os.path.exists(explicit_anchor):
+        return explicit_anchor
+    for base_p in [output_path, image_path]:
+        if not base_p:
+            continue
+        d = os.path.dirname(os.path.abspath(base_p))
+        for cand_name in ("album_cover_bg.png", "album_cover_bg.jpg", "album_cover.png", "album_cover.jpg"):
+            cand = os.path.join(d, cand_name)
+            if os.path.exists(cand):
+                return cand
+    return None
+
+
+def detect_least_used_gradient_colors(
+    image_path,
+    title="",
+    output_path=None,
+    top=False,
+    bottom=True,
+    album_anchor=None,
+    is_album=False,
+):
+    """
+    Selects a luminous, high-contrast 3-stop neon gradient (`WCAG Y >= 0.45` on every stop).
+
+    When part of an album (via `--album`, `--album-anchor`, `album_cover*` in the folder, or
+    `.cover_palettes.json`), locks ALL covers on the album to the Album's 3-Hue Signature Neon
+    Family with subtle track-to-track sweep/harmonic variation (never a 6-color rainbow!).
+    """
+    try:
         target_dir = os.path.dirname(os.path.abspath(output_path or image_path))
         registry_path = os.path.join(target_dir, ".cover_palettes.json")
         cover_key = os.path.splitext(os.path.basename(output_path or image_path))[0].lower()
         if cover_key.endswith("_cover"):
             cover_key = cover_key[:-6]
+
+        is_album_cover = bool(is_album or cover_key in ("album", "album_cover"))
 
         registry = {}
         if os.path.exists(registry_path):
@@ -196,57 +316,61 @@ def detect_least_used_gradient_colors(image_path, title="", output_path=None, to
             except Exception:
                 registry = {}
 
-        other_used_hues = [
-            float(v["primary_hue"])
-            for k, v in registry.items()
-            if k != cover_key and isinstance(v, dict) and "primary_hue" in v
-        ]
+        anchor_path = _discover_album_anchor_path(image_path, output_path=output_path, explicit_anchor=album_anchor)
+        family_hues = None
 
-        # Select Primary Hue from the least-used hues of this image,
-        # enforcing strong angular separation (>= 48 deg) from every other cover in the same album
-        hue_center = least_used_hues[0]
-        if other_used_hues:
-            picked = None
-            for min_sep in (50.0, 44.0, 38.0, 30.0):
-                for rank_idx, cand_hue in enumerate(least_used_hues):
-                    min_dist_to_others = min(_hue_dist(cand_hue, oh) for oh in other_used_hues)
-                    if min_dist_to_others >= min_sep:
-                        picked = cand_hue
-                        break
-                if picked is not None:
-                    break
-            if picked is None:
-                # Fallback: maximize angular distance from existing covers while preferring low usage rank
-                picked = max(
-                    least_used_hues,
-                    key=lambda ch: min(_hue_dist(ch, oh) for oh in other_used_hues) * 3.0 - least_used_hues.index(ch) * 2.0,
-                )
-            hue_center = picked
+        if isinstance(registry.get("_album_family"), dict):
+            stored = registry["_album_family"].get("anchor_hues")
+            if isinstance(stored, list) and len(stored) >= 3 and not is_album_cover:
+                family_hues = [float(x) for x in stored[:3]]
 
-        # Build a vivid, high-chroma 3-stop gradient arc around hue_center (spanning ~65-80 degrees)
-        # oriented toward the neighboring direction that is ALSO least-used in the image.
-        # Keeping the 3 stops within a 75-degree arc prevents muddy RGB midpoints and keeps each cover's
-        # color signature 100% distinct from the other covers in the album.
-        cw_bin = int(((hue_center + 35.0) % 360.0) // 10.0) % num_bins
-        ccw_bin = int(((hue_center - 35.0) % 360.0) // 10.0) % num_bins
-        direction = 1.0 if smoothed[cw_bin] <= smoothed[ccw_bin] else -1.0
+        if family_hues is None and (is_album_cover or anchor_path):
+            src_for_family = anchor_path if (anchor_path and not is_album_cover) else image_path
+            family_hues = extract_album_neon_family(src_for_family)
+            registry["_album_family"] = {
+                "anchor_hues": family_hues,
+                "source": os.path.basename(src_for_family),
+            }
 
-        hue_1 = (hue_center - direction * 28.0) % 360.0
-        hue_2 = hue_center % 360.0
-        hue_3 = (hue_center + direction * 42.0) % 360.0
+        if family_hues is not None:
+            h_dom, h_sec, h_bridge = family_hues[0], family_hues[1], family_hues[2]
+            if is_album_cover:
+                # Album cover leads with high-contrast accent -> bridge -> primary world hue
+                raw_hues = [h_sec, h_bridge, h_dom]
+            else:
+                # Deterministic per-track variation STRICTLY inside the album's neon family (±10° max drift)
+                seed = hashlib.sha256(f"{cover_key}:{title}".encode("utf-8")).digest()
+                variant_idx = seed[0] % 5
+                micro_shift = ((seed[1] % 17) - 8) * 1.0  # -8° .. +8° harmonic shimmer
+                patterns = [
+                    [h_sec, h_bridge, h_dom],
+                    [h_dom, h_bridge, h_sec],
+                    [h_bridge, h_sec, (h_sec + 24.0) % 360.0],
+                    [(h_dom - 14.0) % 360.0, h_dom, h_bridge],
+                    [h_sec, (h_sec + 22.0) % 360.0, h_bridge],
+                ]
+                chosen = patterns[variant_idx]
+                raw_hues = [(h + micro_shift) % 360.0 for h in chosen]
+        else:
+            # Standalone single cover: pick high-contrast accent against dominant background hue
+            fam = extract_album_neon_family(image_path)
+            raw_hues = [fam[1], fam[2], fam[0]]
 
-        # Vary saturation & brightness slightly across stops for luminous neon depth
-        stop_1 = _hsv_to_rgb_tuple(hue_1, 0.96, 1.00)
-        stop_2 = _hsv_to_rgb_tuple(hue_2, 0.90, 1.00)
-        stop_3 = _hsv_to_rgb_tuple(hue_3, 0.82, 1.00)
+        stop_1 = ensure_luminous_neon_rgb(raw_hues[0], 0.94, 1.00, min_luminance=MIN_NEON_RELATIVE_LUMINANCE)
+        stop_2 = ensure_luminous_neon_rgb(raw_hues[1], 0.90, 1.00, min_luminance=MIN_NEON_RELATIVE_LUMINANCE)
+        stop_3 = ensure_luminous_neon_rgb(raw_hues[2], 0.86, 1.00, min_luminance=MIN_NEON_RELATIVE_LUMINANCE)
 
-        # Persist to per-album registry
         try:
             registry[cover_key] = {
                 "title": title,
-                "primary_hue": round(hue_center, 1),
-                "hues": [round(hue_1, 1), round(hue_2, 1), round(hue_3, 1)],
+                "primary_hue": round(raw_hues[0], 1),
+                "hues": [round(h, 1) for h in raw_hues],
                 "stops_hex": [_rgb_to_hex(stop_1), _rgb_to_hex(stop_2), _rgb_to_hex(stop_3)],
+                "luminance": [
+                    round(relative_luminance(stop_1), 3),
+                    round(relative_luminance(stop_2), 3),
+                    round(relative_luminance(stop_3), 3),
+                ],
             }
             with open(registry_path, "w", encoding="utf-8") as wf:
                 json.dump(registry, wf, indent=2)
@@ -254,19 +378,19 @@ def detect_least_used_gradient_colors(image_path, title="", output_path=None, to
             pass
 
         print(
-            f"[gradient] Least-used hues for '{cover_key}': "
-            f"{hue_1:.0f}° ({_rgb_to_hex(stop_1)}) -> "
-            f"{hue_2:.0f}° ({_rgb_to_hex(stop_2)}) -> "
-            f"{hue_3:.0f}° ({_rgb_to_hex(stop_3)})"
+            f"[gradient] Cohesive neon stops for '{cover_key}': "
+            f"{raw_hues[0]:.0f}° ({_rgb_to_hex(stop_1)}, Y={relative_luminance(stop_1):.2f}) -> "
+            f"{raw_hues[1]:.0f}° ({_rgb_to_hex(stop_2)}, Y={relative_luminance(stop_2):.2f}) -> "
+            f"{raw_hues[2]:.0f}° ({_rgb_to_hex(stop_3)}, Y={relative_luminance(stop_3):.2f})"
         )
         return [stop_1, stop_2, stop_3]
     except Exception as e:
         print(f"[gradient] Fallback gradient due to error ({e})", file=sys.stderr)
-        return [(0, 240, 255), (255, 0, 127), (250, 255, 0)]
+        return [(0, 240, 255), (223, 115, 255), (0, 255, 163)]
 
 
 def detect_opposite_key_color(image_path, top=False, bottom=False):
-    """Backwards-compatible helper returning the primary least-used hex color."""
+    """Backwards-compatible helper returning the primary high-contrast neon hex color."""
     stops = detect_least_used_gradient_colors(image_path, top=top, bottom=bottom)
     return _rgb_to_hex(stops[0])
 
@@ -318,12 +442,9 @@ def _render_word_mask_fitted(word, font_path, target_w, max_line_h, stroke_w):
     draw_x = pad - bbox[0]
     draw_y = pad - bbox[1]
 
-    # Draw fill (interior glyph)
     draw_fill.text((draw_x, draw_y), word, font=font, fill=255)
-    # Draw stroke + fill, then subtract fill to get pure outline ring if needed
     draw_stroke.text((draw_x, draw_y), word, font=font, fill=255, stroke_width=stroke_w, stroke_fill=255)
 
-    # Crop tightly to the glyph fill bounds horizontally, keeping stroke padding
     fill_bbox = fill_img.getbbox() or (pad, pad, canvas_w - pad, canvas_h - pad)
     crop_left = max(0, fill_bbox[0] - stroke_w)
     crop_top = max(0, fill_bbox[1] - stroke_w)
@@ -333,7 +454,6 @@ def _render_word_mask_fitted(word, font_path, target_w, max_line_h, stroke_w):
     fill_cropped = fill_img.crop((crop_left, crop_top, crop_right, crop_bottom))
     stroke_cropped = stroke_img.crop((crop_left, crop_top, crop_right, crop_bottom))
 
-    # Scale horizontally to exact target_w (plus 2*stroke_w), and cap height at max_line_h
     desired_w = target_w + stroke_w * 2
     scale_x = desired_w / max(1, fill_cropped.width)
     desired_h = int(round(fill_cropped.height * scale_x))
@@ -350,35 +470,28 @@ def _render_word_mask_fitted(word, font_path, target_w, max_line_h, stroke_w):
 def _create_gradient_and_opacity_layer(w, h, stops, base_opacity=0.72, line_idx=0):
     """
     Creates an RGBA image of size (w, h) for a word line:
-      - RGB channels: smooth 3-stop diagonal gradient built from the image's least-used colors.
-        Alternates gradient sweep angle slightly per line so each stacked word has dynamic interplay.
-      - Alpha channel: variable opacity mask across parts of the text!
-        Upper/outer crests and diagonal bands hit higher opacity (~88-94% of max),
-        while lower/interior zones dip to translucent (~42-55%) so background detail shows through.
+      - RGB channels: smooth 3-stop diagonal gradient built from the album's luminous neon family.
+      - Alpha channel: variable glass opacity with a strict legibility floor (`min_alpha >= 0.54`)
+        so letter interiors never vanish into dark or busy backgrounds.
     """
     s1, s2, s3 = stops[0], stops[1], stops[2]
     if line_idx % 2 == 1:
-        # Subtle shift on second word so top word and bottom word have dynamic gradient interplay
         s1, s2, s3 = stops[2], stops[1], stops[0]
 
-    # Render at compact resolution then bilinear-upscale for speed on 3000x3000 canvases
     gw = min(w, 320)
     gh = min(h, 160)
     grad_small = Image.new("RGBA", (gw, gh))
     px = grad_small.load()
 
-    max_alpha = max(0.35, min(0.96, base_opacity + 0.24))
-    min_alpha = max(0.24, min(0.65, base_opacity - 0.34))
+    max_alpha = max(0.78, min(0.97, base_opacity + 0.24))
+    min_alpha = max(0.54, min(0.80, base_opacity - 0.12))
 
     for y in range(gh):
         yf = y / max(1, gh - 1)
-        # Vertical opacity curve: high-opacity crest at top, translucent window in lower-middle,
-        # anchored baseline edge at bottom
         vert_alpha_factor = 0.52 + 0.48 * math.cos(yf * math.pi * 1.30)
 
         for x in range(gw):
             xf = x / max(1, gw - 1)
-            # Diagonal gradient parameter t in [0, 1]
             t = max(0.0, min(1.0, 0.78 * xf + 0.22 * yf))
             if t < 0.5:
                 u = t * 2.0
@@ -391,7 +504,6 @@ def _create_gradient_and_opacity_layer(w, h, stops, base_opacity=0.72, line_idx=
                 g = int(round(s2[1] * (1.0 - u) + s3[1] * u))
                 b = int(round(s2[2] * (1.0 - u) + s3[2] * u))
 
-            # Spatial wave modulation so distinct parts of the text alternate between bold/solid and translucent glass
             wave = 0.5 + 0.5 * math.sin((xf * 2.4 - yf * 1.5 + line_idx * 0.85) * math.pi)
             combined_factor = max(0.0, min(1.0, 0.55 * vert_alpha_factor + 0.45 * wave))
             alpha_val = int(round(255 * (min_alpha + (max_alpha - min_alpha) * combined_factor)))
@@ -399,6 +511,61 @@ def _create_gradient_and_opacity_layer(w, h, stops, base_opacity=0.72, line_idx=
 
     resample = Image.Resampling.BILINEAR if hasattr(Image, "Resampling") else Image.BILINEAR
     return grad_small.resize((w, h), resample)
+
+
+def _apply_adaptive_readability_scrim(img_rgba, text_top_y, text_bottom_y, top_mode=False):
+    """
+    Measures background luminance in the title zone and applies a subtle, feather-edged
+    obsidian vignette (`0% -> up to 46%` alpha) ONLY when bright reflections, headlights,
+    or busy midtones would reduce title contrast.
+    """
+    w, h = img_rgba.size
+    band_y0 = max(0, min(h - 1, text_top_y))
+    band_y1 = max(band_y0 + 1, min(h, text_bottom_y))
+
+    crop = img_rgba.crop((0, band_y0, w, band_y1)).convert("RGB")
+    resample = Image.Resampling.BOX if hasattr(Image, "Resampling") else Image.BOX
+    sample = crop.resize((64, 32), resample)
+    lums = sorted(relative_luminance(sample.getpixel((x, y))) for y in range(32) for x in range(64))
+    p80_lum = lums[int(len(lums) * 0.80)]
+
+    # Always provide a light 18% anchor scrim, scaling up to 48% when bright highlights sit behind text
+    peak_alpha = 0.18
+    if p80_lum > 0.16:
+        peak_alpha = min(0.48, 0.18 + (p80_lum - 0.16) * 0.70)
+
+    scrim_small = Image.new("RGBA", (8, 128), (0, 0, 0, 0))
+    spx = scrim_small.load()
+    fade_margin = int(h * 0.10)
+
+    if top_mode:
+        fade_end = min(h, band_y1 + fade_margin)
+        for sy in range(128):
+            real_y = (sy / 127.0) * h
+            if real_y >= fade_end:
+                a = 0
+            elif real_y <= band_y0:
+                a = int(round(255 * peak_alpha))
+            else:
+                t = 1.0 - ((real_y - band_y0) / max(1.0, fade_end - band_y0))
+                a = int(round(255 * peak_alpha * (t ** 1.4)))
+            for sx in range(8):
+                spx[sx, sy] = (4, 4, 10, a)
+    else:
+        fade_start = max(0, band_y0 - fade_margin)
+        for sy in range(128):
+            real_y = (sy / 127.0) * h
+            if real_y <= fade_start:
+                a = 0
+            else:
+                t = min(1.0, (real_y - fade_start) / max(1.0, h - fade_start))
+                a = int(round(255 * peak_alpha * (t ** 1.35)))
+            for sx in range(8):
+                spx[sx, sy] = (4, 4, 10, a)
+
+    bilin = Image.Resampling.BILINEAR if hasattr(Image, "Resampling") else Image.BILINEAR
+    scrim_full = scrim_small.resize((w, h), bilin)
+    return Image.alpha_composite(img_rgba, scrim_full)
 
 
 def overlay_title(
@@ -415,40 +582,38 @@ def overlay_title(
     stacked=True,
     spacing=None,
     target_ratio=DEFAULT_TARGET_WIDTH_RATIO,
+    album_anchor=None,
+    is_album=False,
 ):
     """
     Renders title in stacked 1-word-per-line full-width typography (each word scaled to fill
-    ~92% of screen width), filled with a multi-stop gradient derived from the image's least-used
-    colors, with variable opacity across parts of the text and knocked-out dual-layer drop shadows.
+    ~92% of screen width), filled with an album-cohesive neon gradient guaranteed to meet a
+    strict WCAG relative-luminance contrast floor (`Y >= 0.45`).
     """
     img = Image.open(image_path).convert("RGBA")
     w, h = img.size
 
-    # Determine gradient stops
     if color_hex and not auto_color:
-        if color_hex in CMY_NEON_PALETTE:
-            color_hex = CMY_NEON_PALETTE[color_hex]
-        c_hex = color_hex.lstrip("#")
-        c1 = tuple(int(c_hex[i:i + 2], 16) for i in (0, 2, 4))
-        h1, s1, v1 = colorsys.rgb_to_hsv(c1[0] / 255.0, c1[1] / 255.0, c1[2] / 255.0)
-        c2 = _hsv_to_rgb_tuple((h1 * 360.0 + 30.0) % 360.0, max(0.88, s1), 1.0)
-        c3 = _hsv_to_rgb_tuple((h1 * 360.0 + 60.0) % 360.0, max(0.82, s1), 1.0)
-        stops = [c1, c2, c3]
+        stops = ensure_luminous_hex_stops(color_hex, min_luminance=MIN_NEON_RELATIVE_LUMINANCE)
     else:
         stops = detect_least_used_gradient_colors(
-            image_path, title=title, output_path=output_path, top=top, bottom=bottom
+            image_path,
+            title=title,
+            output_path=output_path,
+            top=top,
+            bottom=bottom,
+            album_anchor=album_anchor,
+            is_album=is_album,
         )
 
     font_path = get_best_font_path()
     target_w = int(w * target_ratio)
-    stroke_w = max(3, int(w * 0.0038))
+    stroke_w = max(3, int(w * 0.0040))
     shadow_offset_x = max(6, int(w * 0.0075))
     shadow_offset_y = max(7, int(w * 0.0090))
 
-    # Automatically apply VØIDRIDE Unicode glyph styling if plain ASCII was passed
     styled_title = _stylize_if_ascii(title)
 
-    # Split into lines: default is 1 word per line whenever stacked is True
     if stacked:
         if "\n" in styled_title:
             lines = [ln.strip() for ln in styled_title.split("\n") if ln.strip()]
@@ -460,7 +625,6 @@ def overlay_title(
     if not lines:
         lines = [styled_title.strip() or "VØłĐƦłĐɆ"]
 
-    # Budget vertical height per word so 2-word (or 3-word) titles sit cleanly in the lower ~40% of the cover
     max_total_text_h = int(h * 0.40)
     max_line_h = int(max_total_text_h / max(1, len(lines)))
 
@@ -474,7 +638,6 @@ def overlay_title(
     avg_lh = sum(item[3] for item in rendered_lines) / len(rendered_lines)
     S = spacing if spacing is not None else max(10, int(avg_lh * 0.16))
 
-    # Compute y positions (anchored at bottom by default, or top if requested)
     y_positions = [0] * len(rendered_lines)
     if top and not bottom:
         curr_top = S
@@ -488,6 +651,11 @@ def overlay_title(
             y_positions[i] = curr_bottom - lh
             curr_bottom = y_positions[i] - S
 
+    # Apply subtle adaptive readability scrim behind the title zone before compositing text
+    text_top_y = min(y_positions)
+    text_bottom_y = max(y_positions[i] + rendered_lines[i][3] for i in range(len(rendered_lines)))
+    img = _apply_adaptive_readability_scrim(img, text_top_y, text_bottom_y, top_mode=(top and not bottom))
+
     text_layer = Image.new("RGBA", (w, h), (0, 0, 0, 0))
 
     for idx, (word, fill_mask, stroke_mask, lh) in enumerate(rendered_lines):
@@ -495,40 +663,31 @@ def overlay_title(
         x_pos = (w - lw) // 2
         y_pos = y_positions[idx]
 
-        # Build the gradient + variable opacity layer for this word first so we can modulate shadow & fill together
         grad_fill = _create_gradient_and_opacity_layer(lw, lh_actual, stops, base_opacity=opacity, line_idx=idx)
         var_alpha_map = grad_fill.split()[3]
 
-        # Full-canvas glyph interior mask (used to knock out drop shadows from inside translucent letterforms!)
         canvas_fill_mask = Image.new("L", (w, h), 0)
         canvas_fill_mask.paste(fill_mask, (x_pos, y_pos))
 
-        # 1. Layered drop shadows (soft ambient Gaussian shadow + crisp directional offset shadow),
-        # spatially modulated across parts of the text AND knocked out inside the letter interior
-        # so the background artwork shines cleanly through the translucent parts of the letters!
         if shadow:
-            # Modulate shadow weight so parts of the text have heavy drop shadow and parts have lighter shadow
-            shadow_mod = var_alpha_map.point(lambda a: max(70, min(255, int(a * 1.15))))
+            shadow_mod = var_alpha_map.point(lambda a: max(110, min(255, int(a * 1.15))))
             mod_stroke = ImageChops.multiply(stroke_mask, shadow_mod)
 
-            # Soft blurred ambient drop shadow
             soft_shadow_alpha = Image.new("L", (w, h), 0)
             soft_shadow_alpha.paste(
-                mod_stroke.point(lambda p: int(p * 0.82)),
+                mod_stroke.point(lambda p: int(p * 0.86)),
                 (x_pos + int(shadow_offset_x * 1.45), y_pos + int(shadow_offset_y * 1.55)),
             )
             blur_r = max(4, int(w * 0.0055))
             soft_shadow_alpha = soft_shadow_alpha.filter(ImageFilter.GaussianBlur(radius=blur_r))
-            # Knock out glyph interior so translucent text isn't darkened from behind
             soft_shadow_alpha = ImageChops.subtract(soft_shadow_alpha, canvas_fill_mask)
             soft_shadow_layer = Image.new("RGBA", (w, h), (0, 0, 0, 0))
             soft_shadow_layer.paste((0, 0, 0, 255), (0, 0), soft_shadow_alpha)
             text_layer = Image.alpha_composite(text_layer, soft_shadow_layer)
 
-            # Crisp directional offset drop shadow
             hard_shadow_alpha = Image.new("L", (w, h), 0)
             hard_shadow_alpha.paste(
-                mod_stroke.point(lambda p: int(p * 0.92)),
+                mod_stroke.point(lambda p: int(p * 0.94)),
                 (x_pos + shadow_offset_x, y_pos + shadow_offset_y),
             )
             hard_shadow_alpha = ImageChops.subtract(hard_shadow_alpha, canvas_fill_mask)
@@ -536,10 +695,9 @@ def overlay_title(
             hard_shadow_layer.paste((0, 0, 0, 255), (0, 0), hard_shadow_alpha)
             text_layer = Image.alpha_composite(text_layer, hard_shadow_layer)
 
-        # 2. Subtle chromatic neon glow halo outside the glyph edges
         if glow:
             glow_layer = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-            glow_grad = _create_gradient_and_opacity_layer(lw, lh_actual, stops, base_opacity=0.38, line_idx=idx)
+            glow_grad = _create_gradient_and_opacity_layer(lw, lh_actual, stops, base_opacity=0.42, line_idx=idx)
             outline_only = ImageChops.subtract(stroke_mask, fill_mask)
             glow_alpha = ImageChops.multiply(outline_only, glow_grad.split()[3])
             glow_grad.putalpha(glow_alpha)
@@ -548,14 +706,12 @@ def overlay_title(
             glow_layer = glow_layer.filter(ImageFilter.GaussianBlur(radius=glow_blur))
             text_layer = Image.alpha_composite(text_layer, glow_layer)
 
-        # 3. Crisp dark outline frame (ring = stroke_mask - fill_mask) modulated with text opacity
         outline_ring = ImageChops.subtract(stroke_mask, fill_mask)
-        outline_mod = ImageChops.multiply(outline_ring, var_alpha_map.point(lambda a: max(130, min(255, int(a * 1.2)))))
+        outline_mod = ImageChops.multiply(outline_ring, var_alpha_map.point(lambda a: max(165, min(255, int(a * 1.2)))))
         outline_layer = Image.new("RGBA", (w, h), (0, 0, 0, 0))
         outline_layer.paste((5, 5, 10, 255), (x_pos, y_pos), outline_mod)
         text_layer = Image.alpha_composite(text_layer, outline_layer)
 
-        # 4. Multi-stop least-used color gradient fill with variable opacity across parts of the text
         combined_fill_alpha = ImageChops.multiply(fill_mask, var_alpha_map)
         grad_fill.putalpha(combined_fill_alpha)
 
@@ -576,6 +732,13 @@ def overlay_title(
         if not output_path.lower().endswith(".png"):
             output_path = os.path.splitext(output_path)[0] + ".png"
         result.save(output_path, "PNG")
+        # Always write a companion <8MB RGB JPEG alongside large >=2800px PNGs for Telegram/SoundCloud delivery
+        if w >= 2800 and h >= 2800:
+            jpg_companion = os.path.splitext(output_path)[0] + ".jpg"
+            try:
+                result.convert("RGB").save(jpg_companion, "JPEG", quality=95)
+            except Exception:
+                pass
 
     stops_hex = "/".join(_rgb_to_hex(s) for s in stops)
     print(
@@ -599,7 +762,8 @@ def main():
     parser.add_argument("--image", required=True, help="Path to background image (PNG/WebP/JPEG)")
     parser.add_argument("--title", required=True, help="Unicode-styled track or album title to overlay")
     parser.add_argument("--color", default=None, help="Optional override color in hex or palette name")
-    parser.add_argument("--auto-color", action="store_true", help="Automatically select least-used color gradient from image")
+    parser.add_argument("--auto-color", action="store_true", help="Automatically select album-cohesive neon gradient")
+    parser.add_argument("--album-anchor", default=None, help="Optional path to album_cover_bg.png to lock palette cohesion")
     parser.add_argument("--opacity", type=float, default=0.68, help="Base font fill opacity between 0.0 and 1.0 (default: 0.68)")
     parser.add_argument("--output", default=None, help="Output file path (default: <input>-titled.png)")
     parser.add_argument("--no-glow", action="store_true", help="Skip neon glow effect")
@@ -608,7 +772,7 @@ def main():
     parser.add_argument("--bottom", action="store_true", help="Position title at bottom")
     parser.add_argument("--stacked", action="store_true", help="Stack words one per line scaled to fill width (default for multi-word titles)")
     parser.add_argument("--single-line", action="store_true", help="Force single-line rendering")
-    parser.add_argument("--album", action="store_true", help="Album title mode (stacked, justified, anchored at bottom)")
+    parser.add_argument("--album", action="store_true", help="Album title mode (establishes album neon family, anchored at bottom)")
     parser.add_argument("--spacing", type=int, default=None, help="Explicit vertical pixel spacing between lines and at bottom")
 
     args = parser.parse_args()
@@ -617,7 +781,6 @@ def main():
         print(f"Error: Image not found: {args.image}", file=sys.stderr)
         sys.exit(1)
 
-    # Default to stacked (1 word per line, each word scaled to fill width) unless --single-line is explicitly set
     is_stacked = not args.single_line
 
     overlay_title(
@@ -633,6 +796,8 @@ def main():
         opacity=args.opacity,
         stacked=is_stacked,
         spacing=args.spacing,
+        album_anchor=args.album_anchor,
+        is_album=args.album,
     )
 
 

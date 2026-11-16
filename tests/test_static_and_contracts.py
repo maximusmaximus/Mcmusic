@@ -43,6 +43,11 @@ class TestStaticAndContracts(unittest.TestCase):
             "data/skills/master-producer/master-producer/scripts/produce-album.py",
             "data/skills/dawagent/dawagent/scripts/handoff.py",
             "data/skills/dawagent/dawagent/scripts/auto_processor.py",
+            "data/skills/creative/cover-title-overlay/scripts/overlay-title.py",
+            "data/skills/creative/artwork/scripts/gen_artwork.py",
+            "data/skills/artwork/artwork/scripts/gen_artwork.py",
+            "skills/artwork/artwork/scripts/gen_artwork.py",
+            "skills/creative/cover-title-overlay/scripts/overlay-title.py",
             "dawagent/scripts/auto_processor.py",
         ]
         for rel in extra_rel:
@@ -78,6 +83,9 @@ class TestStaticAndContracts(unittest.TestCase):
             CONFIG_DIR / "model_registry.json",
             REPO_ROOT / "data" / "music" / "profiles" / "vidride" / "profile.json",
             REPO_ROOT / "data" / "skills" / "master-producer" / "master-producer" / "SKILL.md",
+            REPO_ROOT / "data" / "skills" / "creative" / "artwork" / "SKILL.md",
+            REPO_ROOT / "data" / "skills" / "creative" / "cover-title-overlay" / "SKILL.md",
+            REPO_ROOT / "skills" / "creative" / "cover-title-overlay" / "SKILL.md",
             REPO_ROOT / "data" / "memories" / "MEMORY.md",
             REPO_ROOT / ".github" / "workflows" / "ci.yml",
         ]:
@@ -238,6 +246,175 @@ class TestStaticAndContracts(unittest.TestCase):
         self.assertAlmostEqual(float(mp_mod.TARGET_PROFILES["streaming"]["lufs"]), -11.5, places=1)
         self.assertEqual(mp_mod.STEM_CONFIG["texture"]["model"], "stable-audio-25")
         self.assertEqual(mp_mod.STEM_CONFIG["atmosphere"]["model"], "stable-audio-25")
+
+    def test_07_cover_art_cohesion_typography_and_3k_contracts(self):
+        """Guard Album Visual Showrunner world-locking, WCAG Y>=0.45 neon palette cohesion, gateway quickedit fix, and 3K naming."""
+        import colorsys
+        import shutil
+        import tempfile
+        from PIL import Image, ImageDraw
+
+        # 1. gen_artwork.py must NEVER hardcode deprecated grok-imagine-image-quality
+        for rel_ga in (
+            "data/skills/creative/artwork/scripts/gen_artwork.py",
+            "data/skills/artwork/artwork/scripts/gen_artwork.py",
+            "skills/artwork/artwork/scripts/gen_artwork.py",
+        ):
+            ga_path = REPO_ROOT / rel_ga
+            if ga_path.exists():
+                ga_txt = ga_path.read_text(encoding="utf-8")
+                self.assertNotIn("grok-imagine-image-quality", ga_txt, f"{rel_ga} still references deprecated image model")
+                self.assertIn("get_cover_model_chain", ga_txt)
+
+        # 2. Gateway callback index bug fix: 'art:quickedit:3:darker' -> track_num='3', preset='darker'
+        gw_txt = (SCRIPTS_DIR / "patch_gateway.py").read_text(encoding="utf-8")
+        self.assertIn("if len(parts) >= 4:", gw_txt)
+        choice = "art:quickedit:3:darker"
+        parts = choice.split(":")
+        track_num = parts[2] if len(parts) >= 4 else parts[1]
+        preset = parts[3] if len(parts) >= 4 else parts[2]
+        self.assertEqual(track_num, "3")
+        self.assertEqual(preset, "darker")
+
+        # 3. overlay-title.py: WCAG relative luminance floor (Y >= 0.45) + album-locked cohesive neon family
+        ov_path = REPO_ROOT / "data" / "skills" / "creative" / "cover-title-overlay" / "scripts" / "overlay-title.py"
+        ov_mod = _load_module_from_path("overlay_title_contract", ov_path)
+
+        # Dark ultramarine (#192DFF, Y ~ 0.14) must be automatically lifted to luminous ice-blue/orchid (Y >= 0.45)
+        raw_dark_blue = (25, 45, 255)
+        self.assertLess(ov_mod.relative_luminance(raw_dark_blue), 0.20)
+        lifted_rgb = ov_mod.ensure_luminous_neon_rgb(235.0, 0.92, 1.0, min_luminance=0.45)
+        self.assertGreaterEqual(
+            ov_mod.relative_luminance(lifted_rgb),
+            0.45,
+            f"Dark blue {raw_dark_blue} was not lifted above WCAG luminance floor: {lifted_rgb}",
+        )
+        lifted_stops = ov_mod.ensure_luminous_hex_stops("#192DFF", min_luminance=0.45)
+        self.assertEqual(len(lifted_stops), 3)
+        for rgb_stop in lifted_stops:
+            self.assertGreaterEqual(ov_mod.relative_luminance(rgb_stop), 0.45)
+
+        # Album + 5 tracks must lock to _album_family instead of scattering across a 6-color 360-deg rainbow
+        tmp = Path(tempfile.mkdtemp(prefix="test_overlay_cohesion_"))
+        try:
+            alb_bg = tmp / "album_cover_bg.png"
+            img = Image.new("RGB", (600, 600), (10, 14, 22))
+            draw = ImageDraw.Draw(img)
+            draw.rectangle([40, 120, 560, 260], fill=(0, 225, 240))   # Electric cyan rim light
+            draw.rectangle([80, 280, 520, 360], fill=(18, 190, 145))  # Cold teal reflection
+            img.save(alb_bg, "PNG")
+
+            alb_out = tmp / "album_cover.png"
+            ov_mod.overlay_title(
+                str(alb_bg),
+                "ACID REFLEX",
+                output_path=str(alb_out),
+                bottom=True,
+                auto_color=True,
+                stacked=True,
+                is_album=True,
+            )
+            self.assertTrue(alb_out.exists())
+
+            pal_file = tmp / ".cover_palettes.json"
+            self.assertTrue(pal_file.exists(), "Album overlay must record .cover_palettes.json")
+            pal_data = json.loads(pal_file.read_text(encoding="utf-8"))
+            family_obj = pal_data.get("_album_family", {})
+            family_hues = family_obj.get("anchor_hues", []) if isinstance(family_obj, dict) else []
+            self.assertEqual(len(family_hues), 3, f"Expected 3-hue cohesive album family, got: {family_obj}")
+
+            def _hex_to_hue_and_lum(hx: str):
+                h = hx.lstrip("#")
+                r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+                hue_deg = colorsys.rgb_to_hsv(r / 255.0, g / 255.0, b / 255.0)[0] * 360.0
+                return hue_deg, ov_mod.relative_luminance((r, g, b))
+
+            for idx, tr_name in enumerate(["OPTIC NERVE", "CHROME BILE", "CAUSTIC LINE", "VALVE BURN", "PHANTOM SUMP"], 1):
+                tr_bg = tmp / f"0{idx}_bg.png"
+                shutil.copy2(alb_bg, tr_bg)
+                tr_out = tmp / f"0{idx}_cover.png"
+                ov_mod.overlay_title(
+                    str(tr_bg),
+                    tr_name,
+                    output_path=str(tr_out),
+                    bottom=True,
+                    auto_color=True,
+                    stacked=True,
+                    is_album=False,
+                    album_anchor=str(alb_bg),
+                )
+                self.assertTrue(tr_out.exists())
+
+            pal_after = json.loads(pal_file.read_text(encoding="utf-8"))
+            checked_covers = 0
+            for key, entry in pal_after.items():
+                if key.startswith("_"):
+                    continue
+                checked_covers += 1
+                stops = entry.get("stops_hex", []) if isinstance(entry, dict) else []
+                self.assertEqual(len(stops), 3)
+                for stop_hex in stops:
+                    h_deg, lum = _hex_to_hue_and_lum(stop_hex)
+                    self.assertGreaterEqual(lum, 0.44, f"Stop {stop_hex} on {key} violated luminance floor ({lum:.3f})")
+                    min_dist = min(abs(((h_deg - fh + 180.0) % 360.0) - 180.0) for fh in family_hues)
+                    self.assertLessEqual(
+                        min_dist,
+                        38.0,
+                        f"Track {key} stop {stop_hex} ({h_deg:.1f} deg) drifted outside album family {family_hues}",
+                    )
+            self.assertEqual(checked_covers, 6, "Expected album cover + 5 track covers recorded in .cover_palettes.json")
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+        # 4. album_pipeline.py: off-world literal pun scrubber, motif budget caps, and canonical underscore paths
+        ap_mod = _load_module_from_path("album_pipeline_contract", SCRIPTS_DIR / "album_pipeline.py")
+        noisy_tracks = [
+            {
+                "track": i + 1,
+                "title": f"TRACK {i + 1}",
+                "shot_scale": "wide",
+                "image_prompt": (
+                    "Subterranean concrete bay with shipping containers on an ocean pier beside a nuclear cooling tower. "
+                    "A shadowed figure in a fedora stands in the mist. "
+                    "A matte-black katana blade rests along the concrete ledge. "
+                    "A cold full moon gleams through the skylight."
+                ),
+            }
+            for i in range(5)
+        ]
+        cleaned = ap_mod._scrub_off_world_puns_and_cap_motifs(
+            noisy_tracks,
+            "Flooded brutalist subterranean server vault with emerald-cyan coolant mist",
+            "Unified nocturnal vault world",
+            "Pitch-black obsidian shadows lit strictly by ice electric cyan (#00E5F0)",
+            "waning gibbous",
+            "77% illuminated silver disc",
+        )
+        self.assertEqual(len(cleaned), 5)
+        self.assertEqual(len({c["shot_scale"] for c in cleaned}), 5, "All 5 tracks must receive distinct shot scales")
+        fedora_hits = sum(1 for c in cleaned if "fedora" in c["image_prompt"].lower())
+        katana_hits = sum(1 for c in cleaned if "katana" in c["image_prompt"].lower())
+        moon_hits = sum(1 for c in cleaned if "moon" in c["image_prompt"].lower())
+        self.assertEqual(fedora_hits, 1, f"Fedora cap must keep 1 and scrub 4 across 5 tracks: {fedora_hits}")
+        self.assertEqual(katana_hits, 1, f"Katana cap must keep 1 and scrub 4 across 5 tracks: {katana_hits}")
+        self.assertEqual(moon_hits, 2, f"Moon cap must keep 2 and scrub 3 across 5 tracks: {moon_hits}")
+        for c in cleaned:
+            low = c["image_prompt"].lower()
+            self.assertNotIn("shipping container", low)
+            self.assertNotIn("ocean pier", low)
+            self.assertNotIn("nuclear cooling tower", low)
+
+        tmp_art = Path(tempfile.mkdtemp(prefix="test_canon_paths_"))
+        try:
+            legacy_space = tmp_art / "OPTIC NERVE_cover.png"
+            legacy_space.write_bytes(b"legacy")
+            bg_p, cov_p, jpg_p = ap_mod.get_canonical_track_cover_paths(str(tmp_art), "OPTIC NERVE")
+            self.assertTrue(cov_p.endswith("OPTIC_NERVE_cover.png"))
+            self.assertTrue(bg_p.endswith("OPTIC_NERVE_cover_bg.png"))
+            self.assertTrue(jpg_p.endswith("OPTIC_NERVE_cover.jpg"))
+            self.assertTrue(os.path.exists(cov_p), "Legacy space-named cover must migrate to canonical underscore path")
+        finally:
+            shutil.rmtree(tmp_art, ignore_errors=True)
 
 
 if __name__ == "__main__":

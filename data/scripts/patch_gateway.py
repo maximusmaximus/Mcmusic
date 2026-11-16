@@ -812,8 +812,12 @@ PATCH_CODE = '''
 
             if choice.startswith('art:quickedit:'):
                 parts = choice.split(':')
-                track_num = parts[1]
-                preset = parts[2]
+                if len(parts) >= 4:
+                    track_num = parts[2]
+                    preset = parts[3]
+                else:
+                    track_num = parts[1]
+                    preset = parts[2]
                 preset_map = {
                     "darker": "Dramatically deepen shadows, pitch black void contrast, sinister nocturnal chiaroscuro, specular wet reflections",
                     "mist": "Dense volumetric cyan fog and rising vent steam curling across the floor, cold breath haze and diffused light beams",
