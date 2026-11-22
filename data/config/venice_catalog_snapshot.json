@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-11-10T19:11:25.383352+00:00",
+  "captured_at": "2026-11-22T00:44:14.952554+00:00",
   "models": {
     "abliteration-abliterated-model-large-flash": {
       "capabilities": {
@@ -331,6 +331,10 @@
           "diem": 12.5,
           "usd": 12.5
         },
+        "cache_write_1h": {
+          "diem": 20,
+          "usd": 20
+        },
         "input": {
           "diem": 10,
           "usd": 10
@@ -380,6 +384,10 @@
           "diem": 12.5,
           "usd": 12.5
         },
+        "cache_write_1h": {
+          "diem": 20,
+          "usd": 20
+        },
         "input": {
           "diem": 10,
           "usd": 10
@@ -428,6 +436,10 @@
         "cache_write": {
           "diem": 10,
           "usd": 10
+        },
+        "cache_write_1h": {
+          "diem": 16,
+          "usd": 16
         },
         "input": {
           "diem": 8,
@@ -479,6 +491,10 @@
           "diem": 0.125,
           "usd": 0.125
         },
+        "cache_write_1h": {
+          "diem": 0.2,
+          "usd": 0.2
+        },
         "extended": {
           "cache_input": {
             "diem": 0.05,
@@ -487,6 +503,10 @@
           "cache_write": {
             "diem": 0.625,
             "usd": 0.625
+          },
+          "cache_write_1h": {
+            "diem": 1,
+            "usd": 1
           },
           "context_token_threshold": 100000,
           "input": {
@@ -539,6 +559,10 @@
           "diem": 6.25,
           "usd": 6.25
         },
+        "cache_write_1h": {
+          "diem": 10,
+          "usd": 10
+        },
         "input": {
           "diem": 5,
           "usd": 5
@@ -586,6 +610,10 @@
         "cache_write": {
           "diem": 6.25,
           "usd": 6.25
+        },
+        "cache_write_1h": {
+          "diem": 10,
+          "usd": 10
         },
         "input": {
           "diem": 5,
@@ -636,6 +664,10 @@
           "diem": 6.25,
           "usd": 6.25
         },
+        "cache_write_1h": {
+          "diem": 10,
+          "usd": 10
+        },
         "input": {
           "diem": 5,
           "usd": 5
@@ -685,6 +717,10 @@
           "diem": 6.25,
           "usd": 6.25
         },
+        "cache_write_1h": {
+          "diem": 10,
+          "usd": 10
+        },
         "input": {
           "diem": 5,
           "usd": 5
@@ -692,55 +728,6 @@
         "output": {
           "diem": 25,
           "usd": 25
-        }
-      },
-      "type": "text"
-    },
-    "claude-opus-4-8-fast": {
-      "capabilities": {
-        "defaultReasoningEffort": "medium",
-        "maxImages": 10,
-        "optimizedForCode": true,
-        "quantization": "not-available",
-        "reasoningEffortOptions": [
-          "low",
-          "medium",
-          "high",
-          "xhigh",
-          "max"
-        ],
-        "supportsAudioInput": false,
-        "supportsE2EE": false,
-        "supportsFunctionCalling": true,
-        "supportsLogProbs": false,
-        "supportsMultipleImages": true,
-        "supportsReasoning": true,
-        "supportsReasoningEffort": true,
-        "supportsResponseSchema": true,
-        "supportsTeeAttestation": false,
-        "supportsVideoInput": false,
-        "supportsVision": true,
-        "supportsWebSearch": true,
-        "supportsXSearch": false
-      },
-      "constraints": {},
-      "id": "claude-opus-4-8-fast",
-      "pricing": {
-        "cache_input": {
-          "diem": 1,
-          "usd": 1
-        },
-        "cache_write": {
-          "diem": 12.5,
-          "usd": 12.5
-        },
-        "input": {
-          "diem": 10,
-          "usd": 10
-        },
-        "output": {
-          "diem": 50,
-          "usd": 50
         }
       },
       "type": "text"
@@ -782,6 +769,10 @@
         "cache_write": {
           "diem": 6.25,
           "usd": 6.25
+        },
+        "cache_write_1h": {
+          "diem": 10,
+          "usd": 10
         },
         "input": {
           "diem": 5,
@@ -832,6 +823,10 @@
           "diem": 5,
           "usd": 5
         },
+        "cache_write_1h": {
+          "diem": 8,
+          "usd": 8
+        },
         "input": {
           "diem": 4,
           "usd": 4
@@ -880,6 +875,10 @@
         "cache_write": {
           "diem": 10,
           "usd": 10
+        },
+        "cache_write_1h": {
+          "diem": 16,
+          "usd": 16
         },
         "input": {
           "diem": 8,
@@ -930,6 +929,10 @@
           "diem": 12.5,
           "usd": 12.5
         },
+        "cache_write_1h": {
+          "diem": 20,
+          "usd": 20
+        },
         "input": {
           "diem": 10,
           "usd": 10
@@ -977,6 +980,10 @@
         "cache_write": {
           "diem": 3.75,
           "usd": 3.75
+        },
+        "cache_write_1h": {
+          "diem": 6,
+          "usd": 6
         },
         "input": {
           "diem": 3,
@@ -1027,6 +1034,10 @@
           "diem": 2.5,
           "usd": 2.5
         },
+        "cache_write_1h": {
+          "diem": 4,
+          "usd": 4
+        },
         "input": {
           "diem": 2,
           "usd": 2
@@ -1075,6 +1086,10 @@
         "cache_write": {
           "diem": 2.5,
           "usd": 2.5
+        },
+        "cache_write_1h": {
+          "diem": 4,
+          "usd": 4
         },
         "input": {
           "diem": 2,
@@ -1264,16 +1279,16 @@
       "id": "deepseek-v4-1-flash-1017-ultrafast",
       "pricing": {
         "cache_input": {
-          "diem": 0.06,
-          "usd": 0.06
+          "diem": 0.03,
+          "usd": 0.03
         },
         "input": {
-          "diem": 3,
-          "usd": 3
+          "diem": 1.5,
+          "usd": 1.5
         },
         "output": {
-          "diem": 12,
-          "usd": 12
+          "diem": 6,
+          "usd": 6
         }
       },
       "type": "text"
@@ -1877,6 +1892,48 @@
         "output": {
           "diem": 4.12,
           "usd": 4.12
+        }
+      },
+      "type": "text"
+    },
+    "e2ee-kimi-k3-1-pro-p": {
+      "capabilities": {
+        "defaultReasoningEffort": "max",
+        "maxImages": 10,
+        "optimizedForCode": true,
+        "quantization": "not-available",
+        "reasoningEffortOptions": [
+          "none",
+          "max"
+        ],
+        "supportsAudioInput": false,
+        "supportsE2EE": true,
+        "supportsFunctionCalling": true,
+        "supportsLogProbs": false,
+        "supportsMultipleImages": true,
+        "supportsReasoning": true,
+        "supportsReasoningEffort": true,
+        "supportsResponseSchema": true,
+        "supportsTeeAttestation": true,
+        "supportsVideoInput": false,
+        "supportsVision": true,
+        "supportsWebSearch": true,
+        "supportsXSearch": false
+      },
+      "constraints": {},
+      "id": "e2ee-kimi-k3-1-pro-p",
+      "pricing": {
+        "cache_input": {
+          "diem": 0.25,
+          "usd": 0.25
+        },
+        "input": {
+          "diem": 2.5,
+          "usd": 2.5
+        },
+        "output": {
+          "diem": 12.5,
+          "usd": 12.5
         }
       },
       "type": "text"
@@ -3216,6 +3273,114 @@
       },
       "type": "text"
     },
+    "gemini-4-carbon": {
+      "capabilities": {
+        "optimizedForCode": false,
+        "quantization": "not-available",
+        "supportsAudioInput": true,
+        "supportsE2EE": false,
+        "supportsFunctionCalling": true,
+        "supportsLogProbs": false,
+        "supportsMultipleImages": false,
+        "supportsReasoning": true,
+        "supportsReasoningEffort": false,
+        "supportsResponseSchema": true,
+        "supportsTeeAttestation": false,
+        "supportsVideoInput": true,
+        "supportsVision": true,
+        "supportsWebSearch": true,
+        "supportsXSearch": false
+      },
+      "constraints": {},
+      "id": "gemini-4-carbon",
+      "pricing": {
+        "cache_input": {
+          "diem": 0.125,
+          "usd": 0.125
+        },
+        "input": {
+          "diem": 2.5,
+          "usd": 2.5
+        },
+        "output": {
+          "diem": 12.5,
+          "usd": 12.5
+        }
+      },
+      "type": "text"
+    },
+    "gemini-4-hydrogen": {
+      "capabilities": {
+        "optimizedForCode": false,
+        "quantization": "not-available",
+        "supportsAudioInput": true,
+        "supportsE2EE": false,
+        "supportsFunctionCalling": true,
+        "supportsLogProbs": false,
+        "supportsMultipleImages": false,
+        "supportsReasoning": true,
+        "supportsReasoningEffort": false,
+        "supportsResponseSchema": true,
+        "supportsTeeAttestation": false,
+        "supportsVideoInput": true,
+        "supportsVision": true,
+        "supportsWebSearch": true,
+        "supportsXSearch": false
+      },
+      "constraints": {},
+      "id": "gemini-4-hydrogen",
+      "pricing": {
+        "cache_input": {
+          "diem": 0.09375,
+          "usd": 0.09375
+        },
+        "input": {
+          "diem": 1.875,
+          "usd": 1.875
+        },
+        "output": {
+          "diem": 9.375,
+          "usd": 9.375
+        }
+      },
+      "type": "text"
+    },
+    "gemini-4-neon": {
+      "capabilities": {
+        "optimizedForCode": false,
+        "quantization": "not-available",
+        "supportsAudioInput": true,
+        "supportsE2EE": false,
+        "supportsFunctionCalling": true,
+        "supportsLogProbs": false,
+        "supportsMultipleImages": false,
+        "supportsReasoning": true,
+        "supportsReasoningEffort": false,
+        "supportsResponseSchema": true,
+        "supportsTeeAttestation": false,
+        "supportsVideoInput": true,
+        "supportsVision": true,
+        "supportsWebSearch": true,
+        "supportsXSearch": false
+      },
+      "constraints": {},
+      "id": "gemini-4-neon",
+      "pricing": {
+        "cache_input": {
+          "diem": 0.1875,
+          "usd": 0.1875
+        },
+        "input": {
+          "diem": 3.75,
+          "usd": 3.75
+        },
+        "output": {
+          "diem": 18.75,
+          "usd": 18.75
+        }
+      },
+      "type": "text"
+    },
     "gemini-embedding-2-preview": {
       "capabilities": {},
       "constraints": {},
@@ -3446,6 +3611,49 @@
         "output": {
           "diem": 0.5,
           "usd": 0.5
+        }
+      },
+      "type": "text"
+    },
+    "glm-5-3-flash-uncensored": {
+      "capabilities": {
+        "defaultReasoningEffort": "high",
+        "maxImages": 10,
+        "optimizedForCode": true,
+        "quantization": "fp8",
+        "reasoningEffortOptions": [
+          "low",
+          "high",
+          "max"
+        ],
+        "supportsAudioInput": false,
+        "supportsE2EE": false,
+        "supportsFunctionCalling": true,
+        "supportsLogProbs": false,
+        "supportsMultipleImages": true,
+        "supportsReasoning": true,
+        "supportsReasoningEffort": true,
+        "supportsResponseSchema": true,
+        "supportsTeeAttestation": false,
+        "supportsVideoInput": false,
+        "supportsVision": true,
+        "supportsWebSearch": true,
+        "supportsXSearch": false
+      },
+      "constraints": {},
+      "id": "glm-5-3-flash-uncensored",
+      "pricing": {
+        "cache_input": {
+          "diem": 0.033,
+          "usd": 0.033
+        },
+        "input": {
+          "diem": 0.165,
+          "usd": 0.165
+        },
+        "output": {
+          "diem": 0.55,
+          "usd": 0.55
         }
       },
       "type": "text"
@@ -6322,50 +6530,6 @@
       },
       "type": "decision"
     },
-    "kimi-k2-5": {
-      "capabilities": {
-        "defaultReasoningEffort": "high",
-        "maxImages": 10,
-        "optimizedForCode": true,
-        "quantization": "not-available",
-        "reasoningEffortOptions": [
-          "none",
-          "low",
-          "medium",
-          "high"
-        ],
-        "supportsAudioInput": false,
-        "supportsE2EE": false,
-        "supportsFunctionCalling": true,
-        "supportsLogProbs": true,
-        "supportsMultipleImages": true,
-        "supportsReasoning": true,
-        "supportsReasoningEffort": true,
-        "supportsResponseSchema": true,
-        "supportsTeeAttestation": false,
-        "supportsVideoInput": false,
-        "supportsVision": true,
-        "supportsWebSearch": true,
-        "supportsXSearch": false
-      },
-      "constraints": {},
-      "id": "kimi-k2-5",
-      "pricing": {
-        "cache_input": {
-          "diem": 0.22,
-          "usd": 0.22
-        },
-        "input": {
-          "diem": 0.56,
-          "usd": 0.56
-        },
-        "output": {
-          "diem": 3.5,
-          "usd": 3.5
-        }
-      },
-      "type": "text"
-    },
     "kimi-k2-6": {
       "capabilities": {
         "defaultReasoningEffort": "high",
@@ -7545,6 +7709,56 @@
       "pricing": {},
       "type": "video"
     },
+    "kling-v4-image-edit": {
+      "capabilities": {},
+      "constraints": {
+        "aspectRatios": [
+          "auto",
+          "1:1",
+          "16:9",
+          "9:16",
+          "4:3",
+          "3:4",
+          "3:2",
+          "2:3",
+          "21:9"
+        ],
+        "combineImages": true,
+        "defaultResolution": "2K",
+        "maxInputImages": 10,
+        "promptCharacterLimit": 32768,
+        "resolutions": [
+          "2K",
+          "4K"
+        ],
+        "singleImageAspectRatio": true
+      },
+      "id": "kling-v4-image-edit",
+      "pricing": {
+        "inpaint": {
+          "diem": 0.08,
+          "usd": 0.08
+        },
+        "inputImages": {
+          "additional": {
+            "diem": 0.0036800000000000005,
+            "usd": 0.0036800000000000005
+          },
+          "included": 0
+        },
+        "resolutions": {
+          "2K": {
+            "diem": 0.08,
+            "usd": 0.08
+          },
+          "4K": {
+            "diem": 0.12,
+            "usd": 0.12
+          }
+        }
+      },
+      "type": "inpaint"
+    },
     "kling-v4-image-to-video": {
       "capabilities": {},
       "constraints": {
@@ -7582,6 +7796,10 @@
           "29s",
           "30s"
         ],
+        "hdrResolutions": [
+          "1080p",
+          "4k"
+        ],
         "model_type": "image-to-video",
         "per_reference_audio": false,
         "prompt_character_limit": 26000,
@@ -7590,8 +7808,10 @@
         "reference_image_min_short_side_pixels": 300,
         "resolutions": [
           "720p",
-          "1080p"
+          "1080p",
+          "4k"
         ],
+        "supportsHdr": true,
         "video_input": false
       },
       "id": "kling-v4-image-to-video",
@@ -7641,6 +7861,10 @@
           "29s",
           "30s"
         ],
+        "hdrResolutions": [
+          "1080p",
+          "4k"
+        ],
         "model_type": "image-to-video",
         "per_reference_audio": false,
         "prompt_character_limit": 26000,
@@ -7649,13 +7873,66 @@
         "reference_image_min_short_side_pixels": 300,
         "resolutions": [
           "720p",
-          "1080p"
+          "1080p",
+          "4k"
         ],
+        "supportsHdr": true,
         "video_input": false
       },
       "id": "kling-v4-reference-to-video",
       "pricing": {},
       "type": "video"
+    },
+    "kling-v4-text-to-image": {
+      "capabilities": {},
+      "constraints": {
+        "aspectRatios": [
+          "1:1",
+          "16:9",
+          "9:16",
+          "4:3",
+          "3:4",
+          "3:2",
+          "2:3",
+          "21:9"
+        ],
+        "defaultAspectRatio": "1:1",
+        "defaultResolution": "2K",
+        "promptCharacterLimit": 32768,
+        "resolutions": [
+          "2K",
+          "4K"
+        ],
+        "steps": {
+          "default": 20,
+          "max": 50
+        },
+        "widthHeightDivisor": 1
+      },
+      "id": "kling-v4-text-to-image",
+      "pricing": {
+        "resolutions": {
+          "2K": {
+            "diem": 0.08,
+            "usd": 0.08
+          },
+          "4K": {
+            "diem": 0.12,
+            "usd": 0.12
+          }
+        },
+        "upscale": {
+          "2x": {
+            "diem": 0.02,
+            "usd": 0.02
+          },
+          "4x": {
+            "diem": 0.08,
+            "usd": 0.08
+          }
+        }
+      },
+      "type": "image"
     },
     "kling-v4-text-to-video": {
       "capabilities": {},
@@ -7699,13 +7976,19 @@
           "29s",
           "30s"
         ],
+        "hdrResolutions": [
+          "1080p",
+          "4k"
+        ],
         "model_type": "text-to-video",
         "per_reference_audio": false,
         "prompt_character_limit": 26000,
         "resolutions": [
           "720p",
-          "1080p"
+          "1080p",
+          "4k"
         ],
+        "supportsHdr": true,
         "video_input": false
       },
       "id": "kling-v4-text-to-video",
@@ -7736,10 +8019,10 @@
           "2K"
         ],
         "steps": {
-          "default": 20,
-          "max": 50
+          "default": 8,
+          "max": 8
         },
-        "widthHeightDivisor": 1
+        "widthHeightDivisor": 8
       },
       "id": "krea-2-turbo",
       "pricing": {
@@ -8680,6 +8963,326 @@
       },
       "type": "music"
     },
+    "mai-image-2-7": {
+      "capabilities": {},
+      "constraints": {
+        "aspectRatios": [
+          "1:1",
+          "16:9",
+          "9:16",
+          "4:3",
+          "3:4",
+          "3:2",
+          "2:3"
+        ],
+        "defaultAspectRatio": "1:1",
+        "defaultResolution": "1K",
+        "promptCharacterLimit": 32000,
+        "resolutions": [
+          "1K",
+          "2K"
+        ],
+        "steps": {
+          "default": 20,
+          "max": 50
+        },
+        "supportsTransparentBackground": true,
+        "widthHeightDivisor": 1
+      },
+      "id": "mai-image-2-7",
+      "pricing": {
+        "resolutions": {
+          "1K": {
+            "diem": 0.05,
+            "usd": 0.05
+          },
+          "2K": {
+            "diem": 0.17,
+            "usd": 0.17
+          }
+        },
+        "upscale": {
+          "2x": {
+            "diem": 0.02,
+            "usd": 0.02
+          },
+          "4x": {
+            "diem": 0.08,
+            "usd": 0.08
+          }
+        }
+      },
+      "type": "image"
+    },
+    "mai-image-2-7-edit": {
+      "capabilities": {},
+      "constraints": {
+        "aspectRatios": [
+          "1:1",
+          "16:9",
+          "9:16",
+          "4:3",
+          "3:4",
+          "3:2",
+          "2:3"
+        ],
+        "combineImages": true,
+        "defaultResolution": "1K",
+        "maxInputImages": 5,
+        "promptCharacterLimit": 32000,
+        "resolutions": [
+          "1K",
+          "2K"
+        ],
+        "singleImageAspectRatio": true,
+        "supportsTransparentBackground": true
+      },
+      "id": "mai-image-2-7-edit",
+      "pricing": {
+        "inpaint": {
+          "diem": 0.06,
+          "usd": 0.06
+        },
+        "inputImages": {
+          "additional": {
+            "diem": 0.009430000000000003,
+            "usd": 0.009430000000000003
+          },
+          "included": 1
+        },
+        "resolutions": {
+          "1K": {
+            "diem": 0.06,
+            "usd": 0.06
+          },
+          "2K": {
+            "diem": 0.18,
+            "usd": 0.18
+          }
+        }
+      },
+      "type": "inpaint"
+    },
+    "mai-image-2-7-flash": {
+      "capabilities": {},
+      "constraints": {
+        "aspectRatios": [
+          "1:1",
+          "16:9",
+          "9:16",
+          "4:3",
+          "3:4",
+          "3:2",
+          "2:3"
+        ],
+        "defaultAspectRatio": "1:1",
+        "defaultResolution": "1K",
+        "promptCharacterLimit": 32000,
+        "resolutions": [
+          "1K",
+          "2K"
+        ],
+        "steps": {
+          "default": 20,
+          "max": 50
+        },
+        "supportsTransparentBackground": true,
+        "widthHeightDivisor": 1
+      },
+      "id": "mai-image-2-7-flash",
+      "pricing": {
+        "resolutions": {
+          "1K": {
+            "diem": 0.02,
+            "usd": 0.02
+          },
+          "2K": {
+            "diem": 0.05,
+            "usd": 0.05
+          }
+        },
+        "upscale": {
+          "2x": {
+            "diem": 0.02,
+            "usd": 0.02
+          },
+          "4x": {
+            "diem": 0.08,
+            "usd": 0.08
+          }
+        }
+      },
+      "type": "image"
+    },
+    "mai-image-2-7-flash-edit": {
+      "capabilities": {},
+      "constraints": {
+        "aspectRatios": [
+          "1:1",
+          "16:9",
+          "9:16",
+          "4:3",
+          "3:4",
+          "3:2",
+          "2:3"
+        ],
+        "combineImages": true,
+        "defaultResolution": "1K",
+        "maxInputImages": 5,
+        "promptCharacterLimit": 32000,
+        "resolutions": [
+          "1K",
+          "2K"
+        ],
+        "singleImageAspectRatio": true,
+        "supportsTransparentBackground": true
+      },
+      "id": "mai-image-2-7-flash-edit",
+      "pricing": {
+        "inpaint": {
+          "diem": 0.02,
+          "usd": 0.02
+        },
+        "inputImages": {
+          "additional": {
+            "diem": 0.00299,
+            "usd": 0.00299
+          },
+          "included": 1
+        },
+        "resolutions": {
+          "1K": {
+            "diem": 0.02,
+            "usd": 0.02
+          },
+          "2K": {
+            "diem": 0.06,
+            "usd": 0.06
+          }
+        }
+      },
+      "type": "inpaint"
+    },
+    "minimax-h3-chili-image-to-video": {
+      "capabilities": {},
+      "constraints": {
+        "aspect_ratios": [],
+        "audio": true,
+        "audio_configurable": false,
+        "audio_input": false,
+        "durations": [
+          "4s",
+          "5s",
+          "6s",
+          "7s",
+          "8s",
+          "9s",
+          "10s",
+          "11s",
+          "12s",
+          "13s",
+          "14s",
+          "15s"
+        ],
+        "model_type": "image-to-video",
+        "per_reference_audio": false,
+        "prompt_character_limit": 7000,
+        "reference_image_max_aspect_ratio": 2.5,
+        "reference_image_min_aspect_ratio": 0.4,
+        "reference_image_min_short_side_pixels": 256,
+        "resolutions": [
+          "768P"
+        ],
+        "video_input": false
+      },
+      "id": "minimax-h3-chili-image-to-video",
+      "pricing": {},
+      "type": "video"
+    },
+    "minimax-h3-chili-reference-to-video": {
+      "capabilities": {},
+      "constraints": {
+        "aspect_ratios": [
+          "adaptive",
+          "16:9",
+          "4:3",
+          "1:1",
+          "3:4",
+          "9:16",
+          "21:9"
+        ],
+        "audio": true,
+        "audio_configurable": false,
+        "audio_input": true,
+        "durations": [
+          "4s",
+          "5s",
+          "6s",
+          "7s",
+          "8s",
+          "9s",
+          "10s",
+          "11s",
+          "12s",
+          "13s",
+          "14s",
+          "15s"
+        ],
+        "model_type": "image-to-video",
+        "per_reference_audio": false,
+        "prompt_character_limit": 7000,
+        "reference_image_max_aspect_ratio": 2.5,
+        "reference_image_min_aspect_ratio": 0.4,
+        "reference_image_min_short_side_pixels": 256,
+        "resolutions": [
+          "768P"
+        ],
+        "video_input": false
+      },
+      "id": "minimax-h3-chili-reference-to-video",
+      "pricing": {},
+      "type": "video"
+    },
+    "minimax-h3-chili-text-to-video": {
+      "capabilities": {},
+      "constraints": {
+        "aspect_ratios": [
+          "16:9",
+          "21:9",
+          "4:3",
+          "1:1",
+          "3:4",
+          "9:16"
+        ],
+        "audio": true,
+        "audio_configurable": false,
+        "audio_input": false,
+        "durations": [
+          "4s",
+          "5s",
+          "6s",
+          "7s",
+          "8s",
+          "9s",
+          "10s",
+          "11s",
+          "12s",
+          "13s",
+          "14s",
+          "15s"
+        ],
+        "model_type": "text-to-video",
+        "per_reference_audio": false,
+        "prompt_character_limit": 7000,
+        "resolutions": [
+          "768P"
+        ],
+        "video_input": false
+      },
+      "id": "minimax-h3-chili-text-to-video",
+      "pricing": {},
+      "type": "video"
+    },
     "minimax-h3-enhanced-reference-to-video": {
       "capabilities": {},
       "constraints": {
@@ -8762,6 +9365,243 @@
       "id": "minimax-h3-enhanced-text-to-video",
       "pricing": {},
       "type": "video"
+    },
+    "minimax-h3-hyper-image-to-video": {
+      "capabilities": {},
+      "constraints": {
+        "aspect_ratios": [],
+        "audio": true,
+        "audio_configurable": false,
+        "audio_input": false,
+        "durations": [
+          "4s",
+          "5s",
+          "6s",
+          "7s",
+          "8s",
+          "9s",
+          "10s",
+          "11s",
+          "12s",
+          "13s",
+          "14s",
+          "15s"
+        ],
+        "model_type": "image-to-video",
+        "per_reference_audio": false,
+        "prompt_character_limit": 7000,
+        "reference_image_max_aspect_ratio": 2.5,
+        "reference_image_min_aspect_ratio": 0.4,
+        "reference_image_min_short_side_pixels": 256,
+        "resolutions": [
+          "768P"
+        ],
+        "video_input": false
+      },
+      "id": "minimax-h3-hyper-image-to-video",
+      "pricing": {},
+      "type": "video"
+    },
+    "minimax-h3-hyper-reference-to-video": {
+      "capabilities": {},
+      "constraints": {
+        "aspect_ratios": [
+          "adaptive",
+          "16:9",
+          "4:3",
+          "1:1",
+          "3:4",
+          "9:16",
+          "21:9"
+        ],
+        "audio": true,
+        "audio_configurable": false,
+        "audio_input": true,
+        "durations": [
+          "4s",
+          "5s",
+          "6s",
+          "7s",
+          "8s",
+          "9s",
+          "10s",
+          "11s",
+          "12s",
+          "13s",
+          "14s",
+          "15s"
+        ],
+        "model_type": "image-to-video",
+        "per_reference_audio": false,
+        "prompt_character_limit": 7000,
+        "reference_image_max_aspect_ratio": 2.5,
+        "reference_image_min_aspect_ratio": 0.4,
+        "reference_image_min_short_side_pixels": 256,
+        "resolutions": [
+          "768P"
+        ],
+        "video_input": false
+      },
+      "id": "minimax-h3-hyper-reference-to-video",
+      "pricing": {},
+      "type": "video"
+    },
+    "minimax-h3-hyper-text-to-video": {
+      "capabilities": {},
+      "constraints": {
+        "aspect_ratios": [
+          "16:9",
+          "21:9",
+          "4:3",
+          "1:1",
+          "3:4",
+          "9:16"
+        ],
+        "audio": true,
+        "audio_configurable": false,
+        "audio_input": false,
+        "durations": [
+          "4s",
+          "5s",
+          "6s",
+          "7s",
+          "8s",
+          "9s",
+          "10s",
+          "11s",
+          "12s",
+          "13s",
+          "14s",
+          "15s"
+        ],
+        "model_type": "text-to-video",
+        "per_reference_audio": false,
+        "prompt_character_limit": 7000,
+        "resolutions": [
+          "768P"
+        ],
+        "video_input": false
+      },
+      "id": "minimax-h3-hyper-text-to-video",
+      "pricing": {},
+      "type": "video"
+    },
+    "minimax-h3-image": {
+      "capabilities": {},
+      "constraints": {
+        "aspectRatios": [
+          "1:1",
+          "5:4",
+          "4:3",
+          "3:2",
+          "16:9",
+          "21:9",
+          "4:5",
+          "3:4",
+          "2:3",
+          "9:16",
+          "9:21"
+        ],
+        "defaultAspectRatio": "1:1",
+        "defaultResolution": "1K",
+        "promptCharacterLimit": 10000,
+        "resolutions": [
+          "1K",
+          "2K",
+          "4K"
+        ],
+        "steps": {
+          "default": 20,
+          "max": 50
+        },
+        "widthHeightDivisor": 1
+      },
+      "id": "minimax-h3-image",
+      "pricing": {
+        "resolutions": {
+          "1K": {
+            "diem": 0.04,
+            "usd": 0.04
+          },
+          "2K": {
+            "diem": 0.04,
+            "usd": 0.04
+          },
+          "4K": {
+            "diem": 0.1,
+            "usd": 0.1
+          }
+        },
+        "upscale": {
+          "2x": {
+            "diem": 0.02,
+            "usd": 0.02
+          },
+          "4x": {
+            "diem": 0.08,
+            "usd": 0.08
+          }
+        }
+      },
+      "type": "image"
+    },
+    "minimax-h3-image-edit": {
+      "capabilities": {},
+      "constraints": {
+        "aspectRatios": [
+          "auto",
+          "1:1",
+          "5:4",
+          "4:3",
+          "3:2",
+          "16:9",
+          "21:9",
+          "4:5",
+          "3:4",
+          "2:3",
+          "9:16",
+          "9:21"
+        ],
+        "combineImages": true,
+        "defaultResolution": "1K",
+        "maxInputImages": 16,
+        "promptCharacterLimit": 10000,
+        "resolutions": [
+          "1K",
+          "2K",
+          "4K"
+        ],
+        "singleImageAspectRatio": true
+      },
+      "id": "minimax-h3-image-edit",
+      "pricing": {
+        "inpaint": {
+          "diem": 0.06,
+          "usd": 0.06
+        },
+        "inputImages": {
+          "additional": {
+            "diem": 0.019374050000000004,
+            "usd": 0.019374050000000004
+          },
+          "included": 1
+        },
+        "resolutions": {
+          "1K": {
+            "diem": 0.06,
+            "usd": 0.06
+          },
+          "2K": {
+            "diem": 0.06,
+            "usd": 0.06
+          },
+          "4K": {
+            "diem": 0.12,
+            "usd": 0.12
+          }
+        }
+      },
+      "type": "inpaint"
     },
     "minimax-h3-image-to-video": {
       "capabilities": {},
@@ -9694,6 +10534,13 @@
           "diem": 0.1,
           "usd": 0.1
         },
+        "inputImages": {
+          "additional": {
+            "diem": 0.0019320000000000003,
+            "usd": 0.0019320000000000003
+          },
+          "included": 1
+        },
         "resolutions": {
           "1K": {
             "diem": 0.1,
@@ -9747,6 +10594,13 @@
         "inpaint": {
           "diem": 0.1,
           "usd": 0.1
+        },
+        "inputImages": {
+          "additional": {
+            "diem": 0.000644,
+            "usd": 0.000644
+          },
+          "included": 1
         },
         "resolutions": {
           "1K": {
@@ -9841,6 +10695,13 @@
         "inpaint": {
           "diem": 0.06,
           "usd": 0.06
+        },
+        "inputImages": {
+          "additional": {
+            "diem": 0.000322,
+            "usd": 0.000322
+          },
+          "included": 1
         }
       },
       "type": "inpaint"
@@ -11449,6 +12310,278 @@
       },
       "type": "text"
     },
+    "openai-gpt-62-astra": {
+      "capabilities": {
+        "defaultReasoningEffort": "high",
+        "maxImages": 10,
+        "optimizedForCode": false,
+        "quantization": "not-available",
+        "reasoningEffortOptions": [
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "supportsAudioInput": false,
+        "supportsE2EE": false,
+        "supportsFunctionCalling": true,
+        "supportsLogProbs": false,
+        "supportsMultipleImages": true,
+        "supportsReasoning": true,
+        "supportsReasoningEffort": true,
+        "supportsResponseSchema": true,
+        "supportsTeeAttestation": false,
+        "supportsVideoInput": false,
+        "supportsVision": true,
+        "supportsWebSearch": true,
+        "supportsXSearch": false
+      },
+      "constraints": {},
+      "id": "openai-gpt-62-astra",
+      "pricing": {
+        "cache_input": {
+          "diem": 0.4,
+          "usd": 0.4
+        },
+        "cache_write": {
+          "diem": 10,
+          "usd": 10
+        },
+        "extended": {
+          "cache_input": {
+            "diem": 0.8,
+            "usd": 0.8
+          },
+          "cache_write": {
+            "diem": 20,
+            "usd": 20
+          },
+          "context_token_threshold": 272000,
+          "input": {
+            "diem": 16,
+            "usd": 16
+          },
+          "output": {
+            "diem": 60,
+            "usd": 60
+          }
+        },
+        "input": {
+          "diem": 8,
+          "usd": 8
+        },
+        "output": {
+          "diem": 40,
+          "usd": 40
+        }
+      },
+      "type": "text"
+    },
+    "openai-gpt-62-astra-pro": {
+      "capabilities": {
+        "defaultReasoningEffort": "high",
+        "maxImages": 10,
+        "optimizedForCode": false,
+        "quantization": "not-available",
+        "reasoningEffortOptions": [
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "supportsAudioInput": false,
+        "supportsE2EE": false,
+        "supportsFunctionCalling": true,
+        "supportsLogProbs": false,
+        "supportsMultipleImages": true,
+        "supportsReasoning": true,
+        "supportsReasoningEffort": true,
+        "supportsResponseSchema": true,
+        "supportsTeeAttestation": false,
+        "supportsVideoInput": false,
+        "supportsVision": true,
+        "supportsWebSearch": true,
+        "supportsXSearch": false
+      },
+      "constraints": {},
+      "id": "openai-gpt-62-astra-pro",
+      "pricing": {
+        "cache_input": {
+          "diem": 0.4,
+          "usd": 0.4
+        },
+        "cache_write": {
+          "diem": 10,
+          "usd": 10
+        },
+        "extended": {
+          "cache_input": {
+            "diem": 0.8,
+            "usd": 0.8
+          },
+          "cache_write": {
+            "diem": 20,
+            "usd": 20
+          },
+          "context_token_threshold": 272000,
+          "input": {
+            "diem": 16,
+            "usd": 16
+          },
+          "output": {
+            "diem": 60,
+            "usd": 60
+          }
+        },
+        "input": {
+          "diem": 8,
+          "usd": 8
+        },
+        "output": {
+          "diem": 40,
+          "usd": 40
+        }
+      },
+      "type": "text"
+    },
+    "openai-gpt-62-sol": {
+      "capabilities": {
+        "defaultReasoningEffort": "high",
+        "maxImages": 10,
+        "optimizedForCode": false,
+        "quantization": "not-available",
+        "reasoningEffortOptions": [
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "supportsAudioInput": false,
+        "supportsE2EE": false,
+        "supportsFunctionCalling": true,
+        "supportsLogProbs": false,
+        "supportsMultipleImages": true,
+        "supportsReasoning": true,
+        "supportsReasoningEffort": true,
+        "supportsResponseSchema": true,
+        "supportsTeeAttestation": false,
+        "supportsVideoInput": false,
+        "supportsVision": true,
+        "supportsWebSearch": true,
+        "supportsXSearch": false
+      },
+      "constraints": {},
+      "id": "openai-gpt-62-sol",
+      "pricing": {
+        "cache_input": {
+          "diem": 0.1,
+          "usd": 0.1
+        },
+        "cache_write": {
+          "diem": 2.5,
+          "usd": 2.5
+        },
+        "extended": {
+          "cache_input": {
+            "diem": 0.2,
+            "usd": 0.2
+          },
+          "cache_write": {
+            "diem": 5,
+            "usd": 5
+          },
+          "context_token_threshold": 272000,
+          "input": {
+            "diem": 4,
+            "usd": 4
+          },
+          "output": {
+            "diem": 15,
+            "usd": 15
+          }
+        },
+        "input": {
+          "diem": 2,
+          "usd": 2
+        },
+        "output": {
+          "diem": 10,
+          "usd": 10
+        }
+      },
+      "type": "text"
+    },
+    "openai-gpt-62-sol-pro": {
+      "capabilities": {
+        "defaultReasoningEffort": "high",
+        "maxImages": 10,
+        "optimizedForCode": false,
+        "quantization": "not-available",
+        "reasoningEffortOptions": [
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "supportsAudioInput": false,
+        "supportsE2EE": false,
+        "supportsFunctionCalling": true,
+        "supportsLogProbs": false,
+        "supportsMultipleImages": true,
+        "supportsReasoning": true,
+        "supportsReasoningEffort": true,
+        "supportsResponseSchema": true,
+        "supportsTeeAttestation": false,
+        "supportsVideoInput": false,
+        "supportsVision": true,
+        "supportsWebSearch": true,
+        "supportsXSearch": false
+      },
+      "constraints": {},
+      "id": "openai-gpt-62-sol-pro",
+      "pricing": {
+        "cache_input": {
+          "diem": 0.1,
+          "usd": 0.1
+        },
+        "cache_write": {
+          "diem": 2.5,
+          "usd": 2.5
+        },
+        "extended": {
+          "cache_input": {
+            "diem": 0.2,
+            "usd": 0.2
+          },
+          "cache_write": {
+            "diem": 5,
+            "usd": 5
+          },
+          "context_token_threshold": 272000,
+          "input": {
+            "diem": 4,
+            "usd": 4
+          },
+          "output": {
+            "diem": 15,
+            "usd": 15
+          }
+        },
+        "input": {
+          "diem": 2,
+          "usd": 2
+        },
+        "output": {
+          "diem": 10,
+          "usd": 10
+        }
+      },
+      "type": "text"
+    },
     "openai-gpt-oss-120b": {
       "capabilities": {
         "defaultReasoningEffort": "low",
@@ -11518,6 +12651,42 @@
       "id": "ovi-image-to-video",
       "pricing": {},
       "type": "video"
+    },
+    "pareto": {
+      "capabilities": {
+        "optimizedForCode": false,
+        "quantization": "not-available",
+        "supportsAudioInput": false,
+        "supportsE2EE": false,
+        "supportsFunctionCalling": true,
+        "supportsLogProbs": false,
+        "supportsMultipleImages": false,
+        "supportsReasoning": false,
+        "supportsReasoningEffort": false,
+        "supportsResponseSchema": false,
+        "supportsTeeAttestation": false,
+        "supportsVideoInput": false,
+        "supportsVision": true,
+        "supportsWebSearch": true,
+        "supportsXSearch": false
+      },
+      "constraints": {},
+      "id": "pareto",
+      "pricing": {
+        "cache_input": {
+          "diem": 0.0375,
+          "usd": 0.0375
+        },
+        "input": {
+          "diem": 1,
+          "usd": 1
+        },
+        "output": {
+          "diem": 4,
+          "usd": 4
+        }
+      },
+      "type": "text"
     },
     "pixverse-c1-image-to-video": {
       "capabilities": {},
@@ -12070,6 +13239,51 @@
         "output": {
           "diem": 7.5,
           "usd": 7.5
+        }
+      },
+      "type": "text"
+    },
+    "qwen-4-max": {
+      "capabilities": {
+        "maxImages": 10,
+        "optimizedForCode": true,
+        "quantization": "not-available",
+        "supportsAudioInput": false,
+        "supportsE2EE": false,
+        "supportsFunctionCalling": true,
+        "supportsLogProbs": false,
+        "supportsMultipleImages": true,
+        "supportsReasoning": true,
+        "supportsReasoningEffort": false,
+        "supportsResponseSchema": false,
+        "supportsTeeAttestation": false,
+        "supportsVideoInput": true,
+        "supportsVision": true,
+        "supportsWebSearch": true,
+        "supportsXSearch": false
+      },
+      "constraints": {},
+      "id": "qwen-4-max",
+      "pricing": {
+        "cache_input": {
+          "diem": 0.07500000000000001,
+          "usd": 0.07500000000000001
+        },
+        "cache_write": {
+          "diem": 1.875,
+          "usd": 1.875
+        },
+        "cache_write_1h": {
+          "diem": 3,
+          "usd": 3
+        },
+        "input": {
+          "diem": 1.5,
+          "usd": 1.5
+        },
+        "output": {
+          "diem": 4.5,
+          "usd": 4.5
         }
       },
       "type": "text"
@@ -13640,6 +14854,7 @@
         "reference_image_min_aspect_ratio": 0.4,
         "reference_image_min_short_side_pixels": 300,
         "resolutions": [
+          "4k",
           "1080p",
           "720p",
           "480p"
@@ -13647,6 +14862,199 @@
         "video_input": false
       },
       "id": "seedance-2-5-edit-video-basic",
+      "pricing": {},
+      "type": "video"
+    },
+    "seedance-2-5-flash-edit-video-basic": {
+      "capabilities": {},
+      "constraints": {
+        "aspect_ratios": [],
+        "audio": true,
+        "audio_configurable": true,
+        "audio_input": true,
+        "durations": [
+          "Auto"
+        ],
+        "model_type": "video",
+        "per_reference_audio": false,
+        "prompt_character_limit": 15000,
+        "reference_image_max_aspect_ratio": 2.5,
+        "reference_image_min_aspect_ratio": 0.4,
+        "reference_image_min_short_side_pixels": 300,
+        "resolutions": [
+          "720p",
+          "480p"
+        ],
+        "video_input": false
+      },
+      "id": "seedance-2-5-flash-edit-video-basic",
+      "pricing": {},
+      "type": "video"
+    },
+    "seedance-2-5-flash-image-to-video-basic": {
+      "capabilities": {},
+      "constraints": {
+        "aspect_ratios": [],
+        "audio": true,
+        "audio_configurable": true,
+        "audio_input": false,
+        "durations": [
+          "4s",
+          "5s",
+          "6s",
+          "7s",
+          "8s",
+          "9s",
+          "10s",
+          "11s",
+          "12s",
+          "13s",
+          "14s",
+          "15s",
+          "16s",
+          "17s",
+          "18s",
+          "19s",
+          "20s",
+          "21s",
+          "22s",
+          "23s",
+          "24s",
+          "25s",
+          "26s",
+          "27s",
+          "28s",
+          "29s",
+          "30s"
+        ],
+        "model_type": "image-to-video",
+        "per_reference_audio": false,
+        "prompt_character_limit": 15000,
+        "reference_image_max_aspect_ratio": 2.5,
+        "reference_image_min_aspect_ratio": 0.4,
+        "reference_image_min_short_side_pixels": 300,
+        "resolutions": [
+          "720p",
+          "480p"
+        ],
+        "video_input": false
+      },
+      "id": "seedance-2-5-flash-image-to-video-basic",
+      "pricing": {},
+      "type": "video"
+    },
+    "seedance-2-5-flash-reference-to-video-basic": {
+      "capabilities": {},
+      "constraints": {
+        "aspect_ratios": [
+          "21:9",
+          "16:9",
+          "4:3",
+          "1:1",
+          "3:4",
+          "9:16"
+        ],
+        "audio": true,
+        "audio_configurable": true,
+        "audio_input": true,
+        "durations": [
+          "4s",
+          "5s",
+          "6s",
+          "7s",
+          "8s",
+          "9s",
+          "10s",
+          "11s",
+          "12s",
+          "13s",
+          "14s",
+          "15s",
+          "16s",
+          "17s",
+          "18s",
+          "19s",
+          "20s",
+          "21s",
+          "22s",
+          "23s",
+          "24s",
+          "25s",
+          "26s",
+          "27s",
+          "28s",
+          "29s",
+          "30s"
+        ],
+        "model_type": "image-to-video",
+        "per_reference_audio": false,
+        "prompt_character_limit": 15000,
+        "reference_image_max_aspect_ratio": 2.5,
+        "reference_image_min_aspect_ratio": 0.4,
+        "reference_image_min_short_side_pixels": 300,
+        "resolutions": [
+          "720p",
+          "480p"
+        ],
+        "video_input": false
+      },
+      "id": "seedance-2-5-flash-reference-to-video-basic",
+      "pricing": {},
+      "type": "video"
+    },
+    "seedance-2-5-flash-text-to-video-basic": {
+      "capabilities": {},
+      "constraints": {
+        "aspect_ratios": [
+          "21:9",
+          "16:9",
+          "4:3",
+          "1:1",
+          "3:4",
+          "9:16"
+        ],
+        "audio": true,
+        "audio_configurable": true,
+        "audio_input": false,
+        "durations": [
+          "4s",
+          "5s",
+          "6s",
+          "7s",
+          "8s",
+          "9s",
+          "10s",
+          "11s",
+          "12s",
+          "13s",
+          "14s",
+          "15s",
+          "16s",
+          "17s",
+          "18s",
+          "19s",
+          "20s",
+          "21s",
+          "22s",
+          "23s",
+          "24s",
+          "25s",
+          "26s",
+          "27s",
+          "28s",
+          "29s",
+          "30s"
+        ],
+        "model_type": "text-to-video",
+        "per_reference_audio": false,
+        "prompt_character_limit": 15000,
+        "resolutions": [
+          "720p",
+          "480p"
+        ],
+        "video_input": false
+      },
+      "id": "seedance-2-5-flash-text-to-video-basic",
       "pricing": {},
       "type": "video"
     },
@@ -13693,6 +15101,7 @@
         "reference_image_min_aspect_ratio": 0.4,
         "reference_image_min_short_side_pixels": 300,
         "resolutions": [
+          "4k",
           "1080p",
           "720p",
           "480p"
@@ -13753,6 +15162,7 @@
         "reference_image_min_aspect_ratio": 0.4,
         "reference_image_min_short_side_pixels": 300,
         "resolutions": [
+          "4k",
           "1080p",
           "720p",
           "480p"
@@ -13810,6 +15220,7 @@
         "per_reference_audio": false,
         "prompt_character_limit": 15000,
         "resolutions": [
+          "4k",
           "1080p",
           "720p",
           "480p"
@@ -13919,8 +15330,8 @@
       "pricing": {
         "resolutions": {
           "1.5K": {
-            "diem": 0.0255,
-            "usd": 0.0255
+            "diem": 0.034,
+            "usd": 0.034
           },
           "1K": {
             "diem": 0.0255,
@@ -13985,8 +15396,8 @@
         },
         "resolutions": {
           "1.5K": {
-            "diem": 0.0255,
-            "usd": 0.0255
+            "diem": 0.034,
+            "usd": 0.034
           },
           "1K": {
             "diem": 0.0255,
@@ -16167,5 +17578,5 @@
       "type": "text"
     }
   },
-  "total_models": 405
+  "total_models": 432
 }
